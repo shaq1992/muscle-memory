@@ -28,10 +28,6 @@ words gets no entry.
   implementation prompt by inlining ONLY phase-specifics (objective, deliverables,
   DoD, behavioral tests, learnings, resolved parameters) and @-referencing stable
   law from `harness/procedures/*`.
-- **approval marker** -- The user-created file
-  `.claude/approvals/<plan>_main_merge.json` that gates the single
-  integration-to-main merge. Claude is mechanically write-denied on the approvals
-  path; the guardrail hook deletes the marker after the allowed merge (one-shot).
 - **parking lot** -- The `## Technical Parking Lot` section of a functional PRD:
   non-binding technical asides captured during functional-mode grilling. The
   technical session reads it as its opening agenda -- an opening position, never a
@@ -63,7 +59,7 @@ words gets no entry.
   related issue, paired with a ready-to-use "suggested brief". Not an edit -- it
   seeds the one-level drift cascade.
 - **gate phase** -- A phase whose completion is held pending an explicit user
-  decision (a gate), e.g. the permission-gated integration-to-main merge or a
+  decision (a gate), e.g. the user-performed plan-end PR merge or a
   ratification checkpoint.
 - **stop sequence** -- The user's "stop asking questions" trigger that ends the Q&A
   loop and starts the stop-sequence choreography.
@@ -79,9 +75,9 @@ words gets no entry.
   supersession flag where accumulated learnings or shipped code + tests have
   contradicted them; the PLAN-time VERBATIM wording is preserved, the flag is
   annotation only, and no new tests are added silently.
-- **integration branch** -- `integration/<plan_name>`, cut from `main` in a plan's
-  first phase; the single accumulation point all phase branches merge into, kept
-  off `main` until the permission-gated final merge.
+- **integration branch** -- `integration/<plan_name>`, cut from the default branch
+  in a plan's first phase; the single accumulation point all phase branches merge
+  into, kept off the protected branch until the plan-end PR is merged by the USER.
 - **shakedown** -- The first real plan run on the new harness -- the live exercise
-  of the machinery, protected by the archive, the integration branch, and the
-  verified guardrail hook + approval marker.
+  of the machinery, protected by the integration branch and the verified
+  guardrail hook.

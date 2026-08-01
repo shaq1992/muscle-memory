@@ -1,5 +1,5 @@
 ---
-description: Install OR upgrade the portable workflow harness in a target project. Copies the portable subset (harness/, commands/, agents/, hooks/) verbatim, generates preference files from the portable templates under harness/templates/preferences/, generates a root CLAUDE.md from the skeleton template, creates docs/ + context/, wires settings.json (guardrail + phase-closing hooks, deny rules), and walks through the one-time credential-helper setup. Idempotent -- re-running upgrades the harness while never overwriting existing preferences or an existing CLAUDE.md.
+description: Install OR upgrade the portable workflow harness in a target project. Copies the portable subset (harness/, commands/, agents/, hooks/) verbatim, generates preference files from the portable templates under harness/templates/preferences/, generates a root CLAUDE.md from the skeleton template, creates docs/ + context/, and wires settings.json (guardrail + phase-closing hooks, deny rules). Idempotent -- re-running upgrades the harness while never overwriting existing preferences or an existing CLAUDE.md.
 ---
 
 ## Purpose
@@ -25,7 +25,7 @@ The harness splits into a PORTABLE subset and a PER-PROJECT subset:
 - **Per-project (generated fresh, NEVER copied from the source):** `.claude/preferences/`
   (complete files generated from the portable templates under
   `harness/templates/preferences/`), root `CLAUDE.md` (from the skeleton template),
-  `.claude/approvals/`, `context/`, `docs/`.
+  `context/`, `docs/`.
 
 A raw `cp -r .claude/ <new-project>` is NOT a supported port: it drags the SOURCE project's
 filled preference files (git parameters, environment, verification, monitoring) and its
@@ -72,9 +72,8 @@ Create `TARGET_CLAUDE/` if absent, then copy these four trees from SOURCE_CLAUDE
 overwriting older copies (this is the refresh/upgrade mechanism):
 
 - `harness/`   (procedures/, templates/ incl. `claude_md_skeleton.md` and the portable
-                `templates/preferences/` files, scripts/ incl. the credential helpers and
-                `make_portable_zip.sh`, `USER_MANUAL.md`, `INSTALL.md`, `harness_glossary.md`,
-                tests/)
+                `templates/preferences/` files, scripts/ incl. `make_portable_zip.sh`,
+                `USER_MANUAL.md`, `INSTALL.md`, `harness_glossary.md`, tests/)
 - `commands/`  (all invocable commands, including this bootstrap command itself so the target
                 can re-bootstrap/upgrade) -- but for each `.md` file in
                 `SOURCE_CLAUDE/commands/`, FIRST parse its YAML frontmatter and check for a
@@ -84,7 +83,7 @@ overwriting older copies (this is the refresh/upgrade mechanism):
 - `agents/`    (workflow agents, e.g. self-improver)
 - `hooks/`     (`git_guardrails.py`, `enforce_phase_closing.py`)
 
-Do NOT copy `preferences/`, `approvals/`, `settings.json`, or `context/` here -- those are
+Do NOT copy `preferences/`, `settings.json`, or `context/` here -- those are
 per-project (Steps 2-6). List each tree copied.
 
 **Project-specific command opt-out:** the canonical mechanism for marking a command as
@@ -115,8 +114,8 @@ only edits.
 - `git_parameters.md` ships working defaults (not bare placeholders): the template already
   carries the machine-parseable key lines the guardrail hook reads
   (`integration_branch_prefix`, `phase_branch_pattern`, `phase_number_padding`,
-  `default_branch`, `protected_branch`, `approval_marker_path`), so the hook works before the
-  user customizes anything.
+  `default_branch`, `protected_branch`, `merge_style`, `retain_integration_branch`), so the
+  hook works before the user customizes anything.
 - Report, per file: created-from-template / already-existed-skipped.
 
 Because these templates live under `harness/` (part of the portable subset shipped in the
@@ -145,13 +144,6 @@ mkdir -p <target>/context
 Report which were created and which already existed. Do NOT seed context/ files -- the domain
 glossary/architecture/decisions are written by real sessions, not bootstrap.
 
-Do NOT create the approvals directory. It is user-managed exclusively: the guardrail hook and
-the settings.json deny rules keep Claude out of that path entirely, and bootstrap is Claude.
-The directory comes into being when the USER places the first approval marker with a
-`!`-prefixed command at the final-merge gate (that command runs in the user's own shell, not
-through Claude's Bash tool). Until then its absence simply means "no marker exists", which the
-guardrail hook already treats as "gated merge blocked" -- the safe default.
-
 ### Step 5 -- .gitignore (all AI-facing scaffolding stays local)
 
 Check `TARGET_DIR/.gitignore`. Ensure each of these entries is present (one per line, append
@@ -169,31 +161,24 @@ Report created / entries-appended / already-present.
 
 Target file: `TARGET_CLAUDE/settings.json`.
 
-- If it does NOT exist, create it with this content (adjust the hook command's Python
-  invocation to the target project's interpreter -- `venv/bin/python` here; a different path
-  or bare `python` elsewhere):
+- If it does NOT exist, create it with this content (stdlib `python3`; adjust only if the
+  target machine's interpreter is named differently, e.g. `python` on some hosts):
   ```json
   {
     "permissions": {
       "deny": [
         "Read(.env)",
         "Read(./.env)",
-        "Read(**/.env)",
-        "Write(.claude/approvals/**)",
-        "Edit(.claude/approvals/**)",
-        "Bash(touch .claude/approvals/*)",
-        "Bash(cp * .claude/approvals/*)",
-        "Bash(mv * .claude/approvals/*)",
-        "Bash(tee .claude/approvals/*)"
+        "Read(**/.env)"
       ]
     },
     "hooks": {
       "PreToolUse": [
         { "matcher": "Bash",
-          "hooks": [ { "type": "command", "command": "venv/bin/python .claude/hooks/git_guardrails.py" } ] }
+          "hooks": [ { "type": "command", "command": "D=\"${CLAUDE_PROJECT_DIR:-.}\"; command -v python3 >/dev/null 2>&1 && exec python3 \"$D/.claude/hooks/git_guardrails.py\" || exit 0" } ] }
       ],
       "Stop": [
-        { "hooks": [ { "type": "command", "command": "venv/bin/python .claude/hooks/enforce_phase_closing.py" } ] }
+        { "hooks": [ { "type": "command", "command": "D=\"${CLAUDE_PROJECT_DIR:-.}\"; command -v python3 >/dev/null 2>&1 && exec python3 \"$D/.claude/hooks/enforce_phase_closing.py\" || exit 0" } ] }
       ]
     }
   }
@@ -201,27 +186,10 @@ Target file: `TARGET_CLAUDE/settings.json`.
 - If it DOES exist, parse it as JSON and MERGE idempotently: add the two hook registrations
   only if an equivalent entry is not already present; add each `permissions.deny` rule only
   if absent. Preserve every other existing key (`allow`, `skillOverrides`, etc.) untouched.
-- The `.env` deny rules and the approvals write-deny rules are load-bearing security
-  invariants (PAT isolation + user-only approval marker) -- they must end up present.
+- The `.env` deny rules are load-bearing security invariants -- they must end up present.
 - Report: created-fresh / merged (list what was added) / already-complete.
 
-### Step 7 -- One-time credential-helper walkthrough
-
-The credential helper (copied verbatim in Step 1 under `harness/scripts/`) lets pushes
-authenticate via `GIT_PAT` from the target repo's `.env` without the token ever entering a
-transcript. Walk the user through the one-time registration:
-
-1. Confirm `GIT_PAT` is already saved in `TARGET_DIR/.env` (and optionally `GIT_USERNAME`).
-   Do NOT read `.env` -- just tell the user this is the precondition.
-2. From the target repo root, run the registrar (it configures a repo-local
-   `credential.helper` in `.git/config`; it never reads or prints the token):
-   ```
-   bash <target>/.claude/harness/scripts/setup_credential_helper.sh
-   ```
-3. Report its `[DONE]`/`[FATAL]` outcome. If the target is not a git repo yet, note that
-   `git init` must run first, then re-run the registrar.
-
-### Step 8 -- Confirm
+### Step 7 -- Confirm
 
 Report a summary:
 - Resolved SOURCE and TARGET; whether this was an install or a self-upgrade.
@@ -230,6 +198,5 @@ Report a summary:
 - preferences/: which files were created-from-template vs. left untouched.
 - CLAUDE.md: created-from-skeleton or skipped (already existed).
 - Directories created; .gitignore result; settings.json result.
-- Credential helper: registered / pending (git init needed) / skipped.
 - Next step: "Fill in CLAUDE.md and the .claude/preferences/ files with this project's
   specifics, then run /grilling_session to start your first planning session."

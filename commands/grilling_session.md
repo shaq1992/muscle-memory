@@ -79,7 +79,7 @@ chars) from $ARGUMENTS and present three variants as options.
 Before asking ANY question that proposes file locations, git behavior, or version-control
 assumptions, you MUST first read `.gitignore`, `.claude/preferences/environment.md` (venv
 invocation, encoding, file-location rules), and `.claude/preferences/git_parameters.md`
-(integration prefix, phase-branch pattern, protected branch, approval-marker path), then
+(integration prefix, phase-branch pattern, protected branch, merge defaults), then
 answer from them. This is the "read the codebase instead of asking" rule made mandatory
 for its highest-leverage instance: a location or git-workflow fact recoverable from these
 files is never a question.

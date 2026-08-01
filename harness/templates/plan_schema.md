@@ -18,9 +18,9 @@ The plan opens with:
 PRD: `docs/prds/<plan_name>_prd.md` (read in full before any phase).
 
 ## Git strategy for THIS plan (read first)
-[Resolved against harness/procedures/git_strategy.md: integration branch name,
-the per-phase boolean values, or the local-only declaration if all deliverables
-are gitignored. Note any plan-specific exceptions, e.g. a single tracked edit.]
+[Resolved against harness/procedures/git_strategy.md: integration branch name
+and the per-phase boolean values. Note any plan-specific exceptions, e.g.
+branches living in a different repo.]
 
 ## Slicing note (ratified)
 [Which tracer-bullet ruling applies -- sliced phases, or the exemption with its

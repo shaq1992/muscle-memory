@@ -43,7 +43,7 @@ drift between the two dates is a false-negative block.
 
 **Marker + Stop-hook interplay.** The marker is read by the
 `enforce_phase_closing.py` Stop hook (registered in `.claude/settings.json`,
-invoked via `venv/bin/python`). Mechanics:
+invoked via stdlib `python3`). Mechanics:
 - No marker present, or a marker whose `session_id` does not match the current
   session, is a structural no-op -- the hook allows unconditionally. A marker
   left by an abandoned session never blocks other sessions.
@@ -73,8 +73,8 @@ section is read by the prompt writer; bias toward including here when uncertain)
 
 The `**Branch:**` line is mandatory and must be the first line of the file,
 before `## Carry Forward`. Populate it with the actual git branch this phase
-worked on -- the phase branch per git_strategy.md naming, or `main` for
-local-only phases (run `git branch --show-current` if uncertain). This is the
+worked on -- the phase branch per git_strategy.md naming (run
+`git branch --show-current` if uncertain). This is the
 only mechanism by which other commands (e.g. `/jira_and_status_update`'s grep
 for `**Branch:**`) can discover which branch a plan's work landed on without ad
 hoc lookups. Only the `## Carry Forward` section is extracted into future
@@ -88,12 +88,6 @@ commit it.
 
 ## Step 5: Commit
 
-[For no-commit / local-only phases: skip the instructions below entirely. State
-plainly that there is nothing to commit this phase, and name why (e.g. "all
-deliverables are gitignored -- .claude/, context/, docs/ outputs"). Do not stage
-or run any git commit command, except any single tracked edit the plan itself
-explicitly mandates.]
-
 Before staging any enumerated artifact from the plan's Deliverables (e.g.
 retrained model pkls, training summaries, cache DBs, generated CSVs, benchmark
 JSONs), verify each path is git-tracked -- run `git check-ignore <path>` (exit 0
@@ -103,38 +97,43 @@ a path the project gitignores. If this phase's build outputs are gitignored, the
 phase's durable committable output is the code/test changes only; state that
 plainly in the commit report.
 
-Stage and commit the phase's tracked changes. If `.claude/` is gitignored in
-this project, any self-improver edits to command files are local-only -- nothing
-to stage for that path.
+Stage and commit the phase's tracked changes on the phase branch.
+
+If the phase produced NO tracked changes (e.g. every deliverable was
+environment/config work or landed in gitignored paths), commit nothing -- the
+zero-commit rule in step 6 applies. State plainly what the phase's outputs
+were and why nothing is committable.
 
 Commit message: `feat: <plan_name> phase <N> -- <brief description>`. No AI
 attribution anywhere, ever.
 
 ## Step 6: Autonomous git close
 
-(Replaces the old standby/handover step. Full law: `git_strategy.md`; parameters
-from `preferences/git_parameters.md`.)
+(Full law: `git_strategy.md`; parameters from `preferences/git_parameters.md`.)
 
-For local-only phases: nothing to push. Confirm the phase ends on the expected
-branch (`git branch --show-current`) and tell the user where the phase's
-outputs live (the gitignored paths written this phase).
+**Zero-commit rule:** if the phase branch has zero commits, skip
+push/merge/delete entirely and report "no tracked changes this phase" plainly,
+then confirm the session ends on the expected branch
+(`git branch --show-current`).
 
-For committing phases, perform the autonomous close -- no user confirmation, no
-surfacing of commands for manual execution:
+Otherwise, perform the autonomous close -- no user confirmation, no surfacing
+of commands for manual execution:
 
 1. Push the phase branch to origin.
-2. `git checkout integration/<plan_name>`, then
-   `git merge --no-ff <phase-branch> -m "merge: <plan_name> phase <N> -- <brief description>"`.
+2. `git checkout integration/<plan_name>`, then merge with git defaults and an
+   explicit message:
+   `git merge <phase-branch> -m "merge: <plan_name> phase <N> -- <brief description>"`.
 3. Push the integration branch.
-4. Delete the phase branch, remote and local.
+4. Delete the phase branch, remote and local (`git branch -d`, never `-D`).
 
 Report each operation's outcome (hashes, branch states) to the user.
 
-If `is_final_phase` is true: after the integration merge lands, request
-EXPLICIT user permission for the single integration-to-main merge + main push.
-This is permission-gated always, even in auto mode -- never assume or infer it.
-If permission is withheld, the integration branch stays as the artifact and the
-plan closes without touching main.
+If `is_final_phase` is true: run the plan-end PR flow per git_strategy.md --
+push the integration branch, open the PR autonomously with `gh pr create`
+(title/body per the PR convention, no AI attribution), then hand off: the USER
+merges with a `!`-prefixed `gh pr merge <n> --merge` (the keystroke is the
+approval; Claude never runs `gh pr merge`). If the merge is withheld, the plan
+closes with the integration branch and the open PR as the durable artifacts.
 
 ## Step 7: Next phase
 

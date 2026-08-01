@@ -41,18 +41,16 @@ until the zip is extracted -- mode (b) is the intended offline hand-off.
    The copy steps are a no-op -- the four portable trees are already present from the
    zip -- and the generate steps do all the real work: preference files generated from the
    portable templates under `harness/templates/preferences/`, a root `CLAUDE.md` from the
-   skeleton template, `docs/` + `context/` directories, `.gitignore` entries,
-   `settings.json` wiring (guardrail + phase-closing hooks, deny rules), and the one-time
-   credential-helper walkthrough. You never hand-create a file: every preference file (and
-   CLAUDE.md) arrives complete, and you only edit placeholder values.
+   skeleton template, `docs/` + `context/` directories, `.gitignore` entries, and
+   `settings.json` wiring (guardrail + phase-closing hooks, deny rules). You never
+   hand-create a file: every preference file (and CLAUDE.md) arrives complete, and you
+   only edit placeholder values.
 
 3. **Edit the placeholders.** The bootstrap pre-creates every file; you only fill values:
    - Fill the `[...]` placeholders in the generated root `CLAUDE.md`.
    - Edit the placeholders in each pre-created `.claude/preferences/` file
      (`git_parameters.md` already ships working defaults; the others carry `[fill in ...]`
      markers for the project-specific values).
-   - Save `GIT_PAT` (and optionally `GIT_USERNAME`) into your project's own `.env` --
-     see the Git credential pre-requisite below.
 
 4. **Next step.** Fill in `CLAUDE.md` and the `.claude/preferences/` files with this
    project's specifics, then run `/grilling_session` to start your first planning
@@ -78,8 +76,6 @@ until the zip is extracted -- mode (b) is the intended offline hand-off.
   paths that will not match another machine. Bootstrap generates it fresh.
 - **root `CLAUDE.md`** -- project-specific content, and it lives at the project root, not
   under `.claude/`. Bootstrap generates it blank from the skeleton template.
-- **the user-managed approvals directory** -- created only by the user placing an
-  approval marker; never shipped.
 - **`.claude/phase_closing.json`** -- transient per-session state.
 - **`.claude/projects/`** -- the auto-memory store, machine-local.
 - **`context/`** and **`docs/`** -- durable/working project knowledge, project-specific.
@@ -98,22 +94,15 @@ not something the tooling does for you.
 
 1. **Hook interpreter (most likely "it didn't work" surprise -- check this first).** The
    generated `settings.json` registers the guardrail and phase-closing hooks with a
-   Python invocation (`venv/bin/python` by default). If your project has no venv at that
-   path, or uses a different interpreter, you MUST edit the two hook `command` fields in
-   `.claude/settings.json` to your interpreter. Otherwise the hooks silently never fire
-   and the git guardrails are not enforced.
+   stdlib `python3` invocation (no venv, no third-party packages). If `python3` is not
+   on PATH under a different name (e.g. `python` on some hosts), you MUST edit the two
+   hook `command` fields in `.claude/settings.json` to your interpreter. Otherwise the
+   hooks silently never fire and the git guardrails are not enforced.
 
-2. **Git credential / PAT.** Pushes authenticate via the repo-local credential helper,
-   which reads `GIT_PAT` from your project's own `.env` at push time. Before the
-   credential step:
-   - the target must be a git repo -- run `git init` first if it is not one yet;
-   - `GIT_PAT` (and optionally `GIT_USERNAME`) must already be saved in that project's
-     `.env`.
-   Then, from the repo root, run:
-   ```
-   bash .claude/harness/scripts/setup_credential_helper.sh
-   ```
-   No session ever reads `.env`; the token never enters a transcript.
+2. **Git + GitHub auth.** The target must be a git repo -- run `git init` first if it is
+   not one yet. Pushes and PR operations authenticate through the GitHub CLI: install
+   `gh` and run `gh auth login` yourself in your own terminal (it is interactive). No
+   tokens are stored in `.env` and no session ever reads your credentials.
 
 3. **Zip rooting.** The archive must expand to `.claude/...` at your project root. If it
    double-nests (e.g. `harness_portable/.claude/...`), move the `.claude/` directory up

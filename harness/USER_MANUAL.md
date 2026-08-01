@@ -1,9 +1,10 @@
 # Workflow Command User Manual
 
 The `.claude/` directory is a portable-by-design, multi-session development workflow
-system for Claude Code: three grilling modes, a reference-based phase compiler, a unified
-integration-branch git strategy with a deterministic guardrail hook and a user-only
-approval marker, a slim per-turn CLAUDE.md, and a two-surface glossary. Commands plan,
+system for Claude Code: three grilling modes, a reference-based phase compiler, a
+PR-based integration-branch git strategy with a deterministic guardrail hook (every
+plan ends in a pull request merged by the USER), a slim per-turn CLAUDE.md, and a
+two-surface glossary. Commands plan,
 implement, and track work across sessions -- most non-trivial tasks cannot finish inside
 one context window.
 
@@ -25,13 +26,12 @@ one context window.
                               verification_cases, self_improvement (portable law)
     templates/             -- prd_schema, plan_schema, claude_md_skeleton,
                               preferences/ (portable preference templates)
-    scripts/               -- setup_credential_helper.sh, git_credential_env.sh,
-                              make_portable_zip.sh
-    tests/                 -- local pytest for hooks/helpers (never committed)
+    scripts/               -- make_portable_zip.sh
+    tests/                 -- stdlib-unittest suite for the hooks
+                              (python3 -m unittest discover .claude/harness/tests)
   preferences/    -- PROJECT-SPECIFIC per-concern files + INDEX.md; user-edited, out of
                      self-improver jurisdiction; commands state a fallback when a file is
                      absent (this is what makes the system portable by design)
-  approvals/      -- user-created approval markers gating integration-to-main merges
   settings.json   -- permissions (deny rules) + hook registration
 CLAUDE.md         -- per-turn protective skeleton (project root; generated from the skeleton
                      template, then filled by the user)
@@ -48,7 +48,7 @@ Everything above is gitignored -- AI-facing scaffolding never enters version con
 - **Per-project, generated fresh (never copied from a source project):** `preferences/`
   (complete files generated from the portable templates under
   `harness/templates/preferences/`), root `CLAUDE.md` (from `claude_md_skeleton.md`),
-  `approvals/`, `context/`, `docs/`.
+  `context/`, `docs/`.
 
 A raw `cp -r .claude/ <new-project>` is NOT a supported port -- it drags the source
 project's filled preferences and project-specific CLAUDE.md into the new project.
@@ -62,9 +62,8 @@ command (there is no separate port command):
 
 - **Install** (fresh target): copies the portable subset, generates preference files from the
   portable templates (`harness/templates/preferences/`), generates a root CLAUDE.md from the
-  skeleton template, creates docs/ + context/,
-  wires the guardrail + phase-closing hooks and the .env/approvals deny rules, and walks
-  through the one-time credential-helper registration.
+  skeleton template, creates docs/ + context/, and wires the guardrail + phase-closing
+  hooks and the .env deny rules.
 - **Upgrade** (re-run on an existing project): refreshes the portable subset verbatim and
   leaves every per-project file untouched -- existing preferences and an existing filled
   CLAUDE.md are NEVER overwritten.
@@ -144,51 +143,49 @@ end-to-end pipeline-verification command. These are project-specific and are not
 into every repo; this project ships none. Add their descriptions here if and when they are
 introduced.)
 
-## Git strategy (autonomy + the approval marker)
+## Git strategy (the PR law)
 
 Full law: `harness/procedures/git_strategy.md`; parameters: `preferences/git_parameters.md`.
 
-- **Unified integration-branch strategy.** A plan cuts `integration/<plan_name>` from `main`
-  in its first phase; phase branches (`<plan_name>-phase-NN`, zero-padded) branch from it and
-  merge back into it. `main` is untouched until the end.
-- **Autonomous phase-level git** (no confirmation): push the phase branch, `--no-ff` merge
-  into integration with an explicit `-m "merge: ..."` message, push integration, delete the
-  phase branch (remote + local).
-- **Permission-gated final merge** (always, even in auto mode): the single
-  integration-to-main merge + push of main, once per plan.
+- **Unified integration-branch strategy.** A plan cuts `integration/<plan_name>` from the
+  default branch in its first phase; phase branches (`<plan_name>-phase-NN`, zero-padded)
+  branch from it and merge back into it. The protected branch is never touched by Claude.
+- **Autonomous phase-level git** (no confirmation): push the phase branch, merge into
+  integration with git defaults and an explicit `-m "merge: ..."` message, push
+  integration, delete the phase branch (remote + local, `-d`). A phase branch with zero
+  commits skips push/merge/delete and reports "no tracked changes this phase".
+- **Plan-end PR, merged by YOU.** At the final phase Claude pushes the integration branch
+  and opens a pull request with `gh pr create` (autonomous; no AI attribution in the PR
+  title/body). You merge it in-session with a `!`-prefixed command -- the keystroke is the
+  approval and its output lands in the transcript:
 
-### The guardrail hook + approval marker
+  ```
+  ! gh pr merge <n> --merge
+  ```
 
-`.claude/hooks/git_guardrails.py` (PreToolUse on Bash) deterministically blocks
-`git push --force`, `git reset --hard`, `git branch -D`, `git clean -f`, and any `git merge`
-on `main` or push targeting `main` UNLESS the approval marker exists. Claude is mechanically
-unable to create the marker (settings.json deny rules + a hook backstop on the approvals
-path).
+  Merge defaults come from the `merge_style` / `retain_integration_branch` preference keys
+  (merge-commit; integration branch kept -- deletion is per-plan opt-in). Post-PR review
+  fixes are committed directly on the integration branch and pushed; the open PR tracks
+  them.
 
-To approve the final merge, YOU create the marker in-session with a `!`-prefixed command
-(replace `<plan_name>`):
+### The guardrail hook
 
-```
-! touch .claude/approvals/<plan_name>_main_merge.json
-```
+`.claude/hooks/git_guardrails.py` (PreToolUse on Bash, stdlib python3) deterministically
+blocks: destructive ops (`git push --force`, `git reset --hard`, `git branch -D`,
+`git clean -f`); every Claude-initiated path to the protected branch (`git merge` on it,
+any push targeting it, `gh pr merge` -- PR merges are yours alone); and, fail-closed, any
+harness-repo push whose remote does not match the `harness_push_remote` allowlist key
+(key absent = all harness pushes blocked). Repo context is attributed correctly for
+`git -C` and `cd`-form commands.
 
-The session then issues the merge and push as ONE compound command (the marker is consumed
-by the merge, so they must not be split):
+### Identity and auth
 
-```
-git merge --no-ff integration/<plan_name> -m "merge: ..." && git push origin main
-```
-
-The hook deletes the marker after the allowed merge (one-shot, per plan). Do NOT inspect the
-approvals directory via Bash -- the hook denies any Bash command referencing it.
-
-### PAT isolation
-
-Pushes authenticate via the repo-local credential helper
-`.claude/harness/scripts/git_credential_env.sh` (registered once by
-`setup_credential_helper.sh`), which reads `GIT_PAT` from `.env` at push time. The token
-never enters a command line, tool output, or transcript. No session reads `.env` (deny rules
-block it); `GIT_PAT` must already be saved there.
+All GitHub auth goes through the gh CLI (`gh auth login`) -- no tokens in `.env`, no
+credential-helper scripts. Multi-account setups pin each repo's identity with repo-local
+git config (an inline credential helper that queries `gh auth token --user <pinned-user>`,
+plus `credential.username`) so pushes never depend on gh's active-account state; see
+git_strategy.md's "Identity and auth" section. `.env` read-deny rules remain in
+settings.json.
 
 ## Phase-closing enforcement (Stop hook)
 

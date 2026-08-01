@@ -68,55 +68,28 @@ Read `.claude/harness/procedures/git_strategy.md` and
 `.claude/preferences/git_parameters.md`, then resolve:
 
 - `is_first_phase` = (phase_number == 1); `is_final_phase` = (phase_number == total).
-- **Local-only phase** (the plan's git-strategy section declares deliverables
-  gitignored/local-only): the resolved git block is "nothing to commit; work stays on
-  <branch>" -- EXCEPT any single tracked edit the plan explicitly mandates; if one
-  exists, name it and its commit message in the resolved block. Local-only also
-  SUPPRESSES the `is_first_phase` integration-branch and phase-branch creation: even
-  when `is_first_phase` is true, no `integration/<plan_name>` is cut from main and no
-  `<plan_name>-phase-<NN>` branch is created -- work stays directly on the current
-  branch (per git_strategy.md's Local-only plans section). State this explicitly in
-  the resolved block so the generated prompt does not inherit the committing-phase
-  first-phase setup steps.
-- **Committing phase**: resolve concrete names from the git_parameters patterns --
-  integration branch `integration/<plan_name>`, phase branch `<plan_name>-phase-<NN>` --
-  plus the commit message (`feat: <plan_name> phase <N> -- <brief>`) and merge message
+- Resolve concrete names from the git_parameters patterns -- integration branch
+  `integration/<plan_name>`, phase branch `<plan_name>-phase-<NN>` -- plus the commit
+  message (`feat: <plan_name> phase <N> -- <brief>`) and merge message
   (`merge: <plan_name> phase <N> -- <brief>`). If the plan's git-strategy section
-  explicitly names DIFFERENT branches, the plan wins on branch NAMES; BEHAVIOR always
-  follows git_strategy.md (autonomous phase-level close; permission-gated
-  integration-to-main) -- a plan predating the unified strategy does not reintroduce
-  standby/manual-merge handovers.
-- **If `is_final_phase`**: additionally resolve the permission-gated compound command,
-  verbatim, because the approval marker is consumed by the MERGE (not a push), so the
-  merge and the main push must be issued as ONE compound Bash command
-  (git_strategy.md, Enforcement):
-  `git merge --no-ff <integration-branch> -m "merge: ..." && git push origin main`
-  If the plan is local-only, this compound-merge resolution does NOT apply -- there is
-  no integration branch and nothing tracked to merge -- so the resolved final-phase
-  block must say so explicitly rather than emitting the compound command.
-- **If `is_final_phase` (and NOT local-only)**: also resolve, verbatim for emission, a
-  USER-run marker-creation command that the generated prompt MUST surface at the moment
-  permission is requested. Claude is write-denied on `.claude/approvals/` (settings.json
-  deny rules + hook backstop on any Bash command referencing that directory), so it
-  cannot create the marker itself -- the USER runs the block below from repo root,
-  typically as a `!`-prefixed line in the implementation session. Substitute the actual
-  plan slug for `<plan_name>` at prompt-generation time; the `${PLAN}` shell-variable
-  references INSIDE the heredoc must stay literal so the user pastes the snippet
-  unchanged and their own shell expands them:
-
-      PLAN=<plan_name>; mkdir -p .claude/approvals && cat > .claude/approvals/${PLAN}_main_merge.json <<EOF
-      {
-        "plan": "${PLAN}",
-        "approves": "integration/${PLAN} -> main merge + push",
-        "granted_by": "Shadman"
-      }
-      EOF
-
-  The generated prompt MUST also state, alongside this block, that (a) the user (not
-  Claude) runs it; (b) the guardrail hook validates only the marker's EXISTENCE at the
-  exact path -- its JSON contents are not checked, so the body is self-documentation
-  only; (c) the marker is one-shot, deleted by the hook when the allowed merge fires.
-  Local-only plans skip this block along with the compound-merge command.
+  explicitly names DIFFERENT branches or a different repo (e.g. a harness plan whose
+  branches live in the nested repo at `.claude/`), the plan wins on branch NAMES and
+  repo location; BEHAVIOR always follows git_strategy.md (autonomous phase-level
+  close with git-default merges and explicit messages; plan-end PR merged by the
+  USER) -- a plan predating the PR law does not reintroduce standby/manual-merge
+  handovers or any Claude-run path to the protected branch.
+- State the zero-commit rule in the resolved block: a phase branch that ends with
+  zero commits skips push/merge/delete and reports "no tracked changes this phase"
+  (git_strategy.md).
+- **If `is_final_phase`**: resolve the plan-end PR flow for emission -- after the
+  last integration merge, push the integration branch and open the PR autonomously
+  with `gh pr create` (title/body per git_strategy.md's PR convention: plan
+  one-liner, bulleted phase list from the merge commits, pointer note; no AI
+  attribution). Then the USER merges with a `!`-prefixed `gh pr merge <n> --merge`
+  per the `merge_style` / `retain_integration_branch` preference keys -- the
+  keystroke is the approval and its output lands in the transcript. Claude never
+  runs `gh pr merge` (the guardrail hook flat-blocks it). Emit the user-run merge
+  command verbatim in template section 9.
 
 ## Step 4 -- Accumulated learnings (Explore-delegated)
 
@@ -407,31 +380,23 @@ Tests-as-deliverables policy: per @.claude/preferences/verification.md.
 
 - plan_name: [plan_name] -- phase [NN] of [total]
 - is_first_phase: [bool] -- is_final_phase: [bool]
-- [Committing phase:] integration branch: [name]; phase branch: [name]; commit message:
-  "[...]"; merge message: "[...]"
-- [Local-only phase:] local-only on [branch] -- nothing to commit[, except the single
-  plan-mandated tracked edit: [name it + its commit message]]. Even if is_first_phase
-  is true, no integration branch and no phase branch are created for this plan --
-  work stays directly on [branch] (per @.claude/harness/procedures/git_strategy.md's
-  Local-only plans section).
-- [Final phase only:] permission-gated close, ONE compound command:
-  git merge --no-ff [integration-branch] -m "merge: ..." && git push origin main
-- [Final phase only, non-local-only:] to grant permission for that compound command,
-  the USER runs this from repo root (Claude is write-denied on .claude/approvals/ and
-  cannot create the marker itself; run it as a `!`-prefixed line in this session):
+- integration branch: [name]; phase branch: [name]; commit message: "[...]"; merge
+  message: "[...]" (merge with git defaults + explicit -m; delete the phase branch
+  with -d, never -D)
+- Zero-commit rule: if the phase branch ends with zero commits, skip
+  push/merge/delete and report "no tracked changes this phase" plainly.
+- [Final phase only:] plan-end PR flow: push [integration-branch], then open the PR
+  autonomously with `gh pr create` (title/body per
+  @.claude/harness/procedures/git_strategy.md's PR convention -- no AI attribution).
+  The USER merges it with a `!`-prefixed command in this session:
 
-      PLAN=[plan_name]; mkdir -p .claude/approvals && cat > .claude/approvals/${PLAN}_main_merge.json <<EOF
-      {
-        "plan": "${PLAN}",
-        "approves": "integration/${PLAN} -> main merge + push",
-        "granted_by": "Shadman"
-      }
-      EOF
+      ! gh pr merge <n> --merge
 
-  The guardrail hook checks only that the marker EXISTS at the exact path -- the JSON
-  body is not validated (it is self-documentation). The marker is one-shot: the hook
-  deletes it when the allowed compound merge fires, so re-approval requires re-running
-  the block.
+  (per the merge_style / retain_integration_branch preference keys: merge-commit
+  style; the integration branch is retained). Claude never runs `gh pr merge` --
+  the guardrail hook flat-blocks it; the user's keystroke IS the approval, and if
+  it is withheld the plan closes with the integration branch and open PR as the
+  durable artifacts.
 - Learnings path: docs/learnings/<DDMMYY>/[plan_name]_phase_[NN]_learnings.md, where
   <DDMMYY> is resolved AT EXECUTION TIME -- see section 11.
 - Verification case: [letter -- title]
