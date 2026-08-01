@@ -1,0 +1,504 @@
+---
+description: Compile a reference-based phase implementation prompt (~200 lines) from a plan's PRD, phase section, accumulated learnings, and the harness procedure files.
+argument-hint: <plan_name> <phase_number> (e.g. /write_prompt nd7-feature 3)
+---
+
+Compile a reference-based implementation prompt for one phase of a multi-phase plan.
+
+This command is a PHASE COMPILER. The generated prompt inlines ONLY phase-specific
+content -- objective, deliverables, Definition of Done, `### Behavioral Tests` copied
+verbatim, filtered learnings, and a resolved-parameters block -- and @-references all
+stable law from `.claude/harness/procedures/`. It never restates procedure text:
+improvements to a procedure land once and every previously- or newly-generated prompt
+executes current law. Target: ~200 lines per generated prompt (learnings-heavy late
+phases may run longer; the non-learnings core stays near 200).
+
+Single-source files this command READS at the step that needs them (never restated):
+
+- `.claude/harness/templates/plan_schema.md` -- the plan/phase structure being compiled,
+  including the `### Behavioral Tests` block spec and gate conventions.
+- `.claude/harness/procedures/git_strategy.md` + `.claude/preferences/git_parameters.md`
+  -- branch model, the two booleans, autonomous vs permission-gated operations,
+  machine-parseable naming parameters.
+- `.claude/harness/procedures/verification_cases.md` + `.claude/preferences/verification.md`
+  -- the five human-verification CASE patterns and their project parameters.
+- `.claude/harness/procedures/closing_sequence.md` -- referenced BY THE OUTPUT, not
+  restated in it.
+
+Portability fallbacks: if a `.claude/preferences/` file is absent, use the defaults
+stated inline in the corresponding procedure file (git_strategy.md defaults;
+verification_cases.md generic placeholders; monitoring.md generic protocol) and say so
+in the generated prompt.
+
+## Step 1 -- Parse inputs and resolve dates
+
+`$ARGUMENTS` contains two tokens in either order: a phase number (positive integer) and
+a plan name (kebab-case string). Identify them by type:
+
+- **phase_number**: whichever token is a positive integer. Zero-pad to two digits (`NN`).
+- **plan_name**: whichever token is not a positive integer.
+- **today_ddmmyy**: run `date +%d%m%y` (Bash tool) -- do NOT compute the date from memory.
+
+Output path: `docs/prompts/<today_ddmmyy>/<plan_name>_phase_<NN>_implementation_prompt.md`
+
+If either token is missing or no token is a positive integer, stop and say:
+"Usage: /write_prompt <plan_name> <phase_number>"
+
+`today_ddmmyy` dates only the prompt's own output directory. The LEARNINGS path inside
+the generated prompt is resolved at EXECUTION time by the implementation session running
+`date +%d%m%y` itself (see the template's closing section) -- never substitute the
+generation date into it. There is no date-token hand-editing anywhere in this system.
+
+## Step 2 -- Read the schema, PRD, and plan
+
+Read `.claude/harness/templates/plan_schema.md` -- it defines the phase structure you
+are compiling (Objective / Behavioral Tests / Deliverables / Handoff Artifact /
+Definition of Done / Verification, plus gate conventions).
+
+Read `docs/prds/<plan_name>_prd.md` in full.
+Read `docs/multi_phase_plans/<plan_name>_plan.md` in full. Extract the complete section
+for the requested phase (starts at `## Phase N --`, ends before the next `## Phase`
+heading or end of file). Count the total number of phases. Note whether the phase
+carries a `### Behavioral Tests` block or gate language, and read the plan's own
+"Git strategy for THIS plan" section.
+
+## Step 3 -- Resolve the git parameters (the two booleans)
+
+Read `.claude/harness/procedures/git_strategy.md` and
+`.claude/preferences/git_parameters.md`, then resolve:
+
+- `is_first_phase` = (phase_number == 1); `is_final_phase` = (phase_number == total).
+- **Local-only phase** (the plan's git-strategy section declares deliverables
+  gitignored/local-only): the resolved git block is "nothing to commit; work stays on
+  <branch>" -- EXCEPT any single tracked edit the plan explicitly mandates; if one
+  exists, name it and its commit message in the resolved block. Local-only also
+  SUPPRESSES the `is_first_phase` integration-branch and phase-branch creation: even
+  when `is_first_phase` is true, no `integration/<plan_name>` is cut from main and no
+  `<plan_name>-phase-<NN>` branch is created -- work stays directly on the current
+  branch (per git_strategy.md's Local-only plans section). State this explicitly in
+  the resolved block so the generated prompt does not inherit the committing-phase
+  first-phase setup steps.
+- **Committing phase**: resolve concrete names from the git_parameters patterns --
+  integration branch `integration/<plan_name>`, phase branch `<plan_name>-phase-<NN>` --
+  plus the commit message (`feat: <plan_name> phase <N> -- <brief>`) and merge message
+  (`merge: <plan_name> phase <N> -- <brief>`). If the plan's git-strategy section
+  explicitly names DIFFERENT branches, the plan wins on branch NAMES; BEHAVIOR always
+  follows git_strategy.md (autonomous phase-level close; permission-gated
+  integration-to-main) -- a plan predating the unified strategy does not reintroduce
+  standby/manual-merge handovers.
+- **If `is_final_phase`**: additionally resolve the permission-gated compound command,
+  verbatim, because the approval marker is consumed by the MERGE (not a push), so the
+  merge and the main push must be issued as ONE compound Bash command
+  (git_strategy.md, Enforcement):
+  `git merge --no-ff <integration-branch> -m "merge: ..." && git push origin main`
+  If the plan is local-only, this compound-merge resolution does NOT apply -- there is
+  no integration branch and nothing tracked to merge -- so the resolved final-phase
+  block must say so explicitly rather than emitting the compound command.
+- **If `is_final_phase` (and NOT local-only)**: also resolve, verbatim for emission, a
+  USER-run marker-creation command that the generated prompt MUST surface at the moment
+  permission is requested. Claude is write-denied on `.claude/approvals/` (settings.json
+  deny rules + hook backstop on any Bash command referencing that directory), so it
+  cannot create the marker itself -- the USER runs the block below from repo root,
+  typically as a `!`-prefixed line in the implementation session. Substitute the actual
+  plan slug for `<plan_name>` at prompt-generation time; the `${PLAN}` shell-variable
+  references INSIDE the heredoc must stay literal so the user pastes the snippet
+  unchanged and their own shell expands them:
+
+      PLAN=<plan_name>; mkdir -p .claude/approvals && cat > .claude/approvals/${PLAN}_main_merge.json <<EOF
+      {
+        "plan": "${PLAN}",
+        "approves": "integration/${PLAN} -> main merge + push",
+        "granted_by": "Shadman"
+      }
+      EOF
+
+  The generated prompt MUST also state, alongside this block, that (a) the user (not
+  Claude) runs it; (b) the guardrail hook validates only the marker's EXISTENCE at the
+  exact path -- its JSON contents are not checked, so the body is self-documentation
+  only; (c) the marker is one-shot, deleted by the hook when the allowed merge fires.
+  Local-only plans skip this block along with the compound-merge command.
+
+## Step 4 -- Accumulated learnings (Explore-delegated)
+
+**Phase 1 short-circuit:** if phase_number == 1, set the learnings section to
+"No prior learnings for this plan yet." and skip this step (do not spawn Explore).
+
+**Otherwise**, enumerate the learnings files:
+```bash
+find docs/learnings -name "<plan_name>_phase_*.md" 2>/dev/null | sort
+```
+Keep only files whose phase number is strictly BELOW the requested phase (a
+regeneration for a historical phase must not sweep later phases' learnings).
+
+**No-files branch:** if nothing matches, set the learnings section to "No prior
+learnings for this plan yet." and continue (no Explore spawn).
+
+**Default path -- delegate extraction + filtering to one
+`Agent(subagent_type="Explore")` call.** Do NOT run the awk extraction inline in the
+main loop on this path -- the point of delegating is keeping raw Carry Forward content
+out of this session's context. Pass the agent the file list, the phase's Objective and
+Deliverables (from Step 2), and this prompt template verbatim (only the four bracketed
+substitutions change):
+
+```
+Extract the "## Carry Forward" section from each of these learnings files, using
+this exact awk command (deterministic, no interpretation):
+
+  awk '/^## Carry Forward/{flag=1; next} /^## /{flag=0} flag' "<file>"
+
+Do NOT read the files inline. Do NOT extract "## Phase-Specific Only"
+content -- that must stay out of any implementation prompt.
+
+Files (in phase order):
+<bulleted file list>
+
+Then filter the extracted bullets against the current phase context below.
+Return ONLY the bullets that are genuinely relevant to the current phase's work.
+
+Current phase Objective:
+<Objective text>
+
+Current phase Deliverables:
+<Deliverables text>
+
+Filtering guidance:
+- Bias toward INCLUDING a bullet when uncertain. A spurious bullet in a future
+  prompt is less harmful than missing a load-bearing constraint. Only drop
+  bullets whose subject matter clearly cannot affect the current phase's work.
+- Preserve the original bullet wording verbatim -- do not paraphrase, shorten,
+  or restructure. Filtering is inclusion/exclusion only.
+- Preserve the source phase attribution. Group returned bullets by phase
+  number, exactly as the raw extraction produces them.
+- If a bullet is a definitive plan-wide finding (e.g. a field rejected in N/N
+  phases tried), include it regardless of the current phase's immediate scope.
+
+Return format: markdown with "### From Phase N" headers followed by the
+surviving bullets in original order. Do NOT add commentary, summaries, or
+headings other than the "### From Phase N" groupers.
+```
+
+Inject the Explore return verbatim as the learnings section -- do not summarize,
+re-order, or reformat it.
+
+**Fallback (degraded mode):** if the Explore call fails, returns empty, or Explore is
+unavailable, run the awk extraction inline per file, add the `### From Phase N` headers
+yourself, and inject the raw bullets unfiltered. If no file yields a `## Carry Forward`
+section, write "No prior learnings for this plan yet." Never read or inject
+`## Phase-Specific Only` content under any path.
+
+**Contradiction check (both paths).** After the learnings section is populated (Explore
+or fallback), scan the surviving bullets against the PRD and the current phase's plan
+content read in Step 2. If any learning clearly contradicts the PRD/plan phase content
+-- a resolved parameter, a deliverable's shape, an assumption the plan bakes in, an
+approach the plan mandates -- STOP and surface the contradiction to the user per the
+project ambiguity protocol (see @CLAUDE.md "Ambiguity protocol (STOP-and-ask)") BEFORE
+writing the prompt file in Step 7. Do NOT silently reconcile, paraphrase away, or drop
+the learning to make it fit. Resolution precedence to recommend: LEARNINGS SUPERSEDE
+the PRD/plan by default, because learnings are captured during actual execution of
+prior phases whereas the PRD/plan are written before any execution and can go stale.
+Present each contradiction with the learnings-favoring recommendation plus the
+alternatives (keep the PRD/plan claim, amend the PRD/plan, or revise the phase scope),
+and gate on the user's explicit decision before proceeding to Step 5. The user makes
+the final call.
+
+## Step 5 -- Codebase snapshot (scoped, live-derived)
+
+CLAUDE.md's skeletal directory map is ORIENTATION ONLY -- there is no authoritative
+per-file map anywhere to copy from. Derive per-file detail live:
+
+1. From the phase's Deliverables and Verification sections, list the directories this
+   phase will touch. Special case -- research/Explore-driven phases: if the phase's real
+   working set is a set of read-only SOURCE files consumed by dispatched Explore agents
+   (plus an OUTPUT directory the phase writes into) rather than files being edited in
+   place, the meaningful working set is (a) the OUTPUT directory's current contents and
+   (b) the per-initiative/per-topic SOURCE files the Explore agents are scoped to. In
+   that case snapshot the output directory's contents (via the scoped find in item 2, or
+   the `ls` fallback in item 2 if it is out-of-repo) AND list the source files by path
+   -- do NOT full-read them (they are Explore-delegated) -- rather than listing only
+   directories being edited in place.
+2. Run a scoped find over ONLY those directories:
+```bash
+find <phase_dirs> -type f \
+  -not -path '*/__pycache__/*' \
+  -not -path '*/projects/*' \
+  -not -name '*.pyc' -not -name '*.pkl' -not -name '*.db' -not -name '*.log' \
+  | sort
+```
+   The find template and its exclusions apply to IN-REPO directories only. If the
+   phase's working set includes an out-of-repo directory (e.g. the persistent memory
+   directory at `~/.claude/projects/<project-slug>/memory/`), list its files
+   separately with a plain `ls` -- the `*/projects/*` exclusion would otherwise
+   silently drop that path from the snapshot.
+3. Write a one-line description per file. **Never describe a source file from memory**:
+   for any file whose content you are uncertain about, run
+   `grep -n "^def \|^class " <file>` (or read a targeted excerpt) first. Re-verify after
+   any branch switch -- do not rely on a pre-switch read.
+4. Note any large files to flag for Explore delegation in the generated prompt's
+   section 1. Cover BOTH classes: (a) large SOURCE files surfaced by the find in
+   item 2 -- schemas, generated JSON, long pipeline scripts; AND (b) large
+   DATA-INPUT files the phase CONSUMES (e.g. gitignored derived artifacts named
+   in the plan's Deliverables / Verification / reference table, even when they
+   live outside the item-2 find scope). For every data input identified, run
+   `wc -c -l <file>` and, if the byte or line count would not safely fit inline
+   (rule of thumb: > ~1 MB or > ~10k lines), emit an explicit
+   "Explore / programmatic-only -- never Read inline" flag naming that file in
+   the generated prompt's section 1, alongside the existing large-source flags.
+
+## Step 6 -- Select the verification case
+
+Read `.claude/harness/procedures/verification_cases.md` and
+`.claude/preferences/verification.md`. Select exactly ONE case (A-E) matching the phase,
+resolve its text with the project parameters, and note it for the template. Include the
+project's test-suite command in the Automated subsection ONLY if the phase touches
+production code covered by the tests-as-deliverables policy; always carry the
+phase-specific verification commands from the plan verbatim. If a plan verification
+command contains an angle-bracket placeholder (e.g. `<memory_dir>`), keep the command
+verbatim and state the resolved concrete value alongside it -- never silently rewrite
+the command.
+
+## Step 7 -- Write the prompt file
+
+Create `docs/prompts/<today_ddmmyy>/` if needed and write the output using the template
+below. Fill every [PLACEHOLDER]; emit no bracketed instruction text into the output.
+
+---
+
+## Output template
+
+```
+# Session Prompt: Phase [N] -- [Phase Name]
+
+**Project:** [one-line project descriptor drawn from CLAUDE.md -- never hardcoded here]
+**Plan:** [plan_name]
+**Phase:** [N] of [total]
+**Generated:** [YYYY-MM-DD]
+
+---
+
+## 1. Before You Start -- Read These in Full
+
+- @CLAUDE.md
+- @docs/prds/[plan_name]_prd.md
+- @docs/multi_phase_plans/[plan_name]_plan.md (focus on the Phase [N] section)
+[Reference-files block only if the phase has specific file dependencies: derive the list
+from the plan's reference table or the phase scope; one line each: - @path (purpose).
+A `branch:file` path is a git reference -- emit "Read via: git show \"branch:file\"",
+never an @path.]
+[Only if Step 5 flagged large files:]
+Use Explore sub-agent for: [file -- what to extract]. Do not read these inline.
+
+---
+
+## 2. Project Overview
+
+[2-3 sentences from the PRD: what the system is and what this plan changes. For the
+system's current architecture, defer to CLAUDE.md's project-state snapshot -- NEVER
+name a model architecture from template guidance or an older prompt; it goes stale.]
+
+---
+
+## 3. Current Codebase State
+
+[The Step 5 scoped list, one line per file.]
+
+For the rest of the repository, see CLAUDE.md's skeletal directory map; derive
+per-file detail on demand via Agent(subagent_type="Explore").
+
+---
+
+## 4. Phase Objective
+
+[Verbatim from the plan.]
+
+---
+
+## 5. Deliverables
+
+[Verbatim from the plan, including any Implementation Notes subsection.]
+
+[If the plan phase carries a `### Behavioral Tests` block: copy it here VERBATIM,
+including its write-first / run-RED / implement-to-green parenthetical. Then, for
+each named test in the block, cross-check its contract against (a) the accumulated
+learnings gathered in Step 4 and (b) where a test file already exists on disk, the
+Step 5 codebase snapshot. For every test whose contract has been superseded by a
+later user decision recorded in the learnings (or by shipped code + shipped tests
+that assert the opposite), emit an additive inline flag immediately beneath that
+test, naming: what the plan requires, what the accumulated learnings / shipped code
+actually established, and that the learnings / shipped behavior governs. Do NOT
+rewrite the plan's wording -- the VERBATIM copy stays; the flag is annotation only.
+Emit no flag for tests where nothing has been superseded. Omit the whole block
+entirely if the plan has none.]
+
+---
+
+## 6. Definition of Done
+
+[Verbatim from the plan.]
+
+---
+
+## 7. Verification
+
+### Automated -- run these and confirm all pass:
+
+[Test-suite command per Step 6, if warranted; then the plan's phase-specific
+verification commands, verbatim.]
+
+Tests-as-deliverables policy: per @.claude/preferences/verification.md.
+
+### Human ([selected case title])
+
+[The ONE resolved case text from Step 6.]
+
+---
+
+## 8. Constraints
+
+- Environment (venv invocation, ASCII-only source/log output, encoding="utf-8" on
+  open()): follow @.claude/preferences/environment.md.
+- Implement only what section 5 lists -- no scope creep from future phases. Precedence:
+  a section 5 deliverable always beats a generic constraint in this section.
+- [DEFAULT:] Do not modify CLAUDE.md, docs/prds/, or docs/multi_phase_plans/.
+  [OVERRIDE -- only if a section 5 deliverable names CLAUDE.md:] Do not modify
+  docs/prds/ or docs/multi_phase_plans/. CLAUDE.md IS modifiable this phase -- surgical
+  updates only, reflecting only what the Deliverables specify.
+- [If, during implementation, you find the live code diverges from any prior
+  specification document -- the PRD (`docs/prds/`), the multi-phase plan
+  (`docs/multi_phase_plans/`), CLAUDE.md, or a gitignored `context/` file:] Tiebreaker:
+  THE LIVE CODE WINS -- but ONLY for DESCRIPTIVE claims (what the system does, how a
+  module behaves, what a parameter resolved to, what an artifact contains). It NEVER
+  applies to PRESCRIPTIVE constraints: hard rules, security invariants, legal /
+  permitted-use boundaries, budget law, encoding rules, or the ambiguity protocol.
+  Code that violates one of those is a BUG to surface and fix, never evidence that
+  the constraint has changed -- only the user may relax one.
+  The tracked, reviewed code is what actually ships and what a
+  reviewer diffs against; a prior spec written before the code -- especially one this
+  phase is forbidden to edit, or a gitignored `context/` file with no CI and no reviewer
+  -- can silently go stale and must not override a claim verifiable in the code. RECORD
+  every such divergence explicitly, naming the document, the specific clause/line, and
+  the contradicting code path -- do not silently propagate the stale claim. Where the
+  diverging document is one this phase is FORBIDDEN to edit (docs/prds/,
+  docs/multi_phase_plans/ per the default rule above), the record MUST land in the
+  phase's durable trail -- the `context/` deliverable if the phase carries one,
+  otherwise the phase learnings' Carry Forward -- AND must be surfaced to the user in
+  the closing summary so they can authorise a follow-on reconciliation phase if they
+  want one. Divergences against a gitignored `context/` file additionally feed the
+  update-on-touch rule (@.claude/harness/templates/plan_schema.md) so a follow-on phase
+  can carry the corresponding `update context/<file>` deliverable.
+- [Only if the phase includes any script/training run expected to exceed ~45s:] Before
+  running ANY such command, read and follow @.claude/harness/procedures/monitoring.md
+  plus @.claude/preferences/monitoring.md. Never run long ops synchronously.
+- The phase is NOT complete until section 7 passes. If the environment cannot run a
+  check, state so explicitly rather than claiming success.
+- If task-tracking tools (TaskCreate/TaskUpdate) are available, use them to track
+  section 5 progress.
+- Context budget: when the session is well underway, ask the user to run /context once
+  (it is a user-typed CLI command -- a session cannot invoke it). If suggesting a
+  handoff: one line only (tokens used + remaining deliverables + "suggest handoff");
+  if accepted, write [output_path minus .md]_handoff.md with completed and remaining
+  deliverables, in-flight state, and a pointer back to this prompt. One handoff
+  suggestion per session.
+
+---
+
+## 9. Resolved Parameters
+
+(per @.claude/harness/procedures/git_strategy.md + @.claude/preferences/git_parameters.md)
+
+- plan_name: [plan_name] -- phase [NN] of [total]
+- is_first_phase: [bool] -- is_final_phase: [bool]
+- [Committing phase:] integration branch: [name]; phase branch: [name]; commit message:
+  "[...]"; merge message: "[...]"
+- [Local-only phase:] local-only on [branch] -- nothing to commit[, except the single
+  plan-mandated tracked edit: [name it + its commit message]]. Even if is_first_phase
+  is true, no integration branch and no phase branch are created for this plan --
+  work stays directly on [branch] (per @.claude/harness/procedures/git_strategy.md's
+  Local-only plans section).
+- [Final phase only:] permission-gated close, ONE compound command:
+  git merge --no-ff [integration-branch] -m "merge: ..." && git push origin main
+- [Final phase only, non-local-only:] to grant permission for that compound command,
+  the USER runs this from repo root (Claude is write-denied on .claude/approvals/ and
+  cannot create the marker itself; run it as a `!`-prefixed line in this session):
+
+      PLAN=[plan_name]; mkdir -p .claude/approvals && cat > .claude/approvals/${PLAN}_main_merge.json <<EOF
+      {
+        "plan": "${PLAN}",
+        "approves": "integration/${PLAN} -> main merge + push",
+        "granted_by": "Shadman"
+      }
+      EOF
+
+  The guardrail hook checks only that the marker EXISTS at the exact path -- the JSON
+  body is not validated (it is self-documentation). The marker is one-shot: the hook
+  deletes it when the allowed compound merge fires, so re-approval requires re-running
+  the block.
+- Learnings path: docs/learnings/<DDMMYY>/[plan_name]_phase_[NN]_learnings.md, where
+  <DDMMYY> is resolved AT EXECUTION TIME -- see section 11.
+- Verification case: [letter -- title]
+
+---
+
+## 10. Accumulated Learnings from Prior Phases
+
+[Step 4 output verbatim, or "No prior learnings for this plan yet."]
+
+---
+
+## 11. End of Phase -- Closing Sequence
+
+[If the plan phase carries gate language: quote the plan's gate block verbatim here,
+before the closing steps.]
+
+Once all deliverables are complete and section 7 has passed[, and the gate decision is
+confirmed], follow @.claude/harness/procedures/closing_sequence.md end to end
+(structural brief -> approval -> self-improver per
+@.claude/harness/procedures/self_improvement.md -> phase-closing marker + learnings
+file -> commit -> git close per @.claude/harness/procedures/git_strategy.md), using
+section 9's resolved values.
+
+Date rule: run `date +%d%m%y` ONCE at write time and use that single DDMMYY value in
+BOTH the marker's learnings_path and the learnings file path -- never hand-type a date.
+
+[Non-final phase:] Next phase: if asked, generate the next prompt with
+/write_prompt [plan_name] [N+1] (re-read the PRD and plan first -- the session may have
+been compacted).
+[Final phase:] This is the final phase of plan [plan_name] -- no next prompt. [If the
+phase touches production serving/training paths, add the project's end-to-end
+verification pointer per @.claude/preferences/verification.md.]
+```
+
+---
+
+## Step 8 -- Verify waypoints and confirm
+
+Extract every @-reference from the file you wrote and confirm each target exists:
+```bash
+grep -oE '@[A-Za-z0-9_./-]+' <output_file> | sed 's/^@//; s/[.,;:)]*$//' | sort -u
+```
+(The trailing `sed` strips sentence punctuation that the character class would
+otherwise capture -- an @-reference at the end of a sentence must not fail the check.)
+Check each path with `test -e`. This check is GENERIC by design: it must cover
+`.claude/harness/`, `.claude/preferences/`, `context/`, and ordinary repo paths alike
+-- never a directory-scoped grep that silently skips a class of targets. A missing
+target is a defect: fix the reference (or the missing file) before reporting done.
+
+Exemption: matches originating INSIDE section 10 (the verbatim-injected learnings) or
+inside an inline code span (backtick-wrapped) are prose/code artifacts, not
+template-emitted @-references -- for example the literal word "@-reference(s)" or a
+shell snippet like `sed 's/^@//'`. These do NOT count as defects and must be ignored.
+Verbatim learnings must NEVER be reworded to satisfy this check; Step 4 injects them
+verbatim by design. Only genuine @-reference paths emitted by the template sections
+(1-9, 11) count as defects when their target is missing.
+
+Then tell the user: the output path; phase N of total; learnings files found and
+whether Explore filtering ran; codebase files listed; any Explore-delegation flags;
+the resolved git parameters; and the line count.
+
+## Step 9 -- HITL self-improvement
+
+Review observations about THIS command (`.claude/commands/write_prompt.md`) collected
+while executing it -- template ambiguities, missing constraints, incorrect find
+patterns. Run the shared flow in `.claude/harness/procedures/self_improvement.md`
+(brief -> approve -> spawn -> surface -> one-level drift cascade); do not restate it.
+Project- or plan-specific notes belong in the implementation session's learnings file,
+not here.
