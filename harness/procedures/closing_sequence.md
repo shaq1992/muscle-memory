@@ -109,7 +109,7 @@ attribution anywhere, ever.
 
 ## Step 6: Autonomous git close
 
-(Full law: `git_strategy.md`; parameters from `preferences/git_parameters.md`.)
+(Full law: `git_strategy.md`; parameters from `.claude/preferences.md`.)
 
 **Zero-commit rule:** if the phase branch has zero commits, skip
 push/merge/delete entirely and report "no tracked changes this phase" plainly,

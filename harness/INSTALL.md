@@ -39,20 +39,20 @@ until the zip is extracted -- mode (b) is the intended offline hand-off.
    ```
    With no argument, SOURCE and TARGET resolve to the same path (your current project).
    The copy steps are a no-op -- the four portable trees are already present from the
-   zip -- and the generate steps do all the real work: preference files generated from the
-   portable templates under `harness/templates/preferences/`, a root `CLAUDE.md` from the
-   skeleton template, `docs/` + `context/` directories, `.gitignore` entries, and
-   `settings.json` wiring (guardrail + phase-closing hooks, deny rules). You never
-   hand-create a file: every preference file (and CLAUDE.md) arrives complete, and you
-   only edit placeholder values.
+   zip -- and the generate steps do all the real work: `.claude/preferences.md` generated
+   from the portable template `harness/templates/preferences_template.md`, a root
+   `CLAUDE.md` from the skeleton template, `docs/` + `context/` directories, `.gitignore`
+   entries, and `settings.json` wiring (guardrail + phase-closing hooks, deny rules). You
+   never hand-create a file: the preferences file (and CLAUDE.md) arrives complete, and
+   you only edit placeholder values.
 
 3. **Edit the placeholders.** The bootstrap pre-creates every file; you only fill values:
    - Fill the `[...]` placeholders in the generated root `CLAUDE.md`.
-   - Edit the placeholders in each pre-created `.claude/preferences/` file
-     (`git_parameters.md` already ships working defaults; the others carry `[fill in ...]`
-     markers for the project-specific values).
+   - Edit the placeholders in the pre-created `.claude/preferences.md` (the git keys
+     already ship working defaults; the bracketed values are the project-specific
+     placeholders to fill).
 
-4. **Next step.** Fill in `CLAUDE.md` and the `.claude/preferences/` files with this
+4. **Next step.** Fill in `CLAUDE.md` and `.claude/preferences.md` with this
    project's specifics, then run `/grilling_session` to start your first planning
    session. (This is the same next-step the bootstrap reports on completion.)
 
@@ -68,10 +68,11 @@ until the zip is extracted -- mode (b) is the intended offline hand-off.
 
 **OUT of the zip (and why):**
 
-- **`.claude/preferences/` (filled)** -- carries the source project's opinion (git
-  parameters, environment, verification, monitoring). Bootstrap regenerates these from the
-  portable templates under `harness/templates/preferences/` (which DO ship in the zip) so
-  the recipient gets complete, project-agnostic files to edit -- never the source's opinion.
+- **`.claude/preferences.md` (filled)** -- carries the source project's opinion (git
+  parameters, environment, verification, monitoring). Bootstrap regenerates it from the
+  portable template `harness/templates/preferences_template.md` (which DOES ship in the
+  zip) so the recipient gets a complete, project-agnostic file to edit -- never the
+  source's opinion.
 - **`.claude/settings.json`** -- contains project-absolute allow rules and interpreter
   paths that will not match another machine. Bootstrap generates it fresh.
 - **root `CLAUDE.md`** -- project-specific content, and it lives at the project root, not

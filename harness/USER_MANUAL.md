@@ -25,13 +25,14 @@ one context window.
     procedures/            -- git_strategy, closing_sequence, monitoring,
                               verification_cases, self_improvement (portable law)
     templates/             -- prd_schema, plan_schema, claude_md_skeleton,
-                              preferences/ (portable preference templates)
+                              preferences_template.md (portable preferences template)
     scripts/               -- make_portable_zip.sh
     tests/                 -- stdlib-unittest suite for the hooks
                               (python3 -m unittest discover .claude/harness/tests)
-  preferences/    -- PROJECT-SPECIFIC per-concern files + INDEX.md; user-edited, out of
-                     self-improver jurisdiction; commands state a fallback when a file is
-                     absent (this is what makes the system portable by design)
+  preferences.md  -- PROJECT-SPECIFIC single opinion surface (machine key block + short
+                     prose sections); user-edited, out of self-improver jurisdiction;
+                     consumers state a fallback when it is absent (this is what makes
+                     the system portable by design)
   settings.json   -- permissions (deny rules) + hook registration
 CLAUDE.md         -- per-turn protective skeleton (project root; generated from the skeleton
                      template, then filled by the user)
@@ -45,13 +46,13 @@ Everything above is gitignored -- AI-facing scaffolding never enters version con
 ## Portable vs. per-project (the porting boundary)
 
 - **Portable, copied verbatim:** `harness/`, `commands/`, `agents/`, `hooks/`.
-- **Per-project, generated fresh (never copied from a source project):** `preferences/`
-  (complete files generated from the portable templates under
-  `harness/templates/preferences/`), root `CLAUDE.md` (from `claude_md_skeleton.md`),
-  `context/`, `docs/`.
+- **Per-project, generated fresh (never copied from a source project):** `preferences.md`
+  (a complete file generated from the portable template
+  `harness/templates/preferences_template.md`), root `CLAUDE.md` (from
+  `claude_md_skeleton.md`), `context/`, `docs/`.
 
 A raw `cp -r .claude/ <new-project>` is NOT a supported port -- it drags the source
-project's filled preferences and project-specific CLAUDE.md into the new project.
+project's filled preferences.md and project-specific CLAUDE.md into the new project.
 `/bootstrap_to_custom_commands` is the ONLY supported porting (and upgrade) mechanism; it
 regenerates the per-project subset blank.
 
@@ -60,15 +61,15 @@ regenerates the per-project subset blank.
 `/bootstrap_to_custom_commands [target_dir]` is the single install-and-upgrade lifecycle
 command (there is no separate port command):
 
-- **Install** (fresh target): copies the portable subset, generates preference files from the
-  portable templates (`harness/templates/preferences/`), generates a root CLAUDE.md from the
-  skeleton template, creates docs/ + context/, and wires the guardrail + phase-closing
-  hooks and the .env deny rules.
+- **Install** (fresh target): copies the portable subset, generates `preferences.md` from
+  the portable template (`harness/templates/preferences_template.md`), generates a root
+  CLAUDE.md from the skeleton template, creates docs/ + context/, and wires the guardrail +
+  phase-closing hooks and the .env deny rules.
 - **Upgrade** (re-run on an existing project): refreshes the portable subset verbatim and
-  leaves every per-project file untouched -- existing preferences and an existing filled
-  CLAUDE.md are NEVER overwritten.
+  leaves every per-project file untouched -- an existing preferences.md and an existing
+  filled CLAUDE.md are NEVER overwritten.
 
-After an install: fill in `CLAUDE.md` and the `.claude/preferences/` files, then start a
+After an install: fill in `CLAUDE.md` and `.claude/preferences.md`, then start a
 `/grilling_session`.
 
 For an offline hand-off to a machine that cannot see this project, the portable subset can
@@ -145,7 +146,7 @@ introduced.)
 
 ## Git strategy (the PR law)
 
-Full law: `harness/procedures/git_strategy.md`; parameters: `preferences/git_parameters.md`.
+Full law: `harness/procedures/git_strategy.md`; parameters: `preferences.md`'s key block.
 
 - **Unified integration-branch strategy.** A plan cuts `integration/<plan_name>` from the
   default branch in its first phase; phase branches (`<plan_name>-phase-NN`, zero-padded)
@@ -215,14 +216,14 @@ meaning is guessable from its words.
   Commands reference them rather than restate them, so a fix lands once and every consumer
   executes current law.
 - **Portable by design.** `harness/`, `commands/`, `agents/`, `hooks/` are project-agnostic;
-  ALL project specifics live in `preferences/` (with stated fallbacks). Porting is bootstrap,
-  never a raw copy.
+  ALL project specifics live in `preferences.md` (with stated fallbacks). Porting is
+  bootstrap, never a raw copy.
 - **Slim per-turn surfaces.** CLAUDE.md is a ~120-150 line protective skeleton (repo-recovery
   test: a fact survives only if the repo cannot recover it); descriptive knowledge lives in
   local `context/`; mechanical detail is deleted and re-derived by Explore.
 - **Self-improving commands.** Structural fixes discovered during sessions route through the
   self-improver sub-agent (`harness/procedures/self_improvement.md`); its jurisdiction is
-  `commands/`, `agents/`, `harness/`, `hooks/` -- `preferences/` is out of jurisdiction.
+  `commands/`, `agents/`, `harness/`, `hooks/` -- `preferences.md` is out of jurisdiction.
 - **Everything AI-facing is gitignored.** `.claude/`, CLAUDE.md, docs/, context/, and
   `.claude_archive/` are all local-only. Only project code is committed.
 

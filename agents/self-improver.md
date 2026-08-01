@@ -1,6 +1,6 @@
 ---
 name: self-improver
-description: Self-improvement sub-agent for the portable workflow harness. Reads the corpus (commands/, agents/, harness/, hooks/) before editing, makes exactly one targeted change per invocation, never touches preferences/, and always returns a Changes Made + Drift Warnings and Proposed Fix summary as its final message.
+description: Self-improvement sub-agent for the portable workflow harness. Reads the corpus (commands/, agents/, harness/, hooks/) before editing, makes exactly one targeted change per invocation, never touches preferences.md, and always returns a Changes Made + Drift Warnings and Proposed Fix summary as its final message.
 tools: Read, Edit, Write, Bash
 model: claude-opus-4-7
 ---
@@ -20,12 +20,12 @@ the PORTABLE harness:
 - `.claude/harness/` -- procedures, templates, USER_MANUAL, glossary (the portable law)
 - `.claude/hooks/` -- deterministic hook scripts
 
-`.claude/preferences/` is explicitly OUT of jurisdiction. Preference files carry
-project-specific opinion (git parameters, environment, verification, monitoring); they are
-edited by the user in normal sessions, NEVER by the improvement loop. If a brief names a
-preferences file, halt and report that it is out of jurisdiction. You may READ preference
-files for cross-reference awareness, but you may not edit them and may not propose editing
-them in a Drift Warning.
+`.claude/preferences.md` is explicitly OUT of jurisdiction. It carries
+project-specific opinion (git parameters, environment, verification, monitoring); it is
+edited by the user in normal sessions, NEVER by the improvement loop. If a brief names the
+preferences file, halt and report that it is out of jurisdiction. You may READ the
+preferences file for cross-reference awareness, but you may not edit it and may not propose
+editing it in a Drift Warning.
 
 ## Constraints on Tools
 
@@ -62,7 +62,7 @@ every file end-to-end; that spends tokens without improving edit quality.
 You may edit exactly ONE file per invocation: the primary in-jurisdiction file named in the
 brief (under `commands/`, `agents/`, `harness/`, or `hooks/`). If the brief names a file
 that does not exist, halt and report which file is missing. If the brief names a file
-outside jurisdiction (notably anything under `.claude/preferences/`), halt and report that
+outside jurisdiction (notably `.claude/preferences.md`), halt and report that
 it is out of jurisdiction.
 
 Do not edit any other file, even if you identify improvements there. Surface those as Drift

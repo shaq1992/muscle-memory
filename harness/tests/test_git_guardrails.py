@@ -1,7 +1,9 @@
 """Behavioral tests for the Phase 2 guardrail-hook contract (PR git law).
 
 Contract classes 1-8 below are the ten ratified test cases from the phase
-prompt. Classes 9-11 are EXPLICITLY FLAGGED EXTRAS beyond the contract:
+prompt. Classes 12-13 are the Phase 3 contract cases (parameters read from
+the consolidated .claude/preferences.md; inline-default fallback when it is
+absent). Classes 9-11 are EXPLICITLY FLAGGED EXTRAS beyond the contract:
   9  - allow-path regression guard (normal phase/PR-law operations must pass;
        protects against a fail-closed rewrite that bricks every git call)
   10 - non-git passthrough guard (quoted git-looking strings, plain commands)
@@ -12,18 +14,24 @@ Stdlib-only. Run with: python3 -m unittest discover .claude/harness/tests
 """
 
 import json
+import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from helpers import (
+    BASE_PARAMS,
     CLOSING_HOOK,
+    GUARDRAIL_HOOK,
     MATCHING_REMOTE_PATTERN,
     MISMATCHING_REMOTE_PATTERN,
     PLAN_NAME,
     PROJECT_ROOT,
     SETTINGS_JSON,
     GuardrailEnv,
+    decision_and_reason,
     git,
+    run_hook,
 )
 
 
@@ -295,3 +303,68 @@ class TestClosingHookRegressionFlaggedExtra(GuardrailEnv):
         deny = json.dumps(settings.get("permissions", {}).get("deny", []))
         self.assertIn(".env", deny, ".env read-denies must remain")
         self.assertNotIn("approvals", deny, "approvals deny rules are retired")
+
+
+# ---------------------------------------------------------------------------
+# 12. Phase 3 contract: parameters resolved from the single preferences.md
+# ---------------------------------------------------------------------------
+class TestParamsReadFromPreferencesMd(GuardrailEnv):
+    def test_params_read_from_preferences_md(self):
+        # protected_branch comes from the key block, not the inline default:
+        # with a custom value, 'main' is no longer protected and the custom
+        # branch is. (The block also carries the branch-pattern keys --
+        # integration_branch_prefix, phase_branch_pattern,
+        # phase_number_padding -- proving the single-file block parses; the
+        # hook takes no branch-name-pattern decision observable beyond this.)
+        self.params_file.write_text(
+            BASE_PARAMS.replace(
+                "protected_branch: main", "protected_branch: trunk"
+            ),
+            encoding="utf-8",
+        )
+        self.assert_denied(
+            "git push origin trunk", reason_contains="trunk"
+        )
+        self.assert_allowed("git push origin feature-x:main")
+
+        # harness_push_remote comes from the same file's key block.
+        self.set_harness_push_remote(MATCHING_REMOTE_PATTERN)
+        self.assert_allowed("git -C .claude push origin feature-x")
+        self.set_harness_push_remote(MISMATCHING_REMOTE_PATTERN)
+        self.assert_denied(
+            "git -C .claude push origin feature-x",
+            reason_contains="harness_push_remote",
+        )
+
+
+# ---------------------------------------------------------------------------
+# 13. Phase 3 contract: absent preferences.md -> inline defaults still work
+# ---------------------------------------------------------------------------
+class TestMissingPreferencesFileFallsBack(GuardrailEnv):
+    def test_missing_preferences_file_falls_back_to_defaults(self):
+        self.params_file.unlink()
+
+        # Run a COPY of the hook from inside the temp tree so its
+        # hook-relative fallback candidate cannot find the real project's
+        # preferences.md -- only the inline defaults remain.
+        hook_home = self.repo.parent / "hookhome"
+        hook_dir = hook_home / ".claude" / "hooks"
+        hook_dir.mkdir(parents=True)
+        hook_copy = hook_dir / "git_guardrails.py"
+        shutil.copyfile(str(GUARDRAIL_HOOK), str(hook_copy))
+
+        def verdict(command):
+            return decision_and_reason(
+                run_hook(command, self.repo, hook_path=hook_copy)
+            )
+
+        # Default protected_branch ('main') still enforced.
+        v, reason = verdict("git push origin main")
+        self.assertEqual("deny", v, "default protected branch must hold")
+        # Ordinary project pushes still pass (hook functions, no crash).
+        v, _ = verdict("git push origin feature-x")
+        self.assertEqual("allow", v)
+        # Harness pushes stay fail-closed: no file means no allowlist key.
+        v, reason = verdict("git -C .claude push origin feature-x")
+        self.assertEqual("deny", v)
+        self.assertIn("harness_push_remote", reason)

@@ -29,7 +29,7 @@ Deny  = PreToolUse JSON decision on stdout, exit 0.
 Fail-open on malformed payloads and on parameter-read errors; fail-CLOSED
 only for the harness push-remote guard (by design).
 
-Parameters come from .claude/preferences/git_parameters.md ("key: value"
+Parameters come from the key block of .claude/preferences.md ("key: value"
 lines, one per line, no prose on the line); inline defaults apply when the
 file is absent, which keeps the hook portable.
 """
@@ -105,8 +105,8 @@ def _find_project_dir(cwd):
 def _load_params(project_dir):
     params = dict(DEFAULT_PARAMS)
     candidates = [
-        os.path.join(project_dir, ".claude", "preferences", "git_parameters.md"),
-        os.path.join(HOOK_PROJECT_DIR, ".claude", "preferences", "git_parameters.md"),
+        os.path.join(project_dir, ".claude", "preferences.md"),
+        os.path.join(HOOK_PROJECT_DIR, ".claude", "preferences.md"),
     ]
     for path in candidates:
         if not os.path.isfile(path):
@@ -442,7 +442,7 @@ def main():
                     _deny(
                         "Harness-repo pushes are fail-closed: no "
                         "'{0}' key found in "
-                        ".claude/preferences/git_parameters.md. ALL pushes "
+                        ".claude/preferences.md. ALL pushes "
                         "from the harness repo at .claude/ are blocked until "
                         "the user adds the key naming the allowed remote "
                         "pattern.".format(PUSH_REMOTE_KEY)

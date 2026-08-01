@@ -3,14 +3,14 @@
 The five human-verification patterns for phase implementation prompts. The
 prompt writer selects exactly ONE case per phase and emits its resolved text.
 Project specifics (server entry point, tool names, smoke-test commands, browser
-fallbacks) come from `.claude/preferences/verification.md`; if that file is
-absent, fall back to the generic placeholders and the plan's own verification
-text.
+fallbacks) come from the `## Verification` section of `.claude/preferences.md`;
+if that file is absent, fall back to the generic placeholders and the plan's
+own verification text.
 
 ## CASE A -- Phase modifies live server/tool behaviour
 
-(For this project: live server/service/tool paths -- see preferences/verification.md
-for the server entry point and tool list.) Title: "Human (live tool spot-check)".
+(For this project: live server/service/tool paths -- see preferences.md's
+Verification section for the server entry point and tool list.) Title: "Human (live tool spot-check)".
 
 After tests pass, start the server per the project's dev command and call the
 tools implemented in this phase with parameters relevant to the changes.
@@ -19,7 +19,7 @@ Confirm the response is correct before declaring the phase complete.
 If no browser/interactive inspector is available in the session, call the
 registered tool functions directly in-process instead (import the server module
 and invoke the tool function as a plain function, where the framework permits --
-see preferences/verification.md for whether this holds). This exercises the
+see preferences.md's Verification section for whether this holds). This exercises the
 same code path the inspector would and is an acceptable substitute for the
 interactive check, not a reason to skip verification. Prefer the interactive
 inspector when a browser is available.
@@ -30,7 +30,7 @@ Title: "Human (<script-name> smoke-test)". Describe the exact command and what
 output confirms success. State what constitutes a valid "no crash" result if
 live data (model files, upstream API connection) may be unavailable. If the
 smoke-test requires opening a browser or interactive UI, include the project's
-open command (see preferences/verification.md) and append: "If you cannot open
+open command (see preferences.md's Verification section) and append: "If you cannot open
 a browser (headless environment), state so explicitly rather than claiming
 success."
 

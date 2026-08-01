@@ -1,7 +1,7 @@
 # Procedure: Unified Git Strategy (PR law)
 
 Portable law for all multi-phase plans. Project-specific parameters are read
-from `.claude/preferences/git_parameters.md`; if that file is absent, the
+from the key block of `.claude/preferences.md`; if that file is absent, the
 defaults stated inline below apply.
 
 The core invariant: Claude has NO path to the protected branch. Every plan
@@ -110,7 +110,7 @@ Unchanged, permanent rule.
 
 `.claude/hooks/git_guardrails.py`, a PreToolUse hook on Bash registered in
 `.claude/settings.json` (stdlib python3). Deterministic pattern matching,
-never model judgement. Parameters from `preferences/git_parameters.md`.
+never model judgement. Parameters from `.claude/preferences.md`'s key block.
 
 - **Destructive ops, always blocked:** `git push --force` / `-f` (any
   `--force*` variant), `git reset --hard`, `git branch -D`, `git clean -f`.

@@ -17,15 +17,16 @@ Single-source files this command READS at the step that needs them (never restat
 
 - `.claude/harness/templates/plan_schema.md` -- the plan/phase structure being compiled,
   including the `### Behavioral Tests` block spec and gate conventions.
-- `.claude/harness/procedures/git_strategy.md` + `.claude/preferences/git_parameters.md`
-  -- branch model, the two booleans, autonomous vs permission-gated operations,
-  machine-parseable naming parameters.
-- `.claude/harness/procedures/verification_cases.md` + `.claude/preferences/verification.md`
-  -- the five human-verification CASE patterns and their project parameters.
+- `.claude/harness/procedures/git_strategy.md` + `.claude/preferences.md` (key
+  block) -- branch model, the two booleans, autonomous vs permission-gated
+  operations, machine-parseable naming parameters.
+- `.claude/harness/procedures/verification_cases.md` + `.claude/preferences.md`
+  (`## Verification` section) -- the five human-verification CASE patterns and
+  their project parameters.
 - `.claude/harness/procedures/closing_sequence.md` -- referenced BY THE OUTPUT, not
   restated in it.
 
-Portability fallbacks: if a `.claude/preferences/` file is absent, use the defaults
+Portability fallbacks: if `.claude/preferences.md` is absent, use the defaults
 stated inline in the corresponding procedure file (git_strategy.md defaults;
 verification_cases.md generic placeholders; monitoring.md generic protocol) and say so
 in the generated prompt.
@@ -64,11 +65,11 @@ carries a `### Behavioral Tests` block or gate language, and read the plan's own
 
 ## Step 3 -- Resolve the git parameters (the two booleans)
 
-Read `.claude/harness/procedures/git_strategy.md` and
-`.claude/preferences/git_parameters.md`, then resolve:
+Read `.claude/harness/procedures/git_strategy.md` and the key block of
+`.claude/preferences.md`, then resolve:
 
 - `is_first_phase` = (phase_number == 1); `is_final_phase` = (phase_number == total).
-- Resolve concrete names from the git_parameters patterns -- integration branch
+- Resolve concrete names from the key-block patterns -- integration branch
   `integration/<plan_name>`, phase branch `<plan_name>-phase-<NN>` -- plus the commit
   message (`feat: <plan_name> phase <N> -- <brief>`) and merge message
   (`merge: <plan_name> phase <N> -- <brief>`). If the plan's git-strategy section
@@ -219,8 +220,8 @@ find <phase_dirs> -type f \
 
 ## Step 6 -- Select the verification case
 
-Read `.claude/harness/procedures/verification_cases.md` and
-`.claude/preferences/verification.md`. Select exactly ONE case (A-E) matching the phase,
+Read `.claude/harness/procedures/verification_cases.md` and the `## Verification`
+section of `.claude/preferences.md`. Select exactly ONE case (A-E) matching the phase,
 resolve its text with the project parameters, and note it for the template. Include the
 project's test-suite command in the Automated subsection ONLY if the phase touches
 production code covered by the tests-as-deliverables policy; always carry the
@@ -317,7 +318,7 @@ entirely if the plan has none.]
 [Test-suite command per Step 6, if warranted; then the plan's phase-specific
 verification commands, verbatim.]
 
-Tests-as-deliverables policy: per @.claude/preferences/verification.md.
+Tests-as-deliverables policy: per @.claude/preferences.md (Verification section).
 
 ### Human ([selected case title])
 
@@ -327,8 +328,9 @@ Tests-as-deliverables policy: per @.claude/preferences/verification.md.
 
 ## 8. Constraints
 
-- Environment (venv invocation, ASCII-only source/log output, encoding="utf-8" on
-  open()): follow @.claude/preferences/environment.md.
+- Environment (interpreter invocation, encoding constraint, encoding="utf-8" on
+  open()): follow the `interpreter` / `encoding_constraint` keys of
+  @.claude/preferences.md.
 - Implement only what section 5 lists -- no scope creep from future phases. Precedence:
   a section 5 deliverable always beats a generic constraint in this section.
 - [DEFAULT:] Do not modify CLAUDE.md, docs/prds/, or docs/multi_phase_plans/.
@@ -360,7 +362,7 @@ Tests-as-deliverables policy: per @.claude/preferences/verification.md.
   can carry the corresponding `update context/<file>` deliverable.
 - [Only if the phase includes any script/training run expected to exceed ~45s:] Before
   running ANY such command, read and follow @.claude/harness/procedures/monitoring.md
-  plus @.claude/preferences/monitoring.md. Never run long ops synchronously.
+  plus @.claude/preferences.md (Monitoring section). Never run long ops synchronously.
 - The phase is NOT complete until section 7 passes. If the environment cannot run a
   check, state so explicitly rather than claiming success.
 - If task-tracking tools (TaskCreate/TaskUpdate) are available, use them to track
@@ -376,7 +378,7 @@ Tests-as-deliverables policy: per @.claude/preferences/verification.md.
 
 ## 9. Resolved Parameters
 
-(per @.claude/harness/procedures/git_strategy.md + @.claude/preferences/git_parameters.md)
+(per @.claude/harness/procedures/git_strategy.md + @.claude/preferences.md)
 
 - plan_name: [plan_name] -- phase [NN] of [total]
 - is_first_phase: [bool] -- is_final_phase: [bool]
@@ -429,7 +431,7 @@ BOTH the marker's learnings_path and the learnings file path -- never hand-type 
 been compacted).
 [Final phase:] This is the final phase of plan [plan_name] -- no next prompt. [If the
 phase touches production serving/training paths, add the project's end-to-end
-verification pointer per @.claude/preferences/verification.md.]
+verification pointer per @.claude/preferences.md (Verification section).]
 ```
 
 ---
@@ -443,7 +445,7 @@ grep -oE '@[A-Za-z0-9_./-]+' <output_file> | sed 's/^@//; s/[.,;:)]*$//' | sort 
 (The trailing `sed` strips sentence punctuation that the character class would
 otherwise capture -- an @-reference at the end of a sentence must not fail the check.)
 Check each path with `test -e`. This check is GENERIC by design: it must cover
-`.claude/harness/`, `.claude/preferences/`, `context/`, and ordinary repo paths alike
+`.claude/harness/`, `.claude/preferences.md`, `context/`, and ordinary repo paths alike
 -- never a directory-scoped grep that silently skips a class of targets. A missing
 target is a defect: fix the reference (or the missing file) before reporting done.
 

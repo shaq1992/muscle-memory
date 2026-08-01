@@ -8,7 +8,7 @@ Fixture layout built per test (in a throwaway temp dir):
 
     <tmp>/repo/                 -- fake PROJECT repo (branch main)
     <tmp>/repo/.claude/         -- nested fake HARNESS repo (branch main)
-    <tmp>/repo/.claude/preferences/git_parameters.md  -- fixture params
+    <tmp>/repo/.claude/preferences.md  -- fixture params (single key block)
     <tmp>/project_remote.git    -- bare remote, project repo's origin
     <tmp>/harness_remote.git    -- bare remote, harness repo's origin
 """
@@ -27,15 +27,22 @@ SETTINGS_JSON = PROJECT_ROOT / ".claude" / "settings.json"
 
 PLAN_NAME = "example-plan"
 
-# Fixture parameter file WITHOUT harness_push_remote; tests that need the key
-# call set_harness_push_remote() to append it.
-BASE_PARAMS = """# Preference: Git Parameters (test fixture)
+# Fixture preferences.md WITHOUT harness_push_remote; tests that need the key
+# call set_harness_push_remote() to append it. Mirrors the real file's layout:
+# one contiguous machine-parseable key block at the top.
+BASE_PARAMS = """# Preferences (test fixture)
 
+user_name: Test User
+default_branch: main
+protected_branch: main
 integration_branch_prefix: integration/
 phase_branch_pattern: <plan_name>-phase-<NN>
 phase_number_padding: 2
-default_branch: main
-protected_branch: main
+merge_style: merge-commit
+retain_integration_branch: true
+interpreter: python3
+test_command: python3 -m unittest
+encoding_constraint: ascii
 """
 
 # Glob pattern matching the fixture harness remote (a local bare-repo path).
@@ -55,15 +62,20 @@ def git(cwd, *args):
     )
 
 
-def run_hook(command, cwd):
-    """Feed a Bash PreToolUse payload to the guardrail hook; return the result."""
+def run_hook(command, cwd, hook_path=None):
+    """Feed a Bash PreToolUse payload to the guardrail hook; return the result.
+
+    hook_path overrides the hook file to execute (used to run a COPY of the
+    hook from inside the temp tree, so its hook-relative fallback candidate
+    cannot resolve to the real project's preferences file).
+    """
     payload = {
         "tool_name": "Bash",
         "tool_input": {"command": command},
         "cwd": str(cwd),
     }
     return subprocess.run(
-        [sys.executable, str(GUARDRAIL_HOOK)],
+        [sys.executable, str(hook_path or GUARDRAIL_HOOK)],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
@@ -129,10 +141,9 @@ class GuardrailEnv(unittest.TestCase):
         )
         git(self.harness, "remote", "add", "origin", str(self.harness_remote))
 
-        # Fixture parameters (no harness_push_remote by default).
-        self.prefs = self.harness / "preferences"
-        self.prefs.mkdir()
-        self.params_file = self.prefs / "git_parameters.md"
+        # Fixture parameters (no harness_push_remote by default): the single
+        # consolidated preferences.md at the harness-repo root.
+        self.params_file = self.harness / "preferences.md"
         self.params_file.write_text(BASE_PARAMS, encoding="utf-8")
 
     def set_harness_push_remote(self, pattern):

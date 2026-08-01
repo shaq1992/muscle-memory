@@ -1,9 +1,9 @@
 # Procedure: Smart Monitoring Protocol (generic)
 
 Generic protocol for long-running script execution. Project specifics (which
-commands are long-running, project grep patterns, log locations) live in
-`.claude/preferences/monitoring.md`; if that file is absent, apply this generic
-protocol with the default filters below.
+commands are long-running, project grep patterns, log locations) live in the
+`## Monitoring` section of `.claude/preferences.md`; if that file is absent,
+apply this generic protocol with the default filters below.
 
 Applies to any script or command expected to exceed ~45 seconds. Phases that
 involve only file writes, document edits, or command rewrites with no script

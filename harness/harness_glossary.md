@@ -20,10 +20,11 @@ words gets no entry.
   (git_strategy, closing_sequence, monitoring, verification_cases,
   self_improvement). Commands @-reference these rather than restate them, so a
   fix lands once and every consumer executes current law.
-- **preference file** -- A project-specific per-concern file under
-  `.claude/preferences/` supplying parameters (git, environment, verification,
-  monitoring). What makes the harness portable by design; out of self-improver
-  jurisdiction (user-edited only).
+- **preferences file** -- The single project-specific opinion surface at
+  `.claude/preferences.md`: a machine-parseable key block supplying parameters
+  (git, interpreter, test command, encoding) plus short Verification/Monitoring
+  prose sections. What makes the harness portable by design; out of
+  self-improver jurisdiction (user-edited only).
 - **phase compiler** -- The `/write_prompt` command: it compiles a reference-based
   implementation prompt by inlining ONLY phase-specifics (objective, deliverables,
   DoD, behavioral tests, learnings, resolved parameters) and @-referencing stable

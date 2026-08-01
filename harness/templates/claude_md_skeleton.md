@@ -16,7 +16,7 @@ Fill rules for the generated file:
 - Replace every `[...]` placeholder with project content. Delete sections that do
   not apply (e.g. a project with no security invariants drops that section).
 - Keep the armed pointers pointing at `.claude/harness/procedures/*`,
-  `.claude/preferences/*`, and `context/*` -- the paths a bootstrapped project has.
+  `.claude/preferences.md`, and `context/*` -- the paths a bootstrapped project has.
 - Strip this instruction block; the generated CLAUDE.md begins at the `# CLAUDE.md`
   line below.
 
@@ -39,7 +39,7 @@ is helping.]
 
 - [Project-wide behavioral rules that must never be violated -- encoding
   constraints, output-character limits, naming/forbidden-pattern rules. See
-  `.claude/preferences/environment.md` for the full environment rules.]
+  `.claude/preferences.md` for the full environment rules.]
 - **No AI attribution in commit messages -- ever.** Never put a model name in a
   subject, body, or trailer; no `Co-Authored-By` AI lines, no "Generated with"
   lines. Write every commit as if authored entirely by the human developer.
@@ -48,8 +48,8 @@ is helping.]
 
 - **Long-running scripts.** Before running ANY script or command expected to
   exceed ~45s, read and follow `.claude/harness/procedures/monitoring.md` (generic
-  background+Monitor protocol) AND `.claude/preferences/monitoring.md` (project
-  grep patterns, log locations). Non-negotiable.
+  background+Monitor protocol) AND `.claude/preferences.md`'s Monitoring section
+  (project grep patterns, log locations). Non-negotiable.
 - **Architecture + rationale.** For subsystem semantics and invariants, read
   `context/architecture.md`. For closed experiments, decision history, and the
   local-artifacts index, read `context/decisions.md`.
@@ -57,7 +57,7 @@ is helping.]
   whenever you expect to touch under ~20% of a file, or need mechanical detail not
   recorded here. Never full-read a large file when a targeted excerpt suffices.
 - **Prompt / scaffolding file locations.** Session prompt files and other
-  file-location + venv rules live in `.claude/preferences/environment.md`.
+  file-location + interpreter rules live in `.claude/preferences.md`.
 
 ## Project purpose
 
@@ -93,5 +93,5 @@ Top-level orientation only (~15 lines). Explore derives per-file detail on deman
 [top-level dir]/       -- [one line]
 docs/                  -- gitignored: prds, plans, prompts, learnings
 context/               -- gitignored durable knowledge: architecture.md, decisions.md, glossary.md
-.claude/               -- gitignored harness: commands, agents, hooks, harness/, preferences/
+.claude/               -- gitignored harness: commands, agents, hooks, harness/, preferences.md
 ```

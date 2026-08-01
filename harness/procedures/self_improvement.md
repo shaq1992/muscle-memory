@@ -50,7 +50,7 @@ values through this flow.
 
 ## Jurisdiction
 
-The self-improver edits workflow machinery files only. `.claude/preferences/` is
-OUT of jurisdiction -- project opinion is edited by the user in normal sessions,
-never by the improvement loop. (The self-improver's own instructions file is the
+The self-improver edits workflow machinery files only. `.claude/preferences.md`
+is OUT of jurisdiction -- project opinion is edited by the user in normal
+sessions, never by the improvement loop. (The self-improver's own instructions file is the
 authoritative statement of its corpus and boundary.)
