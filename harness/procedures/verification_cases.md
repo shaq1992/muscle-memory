@@ -7,6 +7,15 @@ fallbacks) come from the `## Verification` section of `.claude/preferences.md`;
 if that file is absent, fall back to the generic placeholders and the plan's
 own verification text.
 
+General rule -- interactive commands: when a phase's verification asks to run an
+INTERACTIVE command (one containing AskUserQuestion gates or other user-input
+steps, e.g. an onboarding funnel) "end-to-end in-session", it is verified via its
+DETERMINISTIC DRY-RUN path: the non-interactive steps execute for real (checks,
+detection, idempotent re-runs proven by before/after comparison, self-checks),
+and the interactive steps are expected to self-skip on an already-configured
+target (existing files detected and kept). Future prompts should phrase such
+verification as a dry-run.
+
 ## CASE A -- Phase modifies live server/tool behaviour
 
 (For this project: live server/service/tool paths -- see preferences.md's
