@@ -66,8 +66,10 @@ At the final phase, after the last phase branch has merged into integration:
 
 **PR title/body convention:** the no-AI-attribution law extends verbatim to PR
 titles and bodies. Fixed body shape: the plan one-liner; a bulleted phase list
-(drawn from the per-phase merge commits); a pointer note that detailed history
-lives in the per-phase merges.
+(drawn from the per-phase `feat:` commits -- under git-default merges a phase
+merge FAST-FORWARDS whenever the integration branch has not moved since the
+phase branch was cut, so per-phase merge commits may not exist); a pointer note
+that detailed history lives in the per-phase commits.
 
 **Post-PR fixes:** review changes requested on an open plan PR are committed
 directly on the integration branch and pushed; the open PR tracks them -- no
