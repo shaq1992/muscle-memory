@@ -39,10 +39,10 @@ words gets no entry.
 - **update-on-touch** -- The staleness rule (in `plan_schema.md`): any phase whose
   deliverables change a fact recorded in a `context/` file MUST carry an explicit
   "update context/<file>" deliverable naming that file.
-- **stop-sequence choreography** -- The fixed order a grilling session runs once the
-  user says "stop asking questions": tracer-bullet batch -> behavioral-test
-  ratification -> decision log -> glossary sweep -> self-diagnosis -> write
-  documents. (functional mode skips the first two steps.)
+- **stop-sequence choreography** -- The fixed 3-step order a grilling session runs once
+  the user says "stop asking questions": slicing + behavioral-test ratification in one
+  combined turn -> decision log + phase table with glossary and self-diagnosis one-liners
+  under a single confirmation -> write documents. (functional mode skips the first step.)
 
 ## Pre-existing vocabulary
 

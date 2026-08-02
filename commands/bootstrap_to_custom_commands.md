@@ -134,7 +134,7 @@ excluded per-project `preferences.md`, which is what closes the in-place / offli
 
 Create (idempotent) in TARGET:
 ```
-mkdir -p <target>/docs/prds <target>/docs/multi_phase_plans <target>/docs/learnings <target>/docs/prompts
+mkdir -p <target>/docs/prds <target>/docs/multi_phase_plans <target>/docs/learnings <target>/docs/prompts <target>/docs/quick
 mkdir -p <target>/context
 ```
 Report which were created and which already existed. Do NOT seed context/ files -- the domain

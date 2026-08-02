@@ -35,11 +35,18 @@ values through this flow.
    )
    ```
 
-   The self-improver makes exactly one targeted change per invocation. Wait for
-   it to return.
+   The self-improver makes exactly one targeted change per invocation and
+   COMMITS it in the harness repo at `.claude/` (one commit per invocation,
+   message `improve: <file> -- <summary>`, on the currently checked-out branch
+   -- the phase branch during a harness plan, local `main` otherwise; pushing
+   stays user-only). On a zip install with no harness repo, it states that
+   fallback plainly and reports excerpts instead of a diff. Wait for it to
+   return.
 
-4. **Surface the response.** Show the sub-agent's full response
-   (`## Changes Made` + `## Drift Warnings and Proposed Fix`) to the user.
+4. **Surface the response.** Show the sub-agent's full response to the user:
+   `## Changes Made` (the commit hash + message and the commit's git diff; on
+   the no-repo fallback, old/new excerpts) + `## Drift Warnings and Proposed
+   Fix`.
 
 5. **One-level drift cascade.** If Drift Warnings are present, show the suggested
    briefs for each affected command. For each warning the user accepts, spawn ONE

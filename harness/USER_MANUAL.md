@@ -106,11 +106,11 @@ technical, `docs/multi_phase_plans/<plan>_plan.md` (schema: `plan_schema.md`). E
 is sized to fit one session.
 
 **Stop-sequence choreography.** When you type "stop asking questions", mixed/technical run,
-in this exact order: (1) tracer-bullet batch (1-4 slicing questions in one turn), (2)
-behavioral-test ratification (which phases get a `### Behavioral Tests` block and what it
-tests), (3) decision log + your confirmation (the single final gate), (4) glossary sweep
-(ratify coined terms, propose retirements), (5) self-diagnosis, (6) write documents.
-Functional mode skips steps 1-2.
+in this exact order: (1) slicing + behavioral-test ratification in one combined turn (1-4
+tracer-bullet questions plus which phases get a `### Behavioral Tests` block and what each
+tests), (2) decision log + phase table, with glossary and self-diagnosis one-liners
+appended, all under your single confirmation (the final gate), (3) write documents.
+Functional mode skips step 1.
 
 ### 2. Generate a session prompt with /write_prompt
 

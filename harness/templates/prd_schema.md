@@ -77,3 +77,10 @@ removes the parking lot once its items are dispositioned.
 - Before finalizing, re-audit: re-read every user message from the session and
   confirm each decision AND each aside is represented. Asides volunteered during
   a `linger` sub-loop are the highest-risk for loss -- verify those explicitly.
+- **Provenance-tag self-containment (standing rule):** any PRD or plan that
+  cites session-time provenance tags -- register item IDs, session question
+  numbers, or any identifier resolvable only from session-time context -- MUST
+  open with a self-containment note declaring those tags citations-only and the
+  document text the complete, authoritative statement. Session transcripts and
+  grilling inputs are not downstream-readable; downstream sessions must never
+  attempt to resolve the tags or treat them as references to further content.
