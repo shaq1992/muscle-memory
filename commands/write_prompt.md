@@ -1,6 +1,6 @@
 ---
 description: Compile a reference-based phase implementation prompt (~200 lines) from a plan's PRD, phase section, accumulated learnings, and the harness procedure files.
-argument-hint: <plan_name> <phase_number> (e.g. /write_prompt nd7-feature 3)
+argument-hint: <plan_name> <phase_number> (e.g. /write_prompt example-plan 3)
 ---
 
 Compile a reference-based implementation prompt for one phase of a multi-phase plan.
@@ -288,6 +288,9 @@ Tests-as-deliverables policy: per @.claude/preferences.md (Verification section)
   [OVERRIDE -- only if a section 5 deliverable names CLAUDE.md:] Do not modify
   docs/prds/ or docs/multi_phase_plans/. CLAUDE.md IS modifiable this phase -- surgical
   updates only, reflecting only what the Deliverables specify.
+- PRD/plan provenance tags ("R5.6", "A1", "Q8"-style) are session-time citations ONLY --
+  never copy them into portable harness files (commands/, agents/, hooks/, harness/, incl.
+  docstrings and tests); restate any PRD rule self-contained in the file that carries it.
 - If, during implementation, you find the live code diverges from any prior
   specification document -- the PRD (`docs/prds/`), the multi-phase plan
   (`docs/multi_phase_plans/`), CLAUDE.md, or a gitignored `context/` file -- the
