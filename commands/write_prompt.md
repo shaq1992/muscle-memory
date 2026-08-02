@@ -85,8 +85,11 @@ Read `.claude/harness/procedures/git_strategy.md` and the key block of
 - **If `is_final_phase`**: resolve the plan-end PR flow for emission -- after the
   last integration merge, push the integration branch and open the PR autonomously
   with `gh pr create` (title/body per git_strategy.md's PR convention: plan
-  one-liner, bulleted phase list from the merge commits, pointer note; no AI
-  attribution). Then the USER merges with a `!`-prefixed `gh pr merge <n> --merge`
+  one-liner, bulleted phase list drawn from the per-phase `feat:` commits --
+  under git-default merges a phase merge FAST-FORWARDS whenever the integration
+  branch has not moved since the phase branch was cut, so per-phase merge commits
+  may not exist -- pointer note; no AI attribution). Then the USER merges with a
+  `!`-prefixed `gh pr merge <n> --merge`
   per the `merge_style` / `retain_integration_branch` preference keys -- the
   keystroke is the approval and its output lands in the transcript. Claude never
   runs `gh pr merge` (the guardrail hook flat-blocks it). Emit the user-run merge
