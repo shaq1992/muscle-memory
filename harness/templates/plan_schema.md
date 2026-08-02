@@ -137,9 +137,8 @@ DESCRIPTIVE claims: statements about what the system does, how a module behaves,
 what a parameter resolved to, what an artifact contains. The tiebreaker NEVER
 applies to PRESCRIPTIVE constraints -- hard rules, security invariants, legal /
 permitted-use boundaries, budget law, encoding rules, the ambiguity protocol, or
-any other "MUST / MUST NOT" the project imposes on itself (in this project,
-CLAUDE.md's "Hard constraints", "FR24 credit-cost management", and "Security
-hardening" sections). Code that violates a prescriptive constraint is a BUG to
+any other "MUST / MUST NOT" the project imposes on itself (the project
+CLAUDE.md's hard-constraint sections). Code that violates a prescriptive constraint is a BUG to
 surface and fix, never evidence that the constraint has changed; only the user
 may relax one. The tracked,
 reviewed code is what actually ships and what a reviewer diffs against; a prior

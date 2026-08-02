@@ -1,4 +1,4 @@
-"""Validate a generated phase implementation prompt (PRD R7.2-R7.3).
+"""Validate a generated phase implementation prompt.
 
 Usage: python3 .claude/harness/scripts/validate_prompt.py <prompt_file>
 Run from the PROJECT ROOT -- @-references are resolved against the current

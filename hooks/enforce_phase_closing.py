@@ -5,7 +5,7 @@ structural no-op -- the hook allows unconditionally. Enforcement only ever
 applies to the session that created the marker.
 
 Beyond existence of the file at the marker's learnings_path, the hook
-validates the learnings schema and the plan ledger (PRD R5.6):
+validates the learnings schema and the plan ledger:
   1. the learnings file's first line starts with "**Branch:**";
   2. a "## Learnings" header is present in the file;
   3. the plan ledger at docs/learnings/<plan_name>_ledger.md carries a

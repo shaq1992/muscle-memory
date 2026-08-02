@@ -31,7 +31,7 @@ user to do so, then re-check. If the user wants to proceed without it, continue 
 note that plan-end PR flows will fail until gh is authenticated (local work is
 unaffected).
 
-**1c. Python interpreter (the R11.2 flow).** Detect `python3` -> `python` -> `py`
+**1c. Python interpreter.** Detect `python3` -> `python` -> `py`
 (first `command -v` hit wins). If found, report the name and move on.
 
 If NONE is found, do NOT silently continue:

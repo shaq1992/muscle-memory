@@ -43,6 +43,21 @@ words gets no entry.
   the user says "stop asking questions": slicing + behavioral-test ratification in one
   combined turn -> decision log + phase table with glossary and self-diagnosis one-liners
   under a single confirmation -> write documents. (functional mode skips the first step.)
+- **ledger** -- The rolling per-plan learnings file
+  `docs/learnings/<plan>_ledger.md`: current-truth-only, theme-grouped bullets each
+  origin-stamped `(PN)`, merged (add / supersede / delete) at every phase close; the
+  ONLY learnings source `/write_prompt` reads.
+- **ledger stamp** -- The ledger's mandatory `Last merged: phase NN` header line,
+  rewritten at EVERY phase close (even with no new learnings); the freshness signal
+  the Stop hook checks against the phase-closing marker's phase.
+- **push-remote allowlist** -- The guardrail hook's fail-closed rule for harness-repo
+  pushes: allowed only when the resolved remote URL matches the
+  `harness_push_remote` preference key; key absent = ALL harness pushes blocked
+  (the recipient posture -- recipients never set the key).
+- **install tier** -- Which of the two install methods a harness recipient used,
+  detected deterministically by `.claude/.git`: clone (the clone IS the versioning;
+  `git pull` upgrades) vs zip (no git; re-extract upgrades). The method IS the
+  version-control choice -- there is no separate posture question.
 
 ## Pre-existing vocabulary
 
@@ -75,6 +90,6 @@ words gets no entry.
 - **integration branch** -- `integration/<plan_name>`, cut from the default branch
   in a plan's first phase; the single accumulation point all phase branches merge
   into, kept off the protected branch until the plan-end PR is merged by the USER.
-- **shakedown** -- The first real plan run on the new harness -- the live exercise
-  of the machinery, protected by the integration branch and the verified
-  guardrail hook.
+- **shakedown PR** -- A trivial micro-PR (scratch branch, one throwaway commit,
+  `gh pr create`, user merges via `! gh pr merge`, branch cleaned up) run once to
+  prove the full PR loop end-to-end before any real work depends on it.

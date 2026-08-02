@@ -1,4 +1,4 @@
-"""Behavioral tests for harness/scripts/validate_prompt.py (PRD R7.2-R7.3).
+"""Behavioral tests for harness/scripts/validate_prompt.py.
 
 Checks under test: (1) template-emitted @-references resolve on disk;
 (2) no leftover [PLACEHOLDER] / bracketed instruction text; (3) required

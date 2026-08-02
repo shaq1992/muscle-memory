@@ -1,8 +1,8 @@
-"""Behavioral tests for the Phase 4 Stop-hook contract (learnings revision).
+"""Behavioral tests for the Stop-hook contract (learnings law).
 
-The five ratified cases from the phase prompt: the two preserved existing
-behaviors (block-until-exists, wrong-session no-op) plus the three new
-content checks (PRD R5.6): **Branch:** first line, ## Learnings header,
+The five ratified cases: the two preserved existing
+behaviors (block-until-exists, wrong-session no-op) plus the three
+content checks: **Branch:** first line, ## Learnings header,
 ledger Last-merged stamp matching the marker's phase.
 
 These tests SUPERSEDE the closing-hook portion of the former

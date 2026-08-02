@@ -60,8 +60,8 @@ Parse `$ARGUMENTS` in this order:
 3. **custom_instructions** -- everything remaining after the tokens consumed above.
 
 Mode semantics (grilling scope and outputs are detailed further below):
-- `mixed` (bare, no mode token): the regression baseline -- grill what/why AND how, write
-  the full PRD and the plan in one pass, behaving byte-for-byte as the pre-modes command.
+- `mixed` (bare, no mode token): the default -- grill what/why AND how, write
+  the full PRD and the plan in one pass.
 - `functional`: grill only the what/why; write the functional PRD, no plan.
 - `technical`: read the existing functional PRD, grill only the how, append the technical
   sections to it, write the plan.

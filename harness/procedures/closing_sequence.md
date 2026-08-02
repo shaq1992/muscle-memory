@@ -106,7 +106,7 @@ At every close, merge ALL of this phase's learnings bullets in:
   bullet and write the new one with its own `(PN)` stamp.
 - **Delete stale**: remove bullets that no longer describe current truth
   (e.g. "X is pending" once X has shipped).
-- **Caution rule (PRD R5.4):** err on the side of caution before deleting, and
+- **Caution rule:** err on the side of caution before deleting, and
   the ledger may NEVER hold two contradicting bullets. When a supersession
   clash is ambiguous -- the old and new bullets conflict and it is not certain
   the new one fully replaces the old -- STOP and ask the user (ambiguity
