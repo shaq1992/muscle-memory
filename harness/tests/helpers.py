@@ -14,6 +14,7 @@ Fixture layout built per test (in a throwaway temp dir):
 """
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -24,6 +25,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 GUARDRAIL_HOOK = PROJECT_ROOT / ".claude" / "hooks" / "git_guardrails.py"
 CLOSING_HOOK = PROJECT_ROOT / ".claude" / "hooks" / "enforce_phase_closing.py"
 SETTINGS_JSON = PROJECT_ROOT / ".claude" / "settings.json"
+VALIDATE_PROMPT = (
+    PROJECT_ROOT / ".claude" / "harness" / "scripts" / "validate_prompt.py"
+)
 
 PLAN_NAME = "example-plan"
 
@@ -175,4 +179,121 @@ class GuardrailEnv(unittest.TestCase):
         self.assertEqual(
             "allow", verdict,
             "expected ALLOW for {0!r}; denied with: {1}".format(command, reason),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Stop-hook (enforce_phase_closing.py) fixture
+# ---------------------------------------------------------------------------
+
+COMPLIANT_LEARNINGS = (
+    "**Branch:** {0}-phase-04\n"
+    "\n"
+    "## Learnings\n"
+    "\n"
+    "- a carried-forward bullet\n"
+).format(PLAN_NAME)
+
+COMPLIANT_LEDGER = (
+    "# Learnings Ledger: {0}\n"
+    "\n"
+    "Last merged: phase 04\n"
+    "\n"
+    "## Some Theme\n"
+    "\n"
+    "- a current-truth bullet (P4)\n"
+).format(PLAN_NAME)
+
+
+class ClosingHookEnv(unittest.TestCase):
+    """Fixture for the Stop hook's content checks.
+
+    Runs a COPY of enforce_phase_closing.py from inside a temp project tree,
+    so the hook's own-location-derived PROJECT_DIR (and therefore both the
+    relative learnings_path resolution and the plan-level ledger path
+    docs/learnings/<plan>_ledger.md) point at the temp tree, never at the
+    real repository.
+    """
+
+    PHASE = 4
+    SESSION = "unittest-closing-hook-session"
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        tmp = Path(self._tmpdir.name)
+
+        self.proj = tmp / "proj"
+        hooks_dir = self.proj / ".claude" / "hooks"
+        hooks_dir.mkdir(parents=True)
+        self.hook_copy = hooks_dir / "enforce_phase_closing.py"
+        shutil.copyfile(str(CLOSING_HOOK), str(self.hook_copy))
+
+        self.marker_path = self.proj / ".claude" / "phase_closing.json"
+        self.learnings_rel = (
+            "docs/learnings/020826/{0}_phase_04_learnings.md".format(PLAN_NAME)
+        )
+        self.learnings_path = self.proj / self.learnings_rel
+        self.learnings_path.parent.mkdir(parents=True)
+        self.ledger_path = (
+            self.proj / "docs" / "learnings" / "{0}_ledger.md".format(PLAN_NAME)
+        )
+
+    def write_marker(self, phase=None, session=None):
+        self.marker_path.write_text(
+            json.dumps(
+                {
+                    "session_id": session or self.SESSION,
+                    "plan_name": PLAN_NAME,
+                    "phase": self.PHASE if phase is None else phase,
+                    "learnings_path": self.learnings_rel,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def write_learnings(self, text=COMPLIANT_LEARNINGS):
+        self.learnings_path.write_text(text, encoding="utf-8")
+
+    def write_ledger(self, text=COMPLIANT_LEDGER):
+        self.ledger_path.write_text(text, encoding="utf-8")
+
+    def run_stop(self, session=None):
+        return subprocess.run(
+            [sys.executable, str(self.hook_copy)],
+            input=json.dumps({"session_id": session or self.SESSION}),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    def stop_decision(self, session=None):
+        """Return ('allow', '') or ('block', reason)."""
+        r = self.run_stop(session)
+        self.assertEqual(
+            0, r.returncode,
+            "stop hook exited non-zero: stdout={0!r} stderr={1!r}".format(
+                r.stdout, r.stderr
+            ),
+        )
+        if not r.stdout.strip():
+            return "allow", ""
+        out = json.loads(r.stdout)
+        return out.get("decision", "allow"), out.get("reason", "")
+
+    def assert_blocked(self, reason_contains=None, session=None):
+        verdict, reason = self.stop_decision(session)
+        self.assertEqual("block", verdict, "expected BLOCK; got allow")
+        if reason_contains is not None:
+            self.assertIn(
+                reason_contains, reason,
+                "block reason must name {0!r}; got {1!r}".format(
+                    reason_contains, reason
+                ),
+            )
+
+    def assert_allowed_stop(self, session=None):
+        verdict, reason = self.stop_decision(session)
+        self.assertEqual(
+            "allow", verdict, "expected ALLOW; blocked with: {0}".format(reason)
         )

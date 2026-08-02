@@ -7,26 +7,22 @@ absent). Classes 9-11 are EXPLICITLY FLAGGED EXTRAS beyond the contract:
   9  - allow-path regression guard (normal phase/PR-law operations must pass;
        protects against a fail-closed rewrite that bricks every git call)
   10 - non-git passthrough guard (quoted git-looking strings, plain commands)
-  11 - closing-hook regression + settings.json registration (Stop hook is
-       untouched this phase; settings must invoke bare python3, no venv)
+  11 - settings.json registration (bare python3, no venv, no approvals deny
+       rules). Its former closing-hook contract test moved to
+       test_closing_hook.py when Phase 4 added the content checks.
 
 Stdlib-only. Run with: python3 -m unittest discover .claude/harness/tests
 """
 
 import json
 import shutil
-import subprocess
-import sys
-from pathlib import Path
 
 from helpers import (
     BASE_PARAMS,
-    CLOSING_HOOK,
     GUARDRAIL_HOOK,
     MATCHING_REMOTE_PATTERN,
     MISMATCHING_REMOTE_PATTERN,
     PLAN_NAME,
-    PROJECT_ROOT,
     SETTINGS_JSON,
     GuardrailEnv,
     decision_and_reason,
@@ -231,66 +227,14 @@ class TestNonGitCommandsPassFlaggedExtra(GuardrailEnv):
 
 
 # ---------------------------------------------------------------------------
-# 11. FLAGGED EXTRA: Stop-hook regression + settings registration (python3)
+# 11. FLAGGED EXTRA: settings registration (python3). The former
+# test_hook_contract_unchanged is SUPERSEDED by test_closing_hook.py (Phase 4
+# learnings revision): a bare-existence learnings file no longer satisfies
+# the Stop hook, and the plan-level ledger check resolves against the hook's
+# own project root, so the contract now runs through a hook copy in a temp
+# tree over there.
 # ---------------------------------------------------------------------------
-def _run_closing(payload):
-    return subprocess.run(
-        [sys.executable, str(CLOSING_HOOK)],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-
-
-class TestClosingHookRegressionFlaggedExtra(GuardrailEnv):
-    def test_hook_contract_unchanged(self):
-        marker_path = PROJECT_ROOT / ".claude" / "phase_closing.json"
-        self.assertFalse(
-            marker_path.exists(),
-            "pre-existing real phase_closing.json -- aborting to avoid clobber",
-        )
-        learnings = self.repo / "learnings.md"
-        session = "unittest-regression-session-p2"
-        try:
-            # no marker -> allow
-            r = _run_closing({"session_id": session})
-            self.assertEqual(0, r.returncode)
-            self.assertEqual("", r.stdout.strip())
-
-            # marker + matching session + missing learnings -> block
-            marker_path.write_text(
-                json.dumps(
-                    {
-                        "session_id": session,
-                        "plan_name": PLAN_NAME,
-                        "phase": 2,
-                        "learnings_path": str(learnings),
-                    }
-                ),
-                encoding="utf-8",
-            )
-            r = _run_closing({"session_id": session})
-            out = json.loads(r.stdout)
-            self.assertEqual("block", out.get("decision"))
-            self.assertTrue(marker_path.exists())
-
-            # non-matching session -> no-op allow, marker untouched
-            r = _run_closing({"session_id": "some-other-session"})
-            self.assertEqual(0, r.returncode)
-            self.assertEqual("", r.stdout.strip())
-            self.assertTrue(marker_path.exists())
-
-            # learnings file written -> allow + marker self-deletes
-            learnings.write_text("**Branch:** main\n", encoding="utf-8")
-            r = _run_closing({"session_id": session})
-            self.assertEqual(0, r.returncode)
-            self.assertEqual("", r.stdout.strip())
-            self.assertFalse(marker_path.exists())
-        finally:
-            if marker_path.exists():
-                marker_path.unlink()
-
+class TestClosingHookRegistrationFlaggedExtra(GuardrailEnv):
     def test_hooks_registered_with_stdlib_python3(self):
         settings = json.loads(SETTINGS_JSON.read_text(encoding="utf-8"))
         pre_hooks = json.dumps(settings.get("hooks", {}).get("PreToolUse", []))

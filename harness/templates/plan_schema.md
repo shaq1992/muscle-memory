@@ -98,6 +98,26 @@ follow dependency order -- the plan MUST say so explicitly in its Slicing note,
 naming the exemption reason. The grilling session's tracer-bullet question batch
 decides which ruling applies; the plan records the ratified outcome.
 
+## Amendments section
+
+Every plan document may end with an `## Amendments` section. It is appended
+ONLY by the closing sequence's user-gated document-reconciliation step
+(`harness/procedures/closing_sequence.md`) -- never by direct mid-phase edits;
+that reconciliation step is the sanctioned mutation path past the append-only
+rule. Each phase close that amends the document appends ONE dated entry:
+
+```
+## Amendments
+
+### YYYY-MM-DD -- phase NN
+- <what changed, one line> (superseding decision: <the mid-phase decision>)
+- ...
+```
+
+The section is absent until the first amendment. Approved amendments edit the
+body text surgically AND log the change here, so the body is always current
+truth and the trail records how it got there.
+
 ## context/ update-on-touch rule
 
 Any phase whose deliverables change a fact recorded in a `context/` file MUST
@@ -131,7 +151,7 @@ contradicting code path -- do not silently propagate the stale claim. Where the
 diverging document is one the phase is FORBIDDEN to edit (`docs/prds/`,
 `docs/multi_phase_plans/`), the record MUST land in the phase's durable trail --
 the `context/` deliverable if the phase carries one, otherwise the phase
-learnings' Carry Forward -- AND must be surfaced to the user in the closing
+learnings -- AND must be surfaced to the user in the closing
 summary so they can authorise a follow-on reconciliation phase. Divergences
 against a gitignored `context/` file additionally feed the update-on-touch rule
 above so a follow-on phase can carry the corresponding `update context/<file>`

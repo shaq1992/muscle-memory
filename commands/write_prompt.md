@@ -92,96 +92,53 @@ Read `.claude/harness/procedures/git_strategy.md` and the key block of
   runs `gh pr merge` (the guardrail hook flat-blocks it). Emit the user-run merge
   command verbatim in template section 9.
 
-## Step 4 -- Accumulated learnings (Explore-delegated)
+## Step 4 -- Accumulated learnings (ledger read, inline filtering)
 
 **Phase 1 short-circuit:** if phase_number == 1, set the learnings section to
-"No prior learnings for this plan yet." and skip this step (do not spawn Explore).
+"No prior learnings for this plan yet." and skip this step.
 
-**Otherwise**, enumerate the learnings files:
-```bash
-find docs/learnings -name "<plan_name>_phase_*.md" 2>/dev/null | sort
-```
-Keep only files whose phase number is strictly BELOW the requested phase (a
-regeneration for a historical phase must not sweep later phases' learnings).
+**Otherwise**, read the plan's rolling ledger -- the ONLY learnings source:
+`docs/learnings/<plan_name>_ledger.md` (plan-level path, not date-nested;
+current-truth-only, maintained by every phase close per closing_sequence.md).
+Do NOT read the per-phase learnings files -- they are immutable history, and
+anything current lives in the ledger.
 
-**No-files branch:** if nothing matches, set the learnings section to "No prior
-learnings for this plan yet." and continue (no Explore spawn).
+**No-ledger branch:** if the file does not exist, set the learnings section to
+"No prior learnings for this plan yet." and continue.
 
-**Default path -- delegate extraction + filtering to one
-`Agent(subagent_type="Explore")` call.** Do NOT run the awk extraction inline in the
-main loop on this path -- the point of delegating is keeping raw Carry Forward content
-out of this session's context. Pass the agent the file list, the phase's Objective and
-Deliverables (from Step 2), and this prompt template verbatim (only the four bracketed
-substitutions change):
+Filter the ledger's bullets IN-CONTEXT against the current phase's Objective and
+Deliverables (from Step 2), then inject the survivors verbatim:
 
-```
-Extract the "## Carry Forward" section from each of these learnings files, using
-this exact awk command (deterministic, no interpretation):
-
-  awk '/^## Carry Forward/{flag=1; next} /^## /{flag=0} flag' "<file>"
-
-Do NOT read the files inline. Do NOT extract "## Phase-Specific Only"
-content -- that must stay out of any implementation prompt.
-
-Files (in phase order):
-<bulleted file list>
-
-Then filter the extracted bullets against the current phase context below.
-Return ONLY the bullets that are genuinely relevant to the current phase's work.
-
-Current phase Objective:
-<Objective text>
-
-Current phase Deliverables:
-<Deliverables text>
-
-Filtering guidance:
 - Bias toward INCLUDING a bullet when uncertain. A spurious bullet in a future
   prompt is less harmful than missing a load-bearing constraint. Only drop
   bullets whose subject matter clearly cannot affect the current phase's work.
-- Preserve the original bullet wording verbatim -- do not paraphrase, shorten,
-  or restructure. Filtering is inclusion/exclusion only.
-- Preserve the source phase attribution. Group returned bullets by phase
-  number, exactly as the raw extraction produces them.
+- Preserve surviving bullet wording verbatim, including the trailing `(PN)`
+  origin stamps -- do not paraphrase, shorten, or restructure. Filtering is
+  inclusion/exclusion only.
+- Keep the ledger's theme headers for the surviving bullets; drop a header
+  whose bullets were all filtered out. Do not add commentary or summaries.
 - If a bullet is a definitive plan-wide finding (e.g. a field rejected in N/N
   phases tried), include it regardless of the current phase's immediate scope.
 
-Return format: markdown with "### From Phase N" headers followed by the
-surviving bullets in original order. Do NOT add commentary, summaries, or
-headings other than the "### From Phase N" groupers.
-```
-
-Inject the Explore return verbatim as the learnings section -- do not summarize,
-re-order, or reformat it.
-
-**Fallback (degraded mode):** if the Explore call fails, returns empty, or Explore is
-unavailable, run the awk extraction inline per file, add the `### From Phase N` headers
-yourself, and inject the raw bullets unfiltered. If no file yields a `## Carry Forward`
-section, write "No prior learnings for this plan yet." Never read or inject
-`## Phase-Specific Only` content under any path.
-
-**Contradiction check (both paths).** After the learnings section is populated (Explore
-or fallback), scan the surviving bullets against the PRD and the current phase's plan
-content read in Step 2. If any learning clearly contradicts the PRD/plan phase content
--- a resolved parameter, a deliverable's shape, an assumption the plan bakes in, an
-approach the plan mandates -- STOP and surface the contradiction to the user per the
-project ambiguity protocol (see @CLAUDE.md "Ambiguity protocol (STOP-and-ask)") BEFORE
-writing the prompt file in Step 7. Do NOT silently reconcile, paraphrase away, or drop
-the learning to make it fit. Resolution precedence to recommend: LEARNINGS SUPERSEDE
-the PRD/plan by default, because learnings are captured during actual execution of
-prior phases whereas the PRD/plan are written before any execution and can go stale.
-Present each contradiction with the learnings-favoring recommendation plus the
-alternatives (keep the PRD/plan claim, amend the PRD/plan, or revise the phase scope),
-and gate on the user's explicit decision before proceeding to Step 5. The user makes
-the final call.
+(The ledger is kept internally contradiction-free at every close -- merge law
+in closing_sequence.md -- so there is no read-time contradiction check. If the
+ledger nonetheless plainly contradicts the PRD/plan phase content, that is a
+close-time failure: STOP and surface it per the ambiguity protocol rather than
+silently picking a side.)
 
 ## Step 5 -- Codebase snapshot (scoped, live-derived)
 
 CLAUDE.md's skeletal directory map is ORIENTATION ONLY -- there is no authoritative
 per-file map anywhere to copy from. Derive per-file detail live:
 
-1. From the phase's Deliverables and Verification sections, list the directories this
-   phase will touch. Special case -- research/Explore-driven phases: if the phase's real
+1. From the phase's Deliverables and Verification sections, list the directory TREES
+   this phase will touch, and scope the find at each touched tree's ROOT -- not only
+   at the leaf subdirectories the deliverables happen to name. A phase that touches
+   several subdirectories of a tree almost always also touches (or must at least be
+   shown) that tree's root-level files; scoping the find to the leaves silently drops
+   them from the snapshot. If scoping a whole tree is genuinely too broad, explicitly
+   list the root-level files of any partially-touched tree alongside the leaf finds.
+   Special case -- research/Explore-driven phases: if the phase's real
    working set is a set of read-only SOURCE files consumed by dispatched Explore agents
    (plus an OUTPUT directory the phase writes into) rather than files being edited in
    place, the meaningful working set is (a) the OUTPUT directory's current contents and
@@ -291,17 +248,10 @@ per-file detail on demand via Agent(subagent_type="Explore").
 [Verbatim from the plan, including any Implementation Notes subsection.]
 
 [If the plan phase carries a `### Behavioral Tests` block: copy it here VERBATIM,
-including its write-first / run-RED / implement-to-green parenthetical. Then, for
-each named test in the block, cross-check its contract against (a) the accumulated
-learnings gathered in Step 4 and (b) where a test file already exists on disk, the
-Step 5 codebase snapshot. For every test whose contract has been superseded by a
-later user decision recorded in the learnings (or by shipped code + shipped tests
-that assert the opposite), emit an additive inline flag immediately beneath that
-test, naming: what the plan requires, what the accumulated learnings / shipped code
-actually established, and that the learnings / shipped behavior governs. Do NOT
-rewrite the plan's wording -- the VERBATIM copy stays; the flag is annotation only.
-Emit no flag for tests where nothing has been superseded. Omit the whole block
-entirely if the plan has none.]
+including its write-first / run-RED / implement-to-green parenthetical. The plan is
+kept true at every phase close by the reconciliation step (closing_sequence.md), so
+the verbatim copy is simply correct -- no supersession annotation is emitted. Omit
+the whole block entirely if the plan has none.]
 
 ---
 
@@ -355,7 +305,7 @@ Tests-as-deliverables policy: per @.claude/preferences.md (Verification section)
   diverging document is one this phase is FORBIDDEN to edit (docs/prds/,
   docs/multi_phase_plans/ per the default rule above), the record MUST land in the
   phase's durable trail -- the `context/` deliverable if the phase carries one,
-  otherwise the phase learnings' Carry Forward -- AND must be surfaced to the user in
+  otherwise the phase learnings -- AND must be surfaced to the user in
   the closing summary so they can authorise a follow-on reconciliation phase if they
   want one. Divergences against a gitignored `context/` file additionally feed the
   update-on-touch rule (@.claude/harness/templates/plan_schema.md) so a follow-on phase
@@ -407,7 +357,8 @@ Tests-as-deliverables policy: per @.claude/preferences.md (Verification section)
 
 ## 10. Accumulated Learnings from Prior Phases
 
-[Step 4 output verbatim, or "No prior learnings for this plan yet."]
+[Step 4's surviving ledger content verbatim -- theme headers plus stamped
+bullets -- or "No prior learnings for this plan yet."]
 
 ---
 
@@ -420,8 +371,8 @@ Once all deliverables are complete and section 7 has passed[, and the gate decis
 confirmed], follow @.claude/harness/procedures/closing_sequence.md end to end
 (structural brief -> approval -> self-improver per
 @.claude/harness/procedures/self_improvement.md -> phase-closing marker + learnings
-file -> commit -> git close per @.claude/harness/procedures/git_strategy.md), using
-section 9's resolved values.
+file -> ledger merge + stamp -> document reconciliation -> commit -> git close per
+@.claude/harness/procedures/git_strategy.md), using section 9's resolved values.
 
 Date rule: run `date +%d%m%y` ONCE at write time and use that single DDMMYY value in
 BOTH the marker's learnings_path and the learnings file path -- never hand-type a date.
@@ -436,30 +387,29 @@ verification pointer per @.claude/preferences.md (Verification section).]
 
 ---
 
-## Step 8 -- Verify waypoints and confirm
+## Step 8 -- Validate and confirm
 
-Extract every @-reference from the file you wrote and confirm each target exists:
+Run the deterministic validator from the PROJECT ROOT (its @-reference check
+resolves paths against the current working directory):
 ```bash
-grep -oE '@[A-Za-z0-9_./-]+' <output_file> | sed 's/^@//; s/[.,;:)]*$//' | sort -u
+python3 .claude/harness/scripts/validate_prompt.py <output_file>
 ```
-(The trailing `sed` strips sentence punctuation that the character class would
-otherwise capture -- an @-reference at the end of a sentence must not fail the check.)
-Check each path with `test -e`. This check is GENERIC by design: it must cover
-`.claude/harness/`, `.claude/preferences.md`, `context/`, and ordinary repo paths alike
--- never a directory-scoped grep that silently skips a class of targets. A missing
-target is a defect: fix the reference (or the missing file) before reporting done.
+It checks: every template-emitted @-reference resolves on disk; no leftover
+`[PLACEHOLDER]` / bracketed template instruction text; all required template
+sections present; resolved branch names sane (`integration/<slug>`,
+`<slug>-phase-NN` zero-padded, NN <= total). Fenced code blocks, inline code
+spans, and section 10 (the verbatim-injected learnings) are exempt from the
+@-reference and residue scans by design -- verbatim learnings must NEVER be
+reworded to satisfy the validator.
 
-Exemption: matches originating INSIDE section 10 (the verbatim-injected learnings) or
-inside an inline code span (backtick-wrapped) are prose/code artifacts, not
-template-emitted @-references -- for example the literal word "@-reference(s)" or a
-shell snippet like `sed 's/^@//'`. These do NOT count as defects and must be ignored.
-Verbatim learnings must NEVER be reworded to satisfy this check; Step 4 injects them
-verbatim by design. Only genuine @-reference paths emitted by the template sections
-(1-9, 11) count as defects when their target is missing.
+Surface the validator's output verbatim. On any `FAIL` line, fix the prompt (or
+the missing file) and RERUN until it exits green -- never report the prompt done
+with a failing validation.
 
-Then tell the user: the output path; phase N of total; learnings files found and
-whether Explore filtering ran; codebase files listed; any Explore-delegation flags;
-the resolved git parameters; and the line count.
+Then tell the user: the output path; phase N of total; whether the ledger was
+found and how many bullets survived the Step 4 filter; codebase files listed;
+any Explore-delegation flags; the resolved git parameters; the validator
+verdict; and the line count.
 
 ## Step 9 -- HITL self-improvement
 

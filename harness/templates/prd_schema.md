@@ -40,7 +40,21 @@ Functional-only PRDs omit this section until a technical session adds it.]
 
 ## Out of Scope
 [What is deliberately deferred]
+
+## Amendments
+[Absent until the first amendment -- see the Amendments spec below.]
 ```
+
+### Optional section: `## Amendments`
+
+Appended ONLY by the closing sequence's user-gated document-reconciliation
+step (`harness/procedures/closing_sequence.md`) -- never by direct mid-phase
+edits; that reconciliation step is the sanctioned mutation path past the
+append-only rule. Each phase close that amends the PRD appends ONE dated
+entry (`### YYYY-MM-DD -- phase NN`, then one line per edit naming what
+changed and the superseding decision). Approved amendments edit the body
+surgically AND log the change here, so the requirement text is always
+current truth.
 
 ### Optional section: `## Technical Parking Lot`
 

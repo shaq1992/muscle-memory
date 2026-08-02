@@ -131,7 +131,9 @@ Open a new session in "accept edits" mode and paste the generated prompt. Claude
 the deliverables (writing any contracted behavioral tests FIRST and running them RED before
 implementing to green), then runs the closing sequence
 (`harness/procedures/closing_sequence.md`): self-improvement brief, phase-closing marker +
-learnings file to `docs/learnings/DDMMYY/`, commit, and the autonomous git close.
+learnings file to `docs/learnings/DDMMYY/`, ledger merge + stamp
+(`docs/learnings/<plan>_ledger.md`), user-gated document reconciliation, commit, and the
+autonomous git close.
 
 ### 4-6. Track / audit / verify
 
@@ -193,8 +195,11 @@ settings.json.
 `.claude/hooks/enforce_phase_closing.py` mechanically enforces the "write learnings file"
 obligation. The closing sequence writes `.claude/phase_closing.json` (session_id, plan,
 phase, expected learnings path). On Stop: no marker (or a different session's marker) is a
-no-op; a matching marker blocks the closing turn until the learnings file exists, then the
-hook self-deletes the marker and allows. Full mechanics: `closing_sequence.md` step 4.
+no-op; a matching marker blocks the closing turn until the learnings file exists in the
+required schema (`**Branch:**` first line, `## Learnings` header) and the plan ledger's
+`Last merged: phase NN` stamp matches the marker's phase, then the hook self-deletes the
+marker and allows. Each block reason names the specific failed check. Full mechanics:
+`closing_sequence.md` steps 4-5.
 
 ## Glossaries
 
