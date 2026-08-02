@@ -150,6 +150,7 @@ per-file map anywhere to copy from. Derive per-file detail live:
 2. Run a scoped find over ONLY those directories:
 ```bash
 find <phase_dirs> -type f \
+  -not -path '*/.git/*' \
   -not -path '*/__pycache__/*' \
   -not -path '*/projects/*' \
   -not -name '*.pyc' -not -name '*.pkl' -not -name '*.db' -not -name '*.log' \
