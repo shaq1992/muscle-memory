@@ -20,7 +20,7 @@ one context window.
   hooks/          -- deterministic hooks: enforce_phase_closing.py, git_guardrails.py
   harness/        -- portable, read-only-in-daily-use machinery
     USER_MANUAL.md         -- this file
-    INSTALL.md             -- porting/distribution guide (offline-zip + in-place install)
+    INSTALL.md             -- recipient install guide (clone or zip, then /on_board)
     harness_glossary.md    -- vocabulary owned by the command system
     procedures/            -- git_strategy, closing_sequence, monitoring,
                               verification_cases, self_improvement (portable law)
@@ -53,31 +53,27 @@ Everything above is gitignored -- AI-facing scaffolding never enters version con
 
 A raw `cp -r .claude/ <new-project>` is NOT a supported port -- it drags the source
 project's filled preferences.md and project-specific CLAUDE.md into the new project.
-`/bootstrap_to_custom_commands` is the ONLY supported porting (and upgrade) mechanism; it
-regenerates the per-project subset blank.
+The portable subset travels by **git clone** (of the harness repo, including a local
+same-machine clone) or as the **curated zip**; `/bootstrap_to_custom_commands` then
+generates the per-project subset in place, blank.
 
 ## Setup / upgrade a project
 
-`/bootstrap_to_custom_commands [target_dir]` is the single install-and-upgrade lifecycle
-command (there is no separate port command):
+Install = get the portable tree to `.claude/` (clone or zip), then run `/on_board` --
+the single onboarding funnel. It verifies prerequisites (git repo, gh auth, python3
+with a permission-gated install offer), detects the install tier (`.claude/.git`
+present = clone/local-only, absent = zip/no-git), invokes
+`/bootstrap_to_custom_commands` to generate the per-project scaffolding
+(preferences.md from the template, root CLAUDE.md from the skeleton, docs/ +
+context/, .gitignore entries, settings.json with the detected interpreter), elicits
+preferences values, offers an opt-in CLAUDE.md assist, gives a short tour, and ends
+with a self-check reporting "harness vX.Y installed".
 
-- **Install** (fresh target): copies the portable subset, generates `preferences.md` from
-  the portable template (`harness/templates/preferences_template.md`), generates a root
-  CLAUDE.md from the skeleton template, creates docs/ + context/, and wires the guardrail +
-  phase-closing hooks and the .env deny rules.
-- **Upgrade** (re-run on an existing project): refreshes the portable subset verbatim and
-  leaves every per-project file untouched -- an existing preferences.md and an existing
-  filled CLAUDE.md are NEVER overwritten.
-
-After an install: fill in `CLAUDE.md` and `.claude/preferences.md`, then start a
-`/grilling_session`.
-
-For an offline hand-off to a machine that cannot see this project, the portable subset can
-be shipped as a curated zip (produced by `.claude/harness/scripts/make_portable_zip.sh`,
-which packs only `harness/`, `commands/`, `agents/`, `hooks/` plus `INSTALL.md`) and
-installed in place: the recipient extracts it at their project root and runs
-`/bootstrap_to_custom_commands` with no argument, which regenerates the per-project
-scaffolding. Full recipient instructions and pre-requisites are in
+`/bootstrap_to_custom_commands` on its own is the in-place scaffolding step: re-run
+it after an upgrade pull/re-extract -- idempotent, never overwrites an existing
+preferences.md or CLAUDE.md. Upgrades: clone tier = `git pull` in `.claude/` +
+re-run bootstrap; zip tier = re-extract + re-run bootstrap. Full recipient
+instructions, the owner-port recipe, and pre-requisites are in
 `.claude/harness/INSTALL.md`.
 
 ## The workflow (typical arc)
@@ -239,4 +235,5 @@ meaning is guessable from its words.
 | /grilling_session | Planning any feature or change (mixed / functional / technical) | PRD + plan in docs/ |
 | /write_prompt | Ready to implement a phase | Reference-based prompt in docs/prompts/DDMMYY/ |
 | /jira_and_status_update | After work lands | Tickets + standup in docs/jira_and_standup/ |
-| /bootstrap_to_custom_commands | Installing OR upgrading the harness in a project | Portable harness + fresh per-project scaffolding |
+| /on_board | First-time onboarding after clone-or-unzip | Verified install: scaffolding, preferences, tour, self-check |
+| /bootstrap_to_custom_commands | In-place scaffolding generation / post-upgrade re-run | Fresh per-project scaffolding (never overwrites yours) |

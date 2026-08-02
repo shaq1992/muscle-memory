@@ -1,164 +1,110 @@
 ---
-description: Install OR upgrade the portable workflow harness in a target project. Copies the portable subset (harness/, commands/, agents/, hooks/) verbatim, generates .claude/preferences.md from the portable template harness/templates/preferences_template.md, generates a root CLAUDE.md from the skeleton template, creates docs/ + context/, and wires settings.json (guardrail + phase-closing hooks, deny rules). Idempotent -- re-running upgrades the harness while never overwriting an existing preferences.md or an existing CLAUDE.md.
+description: In-place install/upgrade step for the portable workflow harness. Generates the per-project scaffolding around the portable tree already present at .claude/ (from a git clone or an extracted zip): .claude/preferences.md from the single template, a root CLAUDE.md from the skeleton template, docs/ + context/ directories, .gitignore entries, and settings.json wired with the DETECTED python interpreter. Idempotent -- re-running refreshes wiring and NEVER overwrites an existing preferences.md or an existing CLAUDE.md. Recipients normally reach this through /on_board, which wraps it.
 ---
 
 ## Purpose
 
-`/bootstrap_to_custom_commands [target_dir]` is the SINGLE lifecycle command for the
-harness: it installs the harness into a new project and, run again, upgrades an existing
-one. There is no separate port command -- this is the only supported porting mechanism.
+`/bootstrap_to_custom_commands` is the harness's install-only scaffolding step. It runs
+IN PLACE, with no arguments: the portable harness trees are already sitting at the
+project's `.claude/` -- put there by a `git clone` of the harness repo or by extracting
+the curated distribution zip (see `.claude/harness/INSTALL.md`). Bootstrap's ONE job is
+to generate the per-project scaffolding around that portable tree.
 
-- **Install:** point it at a fresh project directory. It lays down the portable harness,
-  generates per-project scaffolding (preference files from portable templates, CLAUDE.md,
-  docs/, context/), and
-  wires hooks + deny rules.
-- **Upgrade:** run it again against a project that already has the harness. It refreshes the
-  portable subset verbatim and leaves every per-project file (preferences, filled CLAUDE.md)
-  untouched.
+- **Install** (fresh project): generates every per-project file and directory listed
+  below.
+- **Upgrade** (re-run on a project that already has them): creates anything missing,
+  skips anything present. The SAME steps serve both; every step is idempotent.
 
-### Porting boundary (read before running)
+There is no cross-directory copy mode. Moving the harness between projects or machines
+is done by git clone or by the zip -- see INSTALL.md's install paths and owner-port
+recipe -- never by this command copying files across directories.
 
-The harness splits into a PORTABLE subset and a PER-PROJECT subset:
+### The two-layer split (context for what this generates)
 
-- **Portable (copied verbatim):** `.claude/harness/`, `.claude/commands/`, `.claude/agents/`,
-  `.claude/hooks/`.
-- **Per-project (generated fresh, NEVER copied from the source):** `.claude/preferences.md`
-  (generated from the portable template
-  `harness/templates/preferences_template.md`), root `CLAUDE.md` (from the skeleton
-  template), `context/`, `docs/`.
-
-A raw `cp -r .claude/ <new-project>` is NOT a supported port: it drags the SOURCE project's
-filled `preferences.md` (git parameters, environment, verification, monitoring) and its
-project-specific CLAUDE.md into the new project, silently importing wrong opinion. Always
-port through this command, which regenerates the per-project subset blank.
-
-For an offline hand-off to a machine that cannot see this project, the portable subset can
-instead be shipped as a curated zip and this command run in place -- see
-`.claude/harness/INSTALL.md`.
-
-## Resolve source and target
-
-This command runs in one of two modes:
-
-- **Cross-directory** (an argument is given): TARGET = the first argument (`target_dir`),
-  an absolute or relative path to the project to install/upgrade; SOURCE = the project this
-  command is invoked from. The portable subset is copied from SOURCE into TARGET, then the
-  per-project scaffolding is generated in TARGET (copy-then-generate).
-- **In-place / offline-zip** (NO argument): TARGET == SOURCE == the current project root.
-  The portable subset already sits in the target's `.claude/` -- for example, unzipped from
-  a distribution archive (see `.claude/harness/INSTALL.md`). The copy steps are a no-op
-  because the files are already present; the generate steps do all the work.
-
-Resolve the paths as follows:
-
-- **SOURCE** = the project this command is invoked from -- specifically its `.claude/`
-  directory (the one containing this file). This is where the portable harness is read from.
-- **TARGET** = the first argument (`target_dir`) if given, else the current project root.
-- Compute `SOURCE_CLAUDE=<source_root>/.claude` and `TARGET_CLAUDE=<target_dir>/.claude`.
-- When SOURCE and TARGET resolve to the same path (the in-place / offline-zip mode), the
-  copy steps become a no-op refresh and the generate steps CREATE anything missing (a fresh
-  in-place install) and SKIP anything already present (an upgrade) -- the SAME code path
-  serves both the first-time install and the re-run upgrade. Same-path does NOT mean
-  "upgrade only".
-
-Report the resolved SOURCE and TARGET paths before doing anything else, and state which mode
-(cross-directory or in-place/offline-zip) this run is in.
+- **Portable law** (already present, NOT touched by bootstrap): `.claude/harness/`,
+  `.claude/commands/`, `.claude/agents/`, `.claude/hooks/` -- tracked in the harness
+  repo, shipped verbatim.
+- **Per-project opinion** (what bootstrap GENERATES): `.claude/preferences.md`, root
+  `CLAUDE.md`, `docs/` + `context/` directories, project `.gitignore` entries,
+  `.claude/settings.json`. Gitignored inside the harness repo; edited only by the user.
 
 ## Execution steps (all idempotent -- safe to re-run)
 
-### Step 1 -- Copy the portable subset verbatim
+### Step 0 -- Verify the portable tree is present
 
-Create `TARGET_CLAUDE/` if absent, then copy these four trees from SOURCE_CLAUDE, verbatim,
-overwriting older copies (this is the refresh/upgrade mechanism):
+Confirm all four portable trees exist: `.claude/harness/`, `.claude/commands/`,
+`.claude/agents/`, `.claude/hooks/`. If any is missing, STOP and report which -- the
+harness has not been cloned/extracted at the project root correctly (see INSTALL.md's
+"Zip rooting" note). Do not generate scaffolding around a partial tree.
 
-- `harness/`   (procedures/, templates/ incl. `claude_md_skeleton.md` and the portable
-                `preferences_template.md`, scripts/ incl. `make_portable_zip.sh`,
-                `USER_MANUAL.md`, `INSTALL.md`, `harness_glossary.md`, tests/)
-- `commands/`  (all invocable commands, including this bootstrap command itself so the target
-                can re-bootstrap/upgrade) -- but for each `.md` file in
-                `SOURCE_CLAUDE/commands/`, FIRST parse its YAML frontmatter and check for a
-                `portable: false` key. If that key is present, SKIP the copy for that file
-                entirely and log a `skipped-non-portable: <filename>` line in the report. All
-                other command files copy verbatim.
-- `agents/`    (workflow agents, e.g. self-improver)
-- `hooks/`     (`git_guardrails.py`, `enforce_phase_closing.py`)
+### Step 1 -- Detect the python interpreter
 
-Do NOT copy `preferences.md`, `settings.json`, or `context/` here -- those are
-per-project (Steps 2-6). List each tree copied.
+Detect the interpreter that will run the deterministic hooks, in this order:
+`python3` -> `python` -> `py` (first hit of `command -v <name>` wins). Record the
+detected name for Step 6.
 
-**Project-specific command opt-out:** the canonical mechanism for marking a command as
-project-specific and keeping it out of bootstrapped targets is the `portable: false` key in
-the command's YAML frontmatter. Files carrying that key are auto-skipped by the per-file
-frontmatter check above (reported as `skipped-non-portable: <filename>`) rather than being
-copied over and then flagged for the user to delete -- authors declare the opt-out once at
-the source and no manual cleanup step is required in the target. Fallback: if a copied
-command's description still contains the phrase "project-specific" but the file did NOT carry
-the `portable: false` flag, report that file and recommend the user set `portable: false` on
-it in the source so future bootstraps auto-skip it.
+If NONE is found: report it loudly -- the generated hooks will not fire until a python
+interpreter exists (the hook commands fail open by design). Do NOT offer an install
+here; the interpreter install flow (permission ask, per-OS blessed command, decline
+warning) lives in /on_board, which runs its prerequisite step BEFORE invoking this
+command. Continue scaffolding with `python3` as the written default so a later install
+needs no rewiring.
 
-### Step 2 -- Generate preferences.md from the portable template
+### Step 2 -- Generate preferences.md from the single template
 
-The single preferences file is generated by copying the portable template
-`SOURCE_CLAUDE/harness/templates/preferences_template.md`. It is NEVER derived from the
-source project's own filled `preferences.md` (that would import wrong opinion) and is NOT
-a hand-built `[Fill in]` one-liner -- the template is a complete, structured file the user
-only edits.
-
-- If `TARGET_CLAUDE/preferences.md` does NOT exist, copy
-  `SOURCE_CLAUDE/harness/templates/preferences_template.md` into it verbatim; if it already
-  exists, leave it untouched (NEVER overwrite a filled preferences file).
-- The template's key block ships working git defaults (not bare placeholders): it already
-  carries the machine-parseable key lines the guardrail hook reads
-  (`integration_branch_prefix`, `phase_branch_pattern`, `phase_number_padding`,
-  `default_branch`, `protected_branch`, `merge_style`, `retain_integration_branch`), so the
-  hook works before the user customizes anything. (`harness_push_remote` is deliberately
-  absent -- recipients never set it.)
-- Report: created-from-template / already-existed-skipped.
-
-Because the template lives under `harness/` (part of the portable subset shipped in the
-offline zip), it is always present on the target -- this step has NO dependency on the
-excluded per-project `preferences.md`, which is what closes the in-place / offline-zip gap.
+- If `.claude/preferences.md` does NOT exist, copy
+  `.claude/harness/templates/preferences_template.md` to `.claude/preferences.md`
+  verbatim.
+- If it already exists, leave it byte-for-byte untouched -- NEVER overwrite a
+  preferences file -- and the completion report MUST state:
+  "existing preferences.md detected -- kept". (This is what makes the owner-port
+  recipe in INSTALL.md safe: clone, copy your preferences.md in, run /bootstrap.)
+- The template ships working git defaults (the machine-parseable key lines the
+  guardrail hook reads), so the hook works before the user customizes anything.
+  `harness_push_remote` is deliberately absent -- recipients never set it.
+- Report: created-from-template / existing-detected-and-kept.
 
 ### Step 3 -- Generate root CLAUDE.md from the skeleton template
 
-- If `TARGET_DIR/CLAUDE.md` already exists, do NOT overwrite it. Report
-  "CLAUDE.md already exists -- skipped." (This is what makes an upgrade run safe.)
-- Otherwise, read `SOURCE_CLAUDE/harness/templates/claude_md_skeleton.md`, DROP the
-  instruction preamble (everything above the `---` separator / the `# CLAUDE.md` marker
-  line), and write the remaining skeleton body to `TARGET_DIR/CLAUDE.md`. The generated file
-  is the thin protective skeleton with `[...]` placeholders the user then fills -- this is
-  the deliberate anti-`/init`. Do NOT auto-fill placeholders from the target's filesystem.
+- If `<project root>/CLAUDE.md` already exists, do NOT overwrite it. Report
+  "CLAUDE.md already exists -- skipped."
+- Otherwise, read `.claude/harness/templates/claude_md_skeleton.md`, DROP the
+  instruction preamble (everything above the `---` separator / the `# CLAUDE.md`
+  marker line), and write the remaining skeleton body to `<project root>/CLAUDE.md`.
+  The generated file is the thin protective skeleton with `[...]` placeholders the
+  user then fills -- the deliberate anti-`/init`. Do NOT auto-fill placeholders from
+  the filesystem (guided, user-confirmed filling is /on_board's CLAUDE.md assist).
 - Report created-from-skeleton / skipped.
 
 ### Step 4 -- Create per-project directories
 
-Create (idempotent) in TARGET:
+Create (idempotent) at the project root:
 ```
-mkdir -p <target>/docs/prds <target>/docs/multi_phase_plans <target>/docs/learnings <target>/docs/prompts <target>/docs/quick
-mkdir -p <target>/context
+mkdir -p docs/prds docs/multi_phase_plans docs/learnings docs/prompts docs/quick
+mkdir -p context
 ```
-Report which were created and which already existed. Do NOT seed context/ files -- the domain
-glossary/architecture/decisions are written by real sessions, not bootstrap.
+Report which were created and which already existed. Do NOT seed context/ files -- the
+domain glossary/architecture/decisions are written by real sessions, not bootstrap.
 
 ### Step 5 -- .gitignore (all AI-facing scaffolding stays local)
 
-Check `TARGET_DIR/.gitignore`. Ensure each of these entries is present (one per line, append
-any missing, never duplicate; if the file is absent, create it):
+Check `<project root>/.gitignore`. Ensure each of these entries is present (one per
+line, append any missing, never duplicate; if the file is absent, create it):
 ```
 .claude/
 CLAUDE.md
 docs/
 context/
-.claude_archive/
 ```
 Report created / entries-appended / already-present.
 
 ### Step 6 -- settings.json (permissions + hook registration)
 
-Target file: `TARGET_CLAUDE/settings.json`.
+Target file: `.claude/settings.json`. Substitute the Step 1 detected interpreter for
+BOTH `python3` occurrences in each hook command below (the `command -v` guard and the
+`exec`) so registered hooks always invoke an interpreter that exists on this machine.
 
-- If it does NOT exist, create it with this content (stdlib `python3`; adjust only if the
-  target machine's interpreter is named differently, e.g. `python` on some hosts):
+- If it does NOT exist, create it with this content (shown with the `python3` default):
   ```json
   {
     "permissions": {
@@ -179,20 +125,25 @@ Target file: `TARGET_CLAUDE/settings.json`.
     }
   }
   ```
-- If it DOES exist, parse it as JSON and MERGE idempotently: add the two hook registrations
-  only if an equivalent entry is not already present; add each `permissions.deny` rule only
-  if absent. Preserve every other existing key (`allow`, `skillOverrides`, etc.) untouched.
-- The `.env` deny rules are load-bearing security invariants -- they must end up present.
-- Report: created-fresh / merged (list what was added) / already-complete.
+- If it DOES exist, parse it as JSON and MERGE idempotently: add the two hook
+  registrations only if an equivalent entry is not already present; add each
+  `permissions.deny` rule only if absent. Preserve every other existing key (`allow`,
+  `skillOverrides`, etc.) untouched. Do not rewrite an existing hook command's
+  interpreter -- an already-wired project keeps its wiring.
+- The `.env` deny rules are load-bearing security invariants -- they must end up
+  present.
+- Report: created-fresh (naming the interpreter written) / merged (list what was
+  added) / already-complete.
 
-### Step 7 -- Confirm
+### Step 7 -- Completion report
 
 Report a summary:
-- Resolved SOURCE and TARGET; whether this was an install or a self-upgrade.
-- Portable trees copied (harness/, commands/, agents/, hooks/) + any command files auto-skipped
-  due to `portable: false` (listed as `skipped-non-portable`).
-- preferences.md: created-from-template vs. left untouched.
+- Whether this was a fresh install or an upgrade/no-op re-run.
+- Detected interpreter (or "none found -- hooks inert until python is installed").
+- preferences.md: created-from-template, or "existing preferences.md detected -- kept".
 - CLAUDE.md: created-from-skeleton or skipped (already existed).
 - Directories created; .gitignore result; settings.json result.
-- Next step: "Fill in CLAUDE.md and .claude/preferences.md with this project's
-  specifics, then run /grilling_session to start your first planning session."
+- Next step: "Run /on_board for the guided setup (preferences elicitation, CLAUDE.md
+  assist, tour, self-check) -- or, if you have already onboarded, fill in CLAUDE.md
+  and .claude/preferences.md, then run /grilling_session to start your first planning
+  session."
