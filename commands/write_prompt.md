@@ -288,10 +288,10 @@ Tests-as-deliverables policy: per @.claude/preferences.md (Verification section)
   [OVERRIDE -- only if a section 5 deliverable names CLAUDE.md:] Do not modify
   docs/prds/ or docs/multi_phase_plans/. CLAUDE.md IS modifiable this phase -- surgical
   updates only, reflecting only what the Deliverables specify.
-- [If, during implementation, you find the live code diverges from any prior
+- If, during implementation, you find the live code diverges from any prior
   specification document -- the PRD (`docs/prds/`), the multi-phase plan
-  (`docs/multi_phase_plans/`), CLAUDE.md, or a gitignored `context/` file:] Tiebreaker:
-  THE LIVE CODE WINS -- but ONLY for DESCRIPTIVE claims (what the system does, how a
+  (`docs/multi_phase_plans/`), CLAUDE.md, or a gitignored `context/` file -- the
+  tiebreaker is: THE LIVE CODE WINS -- but ONLY for DESCRIPTIVE claims (what the system does, how a
   module behaves, what a parameter resolved to, what an artifact contains). It NEVER
   applies to PRESCRIPTIVE constraints: hard rules, security invariants, legal /
   permitted-use boundaries, budget law, encoding rules, or the ambiguity protocol.
