@@ -114,7 +114,7 @@ Proposed tickets:
 ...
 ```
 
-Wait for Shadman to:
+Wait for the user (address them by the `user_name` key of `.claude/preferences.md`, read at execution time) to:
 - Select a subset (e.g. "1 and 3", "all", "just 2")
 - Give feedback on titles or scope
 - Or confirm the full list as proposed

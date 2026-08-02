@@ -1,311 +1,314 @@
-"""Behavioral tests for the Phase 2 git-autonomy machinery (harness-improv-v3).
+"""Behavioral tests for the Phase 2 guardrail-hook contract (PR git law).
 
-The seven ratified behavioral tests (classes 1-7 below), plus ONE explicitly
-FLAGGED extra (class 8: approvals-directory Bash backstop) that guards the
-"Claude mechanically cannot create the marker" deliverable -- see the phase
-report for the flag.
+Contract classes 1-8 below are the ten ratified test cases from the phase
+prompt. Classes 12-13 are the Phase 3 contract cases (parameters read from
+the consolidated .claude/preferences.md; inline-default fallback when it is
+absent). Classes 9-11 are EXPLICITLY FLAGGED EXTRAS beyond the contract:
+  9  - allow-path regression guard (normal phase/PR-law operations must pass;
+       protects against a fail-closed rewrite that bricks every git call)
+  10 - non-git passthrough guard (quoted git-looking strings, plain commands)
+  11 - settings.json registration (bare python3, no venv, no approvals deny
+       rules). Its former closing-hook contract test moved to
+       test_closing_hook.py when Phase 4 added the content checks.
 
-Local-only suite (never committed): .claude/ is gitignored.
-Run with: venv/bin/pytest .claude/harness/tests/ -v
+Stdlib-only. Run with: python3 -m unittest discover .claude/harness/tests
 """
 
 import json
-import subprocess
+import shutil
 
-import pytest
-
-from conftest import (
-    CLOSING_HOOK,
-    HELPER_SCRIPT,
-    PROJECT_ROOT,
+from helpers import (
+    BASE_PARAMS,
+    GUARDRAIL_HOOK,
+    MATCHING_REMOTE_PATTERN,
+    MISMATCHING_REMOTE_PATTERN,
+    PLAN_NAME,
     SETTINGS_JSON,
-    SETUP_SCRIPT,
-    VENV_PYTHON,
-    _git,
-    decision,
-    make_marker,
+    GuardrailEnv,
+    decision_and_reason,
+    git,
     run_hook,
 )
 
-FAKE_PAT = "FAKE_PAT_1a2b3c4d5e_not_a_real_token"
-
 
 # ---------------------------------------------------------------------------
-# Behavioral test 1: destructive git commands always denied
+# 1. Destructive ops: force push in every variant
 # ---------------------------------------------------------------------------
-class TestDestructiveCommandsBlocked:
-    @pytest.mark.parametrize(
-        "command",
-        [
+class TestBlocksForcePush(GuardrailEnv):
+    def test_blocks_force_push(self):
+        for command in [
             "git push --force",
             "git push -f origin feature-x",
-            # implementation extension of the ratified force-push rule:
-            # --force-with-lease is caught by the same --force* pattern
             "git push --force-with-lease origin main",
-            "git reset --hard HEAD~1",
-            "git branch -D harness-improv-v3-phase-02",
-            "git clean -f",
-            "git clean -fd",
-        ],
-    )
-    def test_denied(self, fake_repo, command):
-        assert decision(run_hook(command, fake_repo)) == "deny"
-
-    def test_denied_even_with_marker_present(self, fake_repo):
-        make_marker(fake_repo)
-        assert decision(run_hook("git push --force origin main", fake_repo)) == "deny"
+            "git push origin feature-x --force",
+        ]:
+            with self.subTest(command=command):
+                self.assert_denied(command)
 
 
 # ---------------------------------------------------------------------------
-# Behavioral test 2: protected-branch ops denied without the approval marker
+# 2. Destructive ops: reset --hard, branch -D, clean -f
 # ---------------------------------------------------------------------------
-class TestProtectedBranchGatedWithoutMarker:
-    @pytest.mark.parametrize(
-        "command",
-        [
-            'git merge --no-ff integration/harness-improv-v3 -m "merge: final"',
+class TestBlocksDestructiveOps(GuardrailEnv):
+    def test_blocks_reset_hard(self):
+        self.assert_denied("git reset --hard HEAD~1")
+
+    def test_blocks_branch_D(self):
+        self.assert_denied("git branch -D {0}-phase-02".format(PLAN_NAME))
+
+    def test_blocks_clean_f(self):
+        self.assert_denied("git clean -f")
+        self.assert_denied("git clean -fd")
+
+
+# ---------------------------------------------------------------------------
+# 3. Protected branch: merge while on it is flat-blocked (no exceptions)
+# ---------------------------------------------------------------------------
+class TestBlocksMergeOnProtectedBranch(GuardrailEnv):
+    def test_blocks_merge_on_protected_branch(self):
+        self.assert_denied(
+            'git merge integration/{0} -m "merge: final"'.format(PLAN_NAME)
+        )
+
+
+# ---------------------------------------------------------------------------
+# 4. Protected branch: any push targeting it is flat-blocked
+# ---------------------------------------------------------------------------
+class TestBlocksPushTargetingProtected(GuardrailEnv):
+    def test_blocks_push_targeting_protected(self):
+        for command in [
             "git push origin main",
             "git push origin main:main",
             "git push origin HEAD:main",
+            "git push origin feature-x:refs/heads/main",
             "git push",  # bare push while ON main targets main
-        ],
-    )
-    def test_denied_on_main_without_marker(self, fake_repo, command):
-        assert decision(run_hook(command, fake_repo)) == "deny"
+        ]:
+            with self.subTest(command=command):
+                self.assert_denied(command)
 
 
 # ---------------------------------------------------------------------------
-# Behavioral test 3: marker allows the gated ops; consumed by the merge
+# 5. Protected branch: gh pr merge is user-only, flat-blocked for Claude
 # ---------------------------------------------------------------------------
-class TestMarkerAllowsAndIsConsumed:
-    def test_push_to_main_allowed_with_marker(self, fake_repo):
-        marker = make_marker(fake_repo)
-        assert decision(run_hook("git push origin main", fake_repo)) == "allow"
-        # push alone does not consume the marker; the merge does
-        assert marker.exists()
+class TestBlocksGhPrMerge(GuardrailEnv):
+    def test_blocks_gh_pr_merge_into_protected(self):
+        for command in [
+            "gh pr merge 12 --merge",
+            "gh pr merge --merge --delete-branch",
+            "gh pr merge 3 --repo example/some-repo --squash",
+            "cd .claude && gh pr merge 1 --merge",
+        ]:
+            with self.subTest(command=command):
+                self.assert_denied(command)
 
-    def test_merge_allowed_with_marker_then_consumed(self, fake_repo):
-        marker = make_marker(fake_repo)
-        cmd = 'git merge --no-ff integration/harness-improv-v3 -m "merge: final"'
-        assert decision(run_hook(cmd, fake_repo)) == "allow"
-        assert not marker.exists(), "marker must be deleted after the allowed merge"
-        # one-shot: the same merge is denied once the marker is gone
-        assert decision(run_hook(cmd, fake_repo)) == "deny"
 
-    def test_compound_merge_and_push_covered_by_single_marker(self, fake_repo):
-        marker = make_marker(fake_repo)
-        cmd = (
-            'git merge --no-ff integration/harness-improv-v3 -m "merge: final" '
-            "&& git push origin main"
+# ---------------------------------------------------------------------------
+# 6-8. Push-remote allowlist (fail-closed) + repo-context attribution
+# ---------------------------------------------------------------------------
+class TestPushRemoteAllowlist(GuardrailEnv):
+    def test_push_allowlist_match_allowed(self):
+        self.set_harness_push_remote(MATCHING_REMOTE_PATTERN)
+        self.assert_allowed("git -C .claude push origin feature-x")
+
+    def test_push_allowlist_mismatch_blocked(self):
+        self.set_harness_push_remote(MISMATCHING_REMOTE_PATTERN)
+        self.assert_denied(
+            "git -C .claude push origin feature-x",
+            reason_contains="harness_push_remote",
         )
-        assert decision(run_hook(cmd, fake_repo)) == "allow"
-        assert not marker.exists()
+
+    def test_push_allowlist_key_absent_blocks_all(self):
+        self.set_harness_push_remote(None)
+        self.assert_denied(
+            "git -C .claude push origin feature-x",
+            reason_contains="harness_push_remote",
+        )
+        # fail-closed applies from inside the harness repo too
+        self.assert_denied(
+            "git push origin feature-x",
+            cwd=self.harness,
+            reason_contains="harness_push_remote",
+        )
+
+
+class TestRepoContextAttribution(GuardrailEnv):
+    def test_repo_context_attribution(self):
+        # Key absent: harness pushes blocked in every invocation form ...
+        self.set_harness_push_remote(None)
+        self.assert_denied("git -C .claude push origin feature-x")
+        self.assert_denied("cd .claude && git push origin feature-x")
+        # ... while the SAME push in the project repo is not subject to the
+        # harness allowlist and passes.
+        self.assert_allowed("git push origin feature-x")
+
+        # Key present and matching: both harness forms pass.
+        self.set_harness_push_remote(MATCHING_REMOTE_PATTERN)
+        self.assert_allowed("git -C .claude push origin feature-x")
+        self.assert_allowed("cd .claude && git push origin feature-x")
 
 
 # ---------------------------------------------------------------------------
-# Behavioral test 4: normal phase operations pass through untouched
+# Marker logic gone: a file at the old approvals path grants nothing
 # ---------------------------------------------------------------------------
-class TestNormalPhaseOperationsPass:
-    @pytest.fixture
-    def integration_repo(self, fake_repo):
-        _git(fake_repo, "branch", "integration/harness-improv-v3")
-        _git(fake_repo, "branch", "harness-improv-v3-phase-02")
-        _git(fake_repo, "checkout", "integration/harness-improv-v3")
-        return fake_repo
-
-    @pytest.mark.parametrize(
-        "command",
-        [
-            "git push origin harness-improv-v3-phase-02",
-            'git merge --no-ff harness-improv-v3-phase-02 -m "merge: phase 02"',
-            "git push origin integration/harness-improv-v3",
-            "git branch -d harness-improv-v3-phase-02",
-            "git push origin --delete harness-improv-v3-phase-02",
-        ],
-    )
-    def test_allowed(self, integration_repo, command):
-        assert decision(run_hook(command, integration_repo)) == "allow"
-
-
-# ---------------------------------------------------------------------------
-# Behavioral test 5: non-git Bash commands pass through (no false positives)
-# ---------------------------------------------------------------------------
-class TestNonGitCommandsPass:
-    @pytest.mark.parametrize(
-        "command",
-        [
-            "ls -la",
-            "venv/bin/pytest tests/ -v",
-            # quoted git-looking string must NOT trip the matcher
-            "grep -rn 'git push --force' docs/",
-            "echo done && cat README.md",
-            "venv/bin/python scripts/orch_health_check.py",
-        ],
-    )
-    def test_allowed(self, fake_repo, command):
-        assert decision(run_hook(command, fake_repo)) == "allow"
-
-
-# ---------------------------------------------------------------------------
-# Behavioral test 6: credential helper -- push works, token never leaks
-# ---------------------------------------------------------------------------
-class TestCredentialHelper:
-    def test_push_succeeds_and_token_never_leaks(self, fake_repo, tmp_path):
-        (fake_repo / ".env").write_text(
-            "ODATA_URL=https://example.invalid\nGIT_PAT={0}\n".format(FAKE_PAT),
+class TestMarkerLogicGone(GuardrailEnv):
+    def test_marker_logic_gone(self):
+        approvals = self.repo / ".claude" / "approvals"
+        approvals.mkdir(parents=True)
+        marker = approvals / "{0}_main_merge.json".format(PLAN_NAME)
+        marker.write_text(
+            json.dumps({"approved_by": "user", "plan": PLAN_NAME}),
             encoding="utf-8",
         )
-        setup = subprocess.run(
-            ["bash", str(SETUP_SCRIPT)],
-            cwd=str(fake_repo),
-            capture_output=True,
-            text=True,
-            timeout=30,
+        # The marker grants nothing: protected-branch ops still flat-blocked.
+        self.assert_denied("git push origin main")
+        self.assert_denied(
+            'git merge integration/{0} -m "merge: final"'.format(PLAN_NAME)
         )
-        assert setup.returncode == 0, setup.stderr
-        assert FAKE_PAT not in setup.stdout + setup.stderr
-
-        helper_cfg = subprocess.run(
-            ["git", "config", "--local", "credential.helper"],
-            cwd=str(fake_repo),
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert helper_cfg.returncode == 0
-        assert "git_credential_env.sh" in helper_cfg.stdout
-
-        remote = tmp_path / "remote.git"
-        subprocess.run(
-            ["git", "init", "--bare", str(remote)],
-            check=True,
-            capture_output=True,
-            timeout=30,
-        )
-        _git(fake_repo, "remote", "add", "origin", str(remote))
-        push_cmd = ["git", "push", "origin", "main"]
-        assert FAKE_PAT not in " ".join(push_cmd)
-        push = subprocess.run(
-            push_cmd,
-            cwd=str(fake_repo),
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert push.returncode == 0, push.stderr
-        assert FAKE_PAT not in push.stdout + push.stderr
-
-    def test_helper_emits_credentials_from_env_file(self, fake_repo):
-        (fake_repo / ".env").write_text(
-            "GIT_PAT={0}\n".format(FAKE_PAT), encoding="utf-8"
-        )
-        result = subprocess.run(
-            ["bash", str(HELPER_SCRIPT), "get"],
-            cwd=str(fake_repo),
-            input="protocol=https\nhost=github.com\n\n",
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0, result.stderr
-        lines = result.stdout.strip().splitlines()
-        assert "username=x-access-token" in lines
-        assert "password={0}".format(FAKE_PAT) in lines
-
-    def test_helper_silent_for_non_get_actions(self, fake_repo):
-        (fake_repo / ".env").write_text(
-            "GIT_PAT={0}\n".format(FAKE_PAT), encoding="utf-8"
-        )
-        result = subprocess.run(
-            ["bash", str(HELPER_SCRIPT), "store"],
-            cwd=str(fake_repo),
-            input="",
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0
-        assert result.stdout.strip() == ""
+        self.assertTrue(marker.exists(), "hook must not consume the stale marker")
+        # The approvals-directory Bash backstop is retired with the marker:
+        # merely referencing the old path is no longer a special deny.
+        self.assert_allowed("ls .claude/approvals")
 
 
 # ---------------------------------------------------------------------------
-# Behavioral test 7: enforce_phase_closing regression guard
+# 9. FLAGGED EXTRA: normal operations under the PR law must pass
 # ---------------------------------------------------------------------------
-def _run_closing(payload):
-    return subprocess.run(
-        [str(VENV_PYTHON), str(CLOSING_HOOK)],
-        input=json.dumps(payload),
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+class TestNormalOperationsPassFlaggedExtra(GuardrailEnv):
+    def setUp(self):
+        super().setUp()
+        git(self.repo, "branch", "integration/{0}".format(PLAN_NAME))
+        git(self.repo, "branch", "{0}-phase-02".format(PLAN_NAME))
+        git(self.repo, "checkout", "integration/{0}".format(PLAN_NAME))
+
+    def test_phase_close_operations_allowed(self):
+        for command in [
+            "git push origin {0}-phase-02".format(PLAN_NAME),
+            'git merge {0}-phase-02 -m "merge: phase 02"'.format(PLAN_NAME),
+            "git push origin integration/{0}".format(PLAN_NAME),
+            "git branch -d {0}-phase-02".format(PLAN_NAME),
+            "git push origin --delete {0}-phase-02".format(PLAN_NAME),
+        ]:
+            with self.subTest(command=command):
+                self.assert_allowed(command)
+
+    def test_pr_law_gh_commands_allowed(self):
+        for command in [
+            'gh pr create --title "feat: x" --body "body"',
+            "gh pr view 12",
+            "gh pr checks 12",
+        ]:
+            with self.subTest(command=command):
+                self.assert_allowed(command)
+
+    def test_harness_close_operations_allowed_with_matching_key(self):
+        self.set_harness_push_remote(MATCHING_REMOTE_PATTERN)
+        git(self.harness, "branch", "integration/{0}".format(PLAN_NAME))
+        for command in [
+            "git -C .claude push origin integration/{0}".format(PLAN_NAME),
+            "cd .claude && git push -u origin integration/{0}".format(PLAN_NAME),
+        ]:
+            with self.subTest(command=command):
+                self.assert_allowed(command)
 
 
-class TestEnforcePhaseClosingRegression:
-    def test_hook_contract_unchanged(self, tmp_path):
-        marker_path = PROJECT_ROOT / ".claude" / "phase_closing.json"
-        assert not marker_path.exists(), (
-            "pre-existing real phase_closing.json -- aborting to avoid clobber"
-        )
-        learnings = tmp_path / "learnings.md"
-        session = "pytest-regression-session-p2"
-        try:
-            # no marker -> allow
-            r = _run_closing({"session_id": session})
-            assert r.returncode == 0 and r.stdout.strip() == ""
+# ---------------------------------------------------------------------------
+# 10. FLAGGED EXTRA: non-git commands pass through (no false positives)
+# ---------------------------------------------------------------------------
+class TestNonGitCommandsPassFlaggedExtra(GuardrailEnv):
+    def test_allowed(self):
+        for command in [
+            "ls -la",
+            "python3 -m unittest discover .claude/harness/tests",
+            "grep -rn 'git push --force' docs/",
+            "echo done && cat README.md",
+        ]:
+            with self.subTest(command=command):
+                self.assert_allowed(command)
 
-            # marker + matching session + missing learnings -> block
-            marker_path.write_text(
-                json.dumps(
-                    {
-                        "session_id": session,
-                        "plan_name": "harness-improv-v3",
-                        "phase": 2,
-                        "learnings_path": str(learnings),
-                    }
-                ),
-                encoding="utf-8",
-            )
-            r = _run_closing({"session_id": session})
-            out = json.loads(r.stdout)
-            assert out.get("decision") == "block"
-            assert marker_path.exists()
 
-            # non-matching session -> no-op allow, marker untouched
-            r = _run_closing({"session_id": "some-other-session"})
-            assert r.returncode == 0 and r.stdout.strip() == ""
-            assert marker_path.exists()
-
-            # learnings file written -> allow + marker self-deletes
-            learnings.write_text("**Branch:** main\n", encoding="utf-8")
-            r = _run_closing({"session_id": session})
-            assert r.returncode == 0 and r.stdout.strip() == ""
-            assert not marker_path.exists()
-        finally:
-            if marker_path.exists():
-                marker_path.unlink()
-
-    def test_both_hooks_registered_in_settings(self):
+# ---------------------------------------------------------------------------
+# 11. FLAGGED EXTRA: settings registration (python3). The former
+# test_hook_contract_unchanged is SUPERSEDED by test_closing_hook.py (Phase 4
+# learnings revision): a bare-existence learnings file no longer satisfies
+# the Stop hook, and the plan-level ledger check resolves against the hook's
+# own project root, so the contract now runs through a hook copy in a temp
+# tree over there.
+# ---------------------------------------------------------------------------
+class TestClosingHookRegistrationFlaggedExtra(GuardrailEnv):
+    def test_hooks_registered_with_stdlib_python3(self):
         settings = json.loads(SETTINGS_JSON.read_text(encoding="utf-8"))
-        stop_hooks = json.dumps(settings.get("hooks", {}).get("Stop", []))
-        assert "enforce_phase_closing.py" in stop_hooks
         pre_hooks = json.dumps(settings.get("hooks", {}).get("PreToolUse", []))
-        assert "git_guardrails.py" in pre_hooks
+        stop_hooks = json.dumps(settings.get("hooks", {}).get("Stop", []))
+        self.assertIn("git_guardrails.py", pre_hooks)
+        self.assertIn("enforce_phase_closing.py", stop_hooks)
+        for blob in (pre_hooks, stop_hooks):
+            self.assertIn("python3", blob)
+            self.assertNotIn("venv/bin/python", blob)
+        deny = json.dumps(settings.get("permissions", {}).get("deny", []))
+        self.assertIn(".env", deny, ".env read-denies must remain")
+        self.assertNotIn("approvals", deny, "approvals deny rules are retired")
 
 
 # ---------------------------------------------------------------------------
-# FLAGGED EXTRA (beyond the seven ratified tests): approvals-dir Bash backstop.
-# Guards the deliverable "Claude mechanically cannot create the marker" --
-# settings.json deny rules cover Write/Edit; this covers arbitrary Bash forms.
+# 12. Phase 3 contract: parameters resolved from the single preferences.md
 # ---------------------------------------------------------------------------
-class TestApprovalsWriteBackstopFlaggedExtra:
-    @pytest.mark.parametrize(
-        "command",
-        [
-            "touch .claude/approvals/harness-improv-v3_main_merge.json",
-            "echo '{}' > .claude/approvals/harness-improv-v3_main_merge.json",
-            "cp /tmp/x.json .claude/approvals/harness-improv-v3_main_merge.json",
-        ],
-    )
-    def test_denied(self, fake_repo, command):
-        assert decision(run_hook(command, fake_repo)) == "deny"
+class TestParamsReadFromPreferencesMd(GuardrailEnv):
+    def test_params_read_from_preferences_md(self):
+        # protected_branch comes from the key block, not the inline default:
+        # with a custom value, 'main' is no longer protected and the custom
+        # branch is. (The block also carries the branch-pattern keys --
+        # integration_branch_prefix, phase_branch_pattern,
+        # phase_number_padding -- proving the single-file block parses; the
+        # hook takes no branch-name-pattern decision observable beyond this.)
+        self.params_file.write_text(
+            BASE_PARAMS.replace(
+                "protected_branch: main", "protected_branch: trunk"
+            ),
+            encoding="utf-8",
+        )
+        self.assert_denied(
+            "git push origin trunk", reason_contains="trunk"
+        )
+        self.assert_allowed("git push origin feature-x:main")
+
+        # harness_push_remote comes from the same file's key block.
+        self.set_harness_push_remote(MATCHING_REMOTE_PATTERN)
+        self.assert_allowed("git -C .claude push origin feature-x")
+        self.set_harness_push_remote(MISMATCHING_REMOTE_PATTERN)
+        self.assert_denied(
+            "git -C .claude push origin feature-x",
+            reason_contains="harness_push_remote",
+        )
+
+
+# ---------------------------------------------------------------------------
+# 13. Phase 3 contract: absent preferences.md -> inline defaults still work
+# ---------------------------------------------------------------------------
+class TestMissingPreferencesFileFallsBack(GuardrailEnv):
+    def test_missing_preferences_file_falls_back_to_defaults(self):
+        self.params_file.unlink()
+
+        # Run a COPY of the hook from inside the temp tree so its
+        # hook-relative fallback candidate cannot find the real project's
+        # preferences.md -- only the inline defaults remain.
+        hook_home = self.repo.parent / "hookhome"
+        hook_dir = hook_home / ".claude" / "hooks"
+        hook_dir.mkdir(parents=True)
+        hook_copy = hook_dir / "git_guardrails.py"
+        shutil.copyfile(str(GUARDRAIL_HOOK), str(hook_copy))
+
+        def verdict(command):
+            return decision_and_reason(
+                run_hook(command, self.repo, hook_path=hook_copy)
+            )
+
+        # Default protected_branch ('main') still enforced.
+        v, reason = verdict("git push origin main")
+        self.assertEqual("deny", v, "default protected branch must hold")
+        # Ordinary project pushes still pass (hook functions, no crash).
+        v, _ = verdict("git push origin feature-x")
+        self.assertEqual("allow", v)
+        # Harness pushes stay fail-closed: no file means no allowlist key.
+        v, reason = verdict("git -C .claude push origin feature-x")
+        self.assertEqual("deny", v)
+        self.assertIn("harness_push_remote", reason)

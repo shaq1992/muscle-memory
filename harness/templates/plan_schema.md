@@ -18,9 +18,9 @@ The plan opens with:
 PRD: `docs/prds/<plan_name>_prd.md` (read in full before any phase).
 
 ## Git strategy for THIS plan (read first)
-[Resolved against harness/procedures/git_strategy.md: integration branch name,
-the per-phase boolean values, or the local-only declaration if all deliverables
-are gitignored. Note any plan-specific exceptions, e.g. a single tracked edit.]
+[Resolved against harness/procedures/git_strategy.md: integration branch name
+and the per-phase boolean values. Note any plan-specific exceptions, e.g.
+branches living in a different repo.]
 
 ## Slicing note (ratified)
 [Which tracer-bullet ruling applies -- sliced phases, or the exemption with its
@@ -98,6 +98,26 @@ follow dependency order -- the plan MUST say so explicitly in its Slicing note,
 naming the exemption reason. The grilling session's tracer-bullet question batch
 decides which ruling applies; the plan records the ratified outcome.
 
+## Amendments section
+
+Every plan document may end with an `## Amendments` section. It is appended
+ONLY by the closing sequence's user-gated document-reconciliation step
+(`harness/procedures/closing_sequence.md`) -- never by direct mid-phase edits;
+that reconciliation step is the sanctioned mutation path past the append-only
+rule. Each phase close that amends the document appends ONE dated entry:
+
+```
+## Amendments
+
+### YYYY-MM-DD -- phase NN
+- <what changed, one line> (superseding decision: <the mid-phase decision>)
+- ...
+```
+
+The section is absent until the first amendment. Approved amendments edit the
+body text surgically AND log the change here, so the body is always current
+truth and the trail records how it got there.
+
 ## context/ update-on-touch rule
 
 Any phase whose deliverables change a fact recorded in a `context/` file MUST
@@ -117,9 +137,8 @@ DESCRIPTIVE claims: statements about what the system does, how a module behaves,
 what a parameter resolved to, what an artifact contains. The tiebreaker NEVER
 applies to PRESCRIPTIVE constraints -- hard rules, security invariants, legal /
 permitted-use boundaries, budget law, encoding rules, the ambiguity protocol, or
-any other "MUST / MUST NOT" the project imposes on itself (in this project,
-CLAUDE.md's "Hard constraints", "FR24 credit-cost management", and "Security
-hardening" sections). Code that violates a prescriptive constraint is a BUG to
+any other "MUST / MUST NOT" the project imposes on itself (the project
+CLAUDE.md's hard-constraint sections). Code that violates a prescriptive constraint is a BUG to
 surface and fix, never evidence that the constraint has changed; only the user
 may relax one. The tracked,
 reviewed code is what actually ships and what a reviewer diffs against; a prior
@@ -131,7 +150,7 @@ contradicting code path -- do not silently propagate the stale claim. Where the
 diverging document is one the phase is FORBIDDEN to edit (`docs/prds/`,
 `docs/multi_phase_plans/`), the record MUST land in the phase's durable trail --
 the `context/` deliverable if the phase carries one, otherwise the phase
-learnings' Carry Forward -- AND must be surfaced to the user in the closing
+learnings -- AND must be surfaced to the user in the closing
 summary so they can authorise a follow-on reconciliation phase. Divergences
 against a gitignored `context/` file additionally feed the update-on-touch rule
 above so a follow-on phase can carry the corresponding `update context/<file>`

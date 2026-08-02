@@ -1,11 +1,10 @@
 # Per-project / instantiated files -- never tracked in the harness repo.
 # Recipients generate these locally (/bootstrap, /on-board); pulls stay clean.
 # Patterns are root-anchored so portable content (e.g. harness/templates/
-# preferences/) is never caught.
+# preferences_template.md) is never caught.
 /settings.json
 /settings.local.json
 /preferences.md
-/preferences/
 /phase_closing.json
 /projects/
 

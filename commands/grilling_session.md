@@ -18,7 +18,18 @@ Read any @file references in $ARGUMENTS in full before generating your first res
 If the context contains internal contradictions, surface those first as your opening
 question.
 
-## Session start -- read the glossaries (R6.6)
+## Session open -- controls legend
+
+Your FIRST response of the session opens with this 3-line legend, verbatim, before the
+glossary block and before Question 1, so the user knows the session's controls up front:
+
+```
+Controls: say "stop asking questions" to end the Q&A and move to wrap-up.
+Say "linger" for a freeform deep-dive on the current question ("fully defined" resumes).
+Asides that are not answers are recorded as requirements without costing a question.
+```
+
+## Session start -- read the glossaries
 
 Before Question 1, read the two glossary surfaces so established shorthand is spoken
 natively for the rest of the session:
@@ -49,13 +60,13 @@ Parse `$ARGUMENTS` in this order:
 3. **custom_instructions** -- everything remaining after the tokens consumed above.
 
 Mode semantics (grilling scope and outputs are detailed further below):
-- `mixed` (bare, no mode token): the regression baseline -- grill what/why AND how, write
-  the full PRD and the plan in one pass, behaving byte-for-byte as the pre-modes command.
+- `mixed` (bare, no mode token): the default -- grill what/why AND how, write
+  the full PRD and the plan in one pass.
 - `functional`: grill only the what/why; write the functional PRD, no plan.
 - `technical`: read the existing functional PRD, grill only the how, append the technical
   sections to it, write the plan.
 
-### Slug auto-normalization (R1.9a)
+### Slug auto-normalization
 
 If `plan_name` is present but not already a valid kebab-case slug (lowercase alphanumeric
 + hyphens, max 20 chars), auto-normalize it: lowercase, replace underscores/spaces with
@@ -74,17 +85,17 @@ if `plan_name` is entirely absent do you ask Question 1 below.
 Propose a `plan_name` slug for the user to approve. Derive a short kebab-case slug (max 20
 chars) from $ARGUMENTS and present three variants as options.
 
-## Environment verification -- mandatory before location/git questions (R1.9b)
+## Environment verification -- mandatory before location/git questions
 
 Before asking ANY question that proposes file locations, git behavior, or version-control
-assumptions, you MUST first read `.gitignore`, `.claude/preferences/environment.md` (venv
-invocation, encoding, file-location rules), and `.claude/preferences/git_parameters.md`
-(integration prefix, phase-branch pattern, protected branch, approval-marker path), then
+assumptions, you MUST first read `.gitignore` and `.claude/preferences.md` (key block:
+interpreter invocation, encoding constraint, integration prefix, phase-branch pattern,
+protected branch, merge defaults; prose sections: file-location rules), then
 answer from them. This is the "read the codebase instead of asking" rule made mandatory
 for its highest-leverage instance: a location or git-workflow fact recoverable from these
 files is never a question.
 
-## Mode preconditions -- confirm-and-proceed, never halt, never silently adapt (R1.6)
+## Mode preconditions -- confirm-and-proceed, never halt, never silently adapt
 
 Check the precondition for the parsed mode and, if it is unmet, open with a single
 confirm-and-proceed question offering the options below. Never halt outright and never
@@ -119,6 +130,11 @@ grilled, so it is the user's opening position, not a settled decision.
 <Your recommendation and brief reasoning.>
 ---
 
+When a turn batches questions (see the batching rule below), repeat the question block --
+number, options, recommendation -- once per question in the same turn, sequential question
+numbers, one acknowledgment sentence at the top of the turn. The per-question format never
+changes.
+
 ## Grilling rules
 
 - **CRITICAL -- NEVER stop asking questions on your own.** You MUST keep asking questions
@@ -129,7 +145,10 @@ grilled, so it is the user's opening position, not a settled decision.
   constraints not yet verified. Stopping early without the stop sequence is a violation.
 - Every question MUST be a multiple-choice question with 3-4 options. Never ask open-ended
   prose questions.
-- One question at a time, always.
+- **Batching rule:** up to 3 questions may share one turn ONLY when they are GENUINELY
+  independent -- no question's best answer could change based on another's answer, and none
+  probes the same decision area. When in doubt, or whenever questions build on each other,
+  ask one at a time. Answers to a batch are processed together before the next turn.
 - Always include "Other (describe)" as the last option.
 - Questions get progressively more specific as context builds.
 - Surface contradictions before requirements questions.
@@ -143,7 +162,9 @@ grilled, so it is the user's opening position, not a settled decision.
   the current question. Suspend multiple-choice format. Hold the current question number.
   Continue until the user says "fully defined" in the affirmative. Acknowledge in one
   sentence ("Locked.") then immediately present the next numbered question in standard
-  format.
+  format. If `linger` arrives on a batched turn, the sub-loop covers the question the user
+  names (or the first of the batch if unnamed); the batch's other questions are re-presented
+  after "fully defined".
 - **General notes / asides:** If the user supplies a general note or requirement that is
   not an answer to the current question's options, acknowledge it in one sentence, record
   it as a standalone requirement for the eventual PRD, and continue the current question
@@ -155,48 +176,50 @@ grilled, so it is the user's opening position, not a settled decision.
 - `functional`: grill ONLY the what/why. NEVER ask a technical question (architecture,
   technology choice, implementation mechanism). Technical content that arrives anyway
   (model drift, or a user aside) is NOT grilled -- record it verbatim to be written into
-  the PRD's `## Technical Parking Lot`, marked non-binding (R1.5). The parking lot is the
+  the PRD's `## Technical Parking Lot`, marked non-binding. The parking lot is the
   technical session's opening agenda, not a settled decision.
 - `technical`: grill ONLY the how. Append-only: you may NOT rewrite the functional
   sections of the existing PRD. If a technical finding invalidates a functional decision,
   SURFACE it to the user explicitly and let them decide -- never silently edit a functional
-  section (R1.3).
+  section.
 
 ## When the user says "stop asking questions" -- post-stop choreography
 
-Run the steps below in this EXACT order. `mixed` and `technical` run all six steps.
-`functional` SKIPS steps 1 and 2 entirely (no vestigial slicing or behavioral-test
-questions) and runs steps 3-6 only.
+Run the three steps below in this EXACT order. `mixed` and `technical` run all three.
+`functional` SKIPS step 1 entirely (no vestigial slicing or behavioral-test questions)
+and runs steps 2-3 only.
 
-1. **Tracer-bullet batch.** Ask a batch of maximum 4 and minimum 1 questions (all in a
-   single turn) on how to integrate vertical-slicing discipline into the phase breakdown --
-   asked INSTEAD of directly surfacing the decision log. The tracer-bullet slicing rule and
-   its exemption for inherently non-sliceable plans live in
-   `.claude/harness/templates/plan_schema.md` -- read them there; do not restate. Record the
-   ratified ruling for the plan's Slicing note.
-2. **Behavioral-test ratification.** A QnA-style question that formally ratifies the list
-   of phases and their `### Behavioral Tests` (briefly described): decide which phases
-   should have a behavior test (phases that actually expect a behavior change) and what
-   that test should be. The block spec lives in `plan_schema.md`.
-3. **Decision log + user confirmation.** Show a decision log -- every key decision made
+1. **Slicing + behavioral-test ratification (one combined turn).** In a SINGLE turn, ask
+   a batch of maximum 4 and minimum 1 questions on how to integrate vertical-slicing
+   discipline into the phase breakdown, AND a question that formally ratifies the list of
+   phases and their `### Behavioral Tests` (briefly described): which phases actually
+   expect a behavior change and what each test should be. The tracer-bullet slicing rule
+   and its exemption for inherently non-sliceable plans live in
+   `.claude/harness/templates/plan_schema.md` -- read them there; do not restate. The
+   Behavioral Tests block spec lives there too. Record the ratified slicing ruling for
+   the plan's Slicing note and the ratified test list for the phase blocks.
+2. **Decision log + single confirmation.** Show a decision log -- every key decision made
    during the session, grouped by area. The group NAMES may be renamed to fit the plan's
    domain (e.g. rename "Data" to something apter), but the Phase Structure portion is a
    FIXED contract: render it as a markdown table with exactly these three columns -- `#`,
    `Phase`, `One-line objective` -- with one-line objectives per phase. Cite the question
-   number each decision originated from (e.g. `Q<N>`). This is the single, final,
-   everything-included confirmation gate. Wait for user confirmation or corrections.
-4. **Glossary sweep.** Ratify any terms coined during the session (add to the appropriate
-   glossary surface -- harness terms to `.claude/harness/harness_glossary.md`, domain terms
-   to `context/glossary.md`) and propose retiring obsolete or unused terms. This is the
-   glossary's only garbage-collection point. If a glossary file does not exist yet, note
-   what would be added and move on.
-5. **Self-diagnosis.** Ask whether this session revealed a STRUCTURAL issue with the Q&A
-   mechanics, document templates, or grilling rules that would improve future sessions
-   generally -- not a one-off patch, and not project domain logic or threshold values. If
-   nothing found, state "No self-improvements needed." If suggestions are found, run the
-   shared spawn flow in `.claude/harness/procedures/self_improvement.md` (brief -> approve
-   -> spawn -> surface -> one-level drift cascade). Do not restate that flow here.
-6. **Write the documents** (next section).
+   number each decision originated from (e.g. `Q<N>`). Append two one-liner subsections
+   at the end of the same turn:
+   - **Glossary:** "Propose adding <terms>, retiring <terms> -- object or accept." (Terms
+     coined this session go to the appropriate surface -- harness terms to
+     `.claude/harness/harness_glossary.md`, domain terms to `context/glossary.md`; this is
+     the glossary's only garbage-collection point. If a glossary file does not exist yet,
+     note what would be added. If nothing to add or retire, say so in the one line.)
+   - **Self-diagnosis:** "None found." -- or one line naming a STRUCTURAL issue this
+     session revealed with the Q&A mechanics, document templates, or grilling rules
+     (never a one-off patch, project domain logic, or threshold values) + asking whether
+     to run the spawn flow.
+   This whole turn -- decision log, phase table, glossary line, self-diagnosis line -- is
+   covered by ONE confirmation gate. Wait for user confirmation or corrections. If
+   self-diagnosis found something and the user says run it, run the shared spawn flow in
+   `.claude/harness/procedures/self_improvement.md` (do not restate it here) AFTER the
+   gate clears, before writing documents.
+3. **Write the documents** (next section).
 
 ## Writing the documents
 
@@ -213,6 +236,14 @@ is represented in the PRD, then reflected at the appropriate location in the pla
 volunteered during a `linger` sub-loop are the highest-risk for loss -- verify those
 explicitly. Fix any partial capture before writing is considered complete. The full
 capture rules live in `prd_schema.md`; follow them.
+
+**Provenance-tag self-containment note:** if the PRD or plan you write cites session-time
+provenance tags -- question numbers (`Q<N>`), register item IDs, or any identifier
+resolvable only from this session's context -- the document MUST open with a
+self-containment note declaring those tags citations-only and the document text
+authoritative, so downstream sessions never attempt to resolve them (the session
+transcript is not downstream-readable). The standing rule lives in `prd_schema.md`'s
+capture rules; emit the note whenever such tags are used.
 
 ### Step 1 -- ensure directories exist
 
