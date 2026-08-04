@@ -191,6 +191,21 @@ merges with a `!`-prefixed `gh pr merge <n> --merge` (the keystroke is the
 approval; Claude never runs `gh pr merge`). If the merge is withheld, the plan
 closes with the integration branch and the open PR as the durable artifacts.
 
+That PR flow fires UNLESS the prompt's section 9 resolved parameters record the
+plan-end PR opt-out -- an explicit no-PR exception quoted from the plan's own
+git-strategy section (git_strategy.md's removal-direction carve-out). When the
+opt-out applies, the final phase ENDS after the last integration merge and push:
+no `gh pr create`, no user-run `gh pr merge`, nothing merged to the protected
+branch at any point, and the retained integration branch IS the plan's durable
+artifact. Section 9's resolved values are authoritative for this choice -- do not
+re-derive it from the plan at close time. The opt-out is never inferred from
+silence and never assumed from a plan's tone or scope (absent an explicit,
+quoted plan statement the standard PR flow applies), and it never authorizes any
+Claude-run path to the protected branch -- no standby/manual-merge handover, no
+Claude-run merge or push to the protected branch, ever. Everything else in this
+step -- the phase push, the merge into integration, the branch delete, and the
+zero-commit rule -- is unchanged.
+
 ## Step 9: Next phase
 
 If the user asks for the next phase's implementation prompt, run
