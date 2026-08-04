@@ -79,6 +79,18 @@ Read `.claude/harness/procedures/git_strategy.md` and the key block of
   close with git-default merges and explicit messages; plan-end PR merged by the
   USER) -- a plan predating the PR law does not reintroduce standby/manual-merge
   handovers or any Claude-run path to the protected branch.
+- **Plan-end PR opt-out -- the one sanctioned BEHAVIORAL deviation.** A plan MAY opt
+  OUT of the plan-end PR flow entirely -- no PR opened, NOTHING merged to the
+  protected branch at any point, the integration branch retained as the plan's
+  durable artifact -- but ONLY when the plan's own git-strategy section states that
+  exception explicitly (e.g. "PLAN-SPECIFIC EXCEPTION to the standard plan-end PR
+  flow. No pull request is opened and NOTHING is merged to `main` at any point").
+  This direction REMOVES a Claude path to the protected branch rather than creating
+  one, so the core invariant is strengthened, not weakened -- which is exactly why it
+  is permitted while the opposite direction is not. Never infer the opt-out from
+  silence: absent an explicit plan statement, the standard PR flow applies. The
+  prohibition above stands unchanged in every case -- no plan may reintroduce a
+  standby/manual-merge handover or ANY Claude-run path to the protected branch.
 - State the zero-commit rule in the resolved block: a phase branch that ends with
   zero commits skips push/merge/delete and reports "no tracked changes this phase"
   (git_strategy.md).
@@ -94,6 +106,12 @@ Read `.claude/harness/procedures/git_strategy.md` and the key block of
   keystroke is the approval and its output lands in the transcript. Claude never
   runs `gh pr merge` (the guardrail hook flat-blocks it). Emit the user-run merge
   command verbatim in template section 9.
+- **If `is_final_phase` AND the plan-end PR opt-out applies**: emit NO PR flow at
+  all. In place of template section 9's `[Final phase only:]` PR block (the
+  `gh pr create` line and the user-run `! gh pr merge <n> --merge` line), emit the
+  plan's no-PR / nothing-to-the-protected-branch rule, quoted from the plan's own
+  git-strategy section, and name the retained integration branch as the plan's
+  durable artifact. Nothing else in section 9 changes.
 
 ## Step 4 -- Accumulated learnings (ledger read, inline filtering)
 
