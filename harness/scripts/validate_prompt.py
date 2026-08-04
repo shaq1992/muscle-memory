@@ -132,6 +132,16 @@ def check_sections(lines, failures):
             )
 
 
+def normalize_branch_name(raw):
+    """Strip surrounding whitespace and markdown backticks from a branch name.
+
+    Section 9 may write branch names as plain text or as inline code spans
+    (`integration/<slug>`); both forms name the same branch, so the backticks
+    are formatting, not part of the value.
+    """
+    return raw.strip().strip("`").strip()
+
+
 def check_branch_sanity(text, failures):
     # Operate on section 9 only.
     m = re.search(r"^## 9\.[^\n]*\n(.*?)(?=^## \d+\.|\Z)", text, re.M | re.S)
@@ -155,16 +165,19 @@ def check_branch_sanity(text, failures):
     slug, phase_str, total_str = pm.group(1), pm.group(2), pm.group(3)
     phase, total = int(phase_str), int(total_str)
 
-    if ib.group(1) != "integration/{0}".format(slug):
+    ib_name = normalize_branch_name(ib.group(1))
+    pb_name = normalize_branch_name(pb.group(1))
+
+    if ib_name != "integration/{0}".format(slug):
         failures.append(
             "FAIL branch-sanity: integration branch {0!r} does not match "
-            "'integration/{1}'".format(ib.group(1), slug)
+            "'integration/{1}'".format(ib_name, slug)
         )
     expected_pb = "{0}-phase-{1:02d}".format(slug, phase)
-    if pb.group(1) != expected_pb:
+    if pb_name != expected_pb:
         failures.append(
             "FAIL branch-sanity: phase branch {0!r} does not match "
-            "'{1}' (zero-padded NN)".format(pb.group(1), expected_pb)
+            "'{1}' (zero-padded NN)".format(pb_name, expected_pb)
         )
     if not 1 <= phase <= total:
         failures.append(
