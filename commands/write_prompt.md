@@ -265,7 +265,13 @@ per-file detail on demand via Agent(subagent_type="Explore").
 
 ## 4. Phase Objective
 
-[Verbatim from the plan.]
+[Verbatim from the plan. BUT if a later entry in the PRD's or the plan's
+`## Amendments` section contradicts the phase-objective prose (e.g. it revises a
+count, target, threshold, or scope that the original objective states), emit the
+AMENDED value DIRECTLY as the objective -- do NOT restate the superseded original
+and then append a correction note. The amendment log is authoritative over the
+original phase-objective prose, so the generated objective must read as a single,
+self-consistent statement of current truth, not a stale sentence plus a patch.]
 
 ---
 
