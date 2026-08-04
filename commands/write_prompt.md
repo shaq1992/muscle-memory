@@ -193,7 +193,11 @@ find <phase_dirs> -type f \
    in the plan's Deliverables / Verification / reference table, even when they
    live outside the item-2 find scope). For every data input identified, run
    `wc -c -l <file>` and, if the byte or line count would not safely fit inline
-   (rule of thumb: > ~1 MB or > ~10k lines), emit an explicit
+   (rule of thumb: > ~1 MB or > ~10k lines; ADDITIONALLY, judge bytes-per-line --
+   any file whose content is a single line, or very few lines, and exceeds
+   roughly 50 KB is unreadable inline regardless of its line count, which is the
+   normal shape of minified/serialized derived artifacts such as a one-line JSON
+   handoff file), emit an explicit
    "Explore / programmatic-only -- never Read inline" flag naming that file in
    the generated prompt's section 1, alongside the existing large-source flags.
 
