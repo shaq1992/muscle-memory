@@ -137,6 +137,10 @@ propose surgical edits:
    document's `## Amendments` section (create the section at the end of the
    document if absent): date, phase, one line per edit -- what changed and
    which decision superseded it (schema: `plan_schema.md` / `prd_schema.md`).
+   When an approved amendment supersedes a value (a count, target, threshold, or
+   scope), ALSO surgically update any not-yet-executed phase's Objective prose in
+   the same plan that restates that same value, so forward-looking phase
+   objectives stay current truth and never require a downstream correction note.
 
 This reconciliation step is the SANCTIONED mutation path past the append-only
 rule: user-approved amendments with a dated trace are legitimate; silent drift
