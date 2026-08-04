@@ -148,6 +148,12 @@ def check_branch_sanity(text, failures):
     if not m:
         return  # missing section already reported by check_sections
     body = re.sub(r"\s+", " ", m.group(1))
+    # Section 9 may write any resolved value -- plan_name, phase numbers,
+    # branch names -- as a markdown inline code span. The backticks are
+    # formatting, not part of the value, so blank them out before matching
+    # (normalize_branch_name below remains as a second layer for the branch
+    # captures).
+    body = body.replace("`", "")
 
     pm = re.search(
         r"plan_name:\s*([a-z0-9-]+)\s*--\s*phase\s*(\d+)\s*of\s*(\d+)", body
