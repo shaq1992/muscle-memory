@@ -1,8 +1,9 @@
 # Procedure: Unified Git Strategy (PR law)
 
-Portable law for all multi-phase plans. Project-specific parameters are read
-from the key block of `.claude/preferences.md`; if that file is absent, the
-defaults stated inline below apply.
+Portable law for every plan -- canonical multi-phase plans and orchestrated
+plans alike. Project-specific parameters are read from the key block of
+`.claude/preferences.md`; if that file is absent, the defaults stated inline
+below apply.
 
 The core invariant: Claude has NO path to the protected branch. Every plan
 ends in a reviewable GitHub pull request that the USER merges. There is no
@@ -23,16 +24,58 @@ applies.
 
 ## Branch model
 
+Stated in terms of WORK UNITS so that one model serves both plan shapes: a
+canonical multi-phase plan, whose work unit is a phase, and an orchestrated
+plan, whose work unit is a dispatched session. There is no second set of
+branch rules for orchestrated work.
+
 - **Integration branch:** `integration/<plan_name>`, created from the default
-  branch during the plan's first phase. All phase work funnels into it. It is
-  the plan's single accumulation point; the protected branch is never touched
-  by Claude at any point.
-- **Phase branches:** `<plan_name>-phase-<NN>`, created from the integration
-  branch. Naming convention:
-  - the plan slug is kebab-case (lowercase alphanumeric + hyphens);
-  - the phase number is ALWAYS zero-padded to two digits (`01`, `02`, ... `10`);
+  branch during the plan's first work unit. ALL of the plan's work funnels into
+  it -- phases and orchestrated sessions alike. It is the plan's single
+  accumulation point; the protected branch is never touched by Claude at any
+  point.
+- **Work-unit branches**, always cut from the integration branch and merged
+  back into it:
+  - **Phase branches:** `<plan_name>-phase-<NN>` -- one per phase of a
+    canonical multi-phase plan. Example: `example-plan-phase-04`.
+  - **Session branches:** `<plan_name>-session-<NN>` -- one per session
+    dispatched by an orchestrated plan. Example: `example-plan-session-07`.
+
+  Naming convention, identical for both:
+  - the plan slug is normalized per "Slug normalization" below;
+  - the work-unit number is ALWAYS zero-padded to two digits (`01`, `02`,
+    ... `10`);
   - separators are hyphens throughout -- no underscores.
-  Example: `example-plan-phase-04`.
+
+  Session numbers are monotonic and never reused across the whole life of a
+  plan, including for sessions that were abandoned or never run -- a reused
+  number collides two sessions onto one set of artifact paths.
+
+- **No `permanent/` family.** A `permanent/<plan_name>` branch is NOT part of
+  this model. With `retain_integration_branch: true` the integration branch
+  already survives the plan, so the distinction `permanent/` would draw does
+  not exist. (The standalone quick lane's own short-lived `quick/<slug>` branch
+  is a separate thing entirely -- it belongs to no plan and has no integration
+  branch; nothing in this section applies to it.)
+
+### Slug normalization
+
+Stated ONCE here, for the whole harness. Every command that accepts, derives or
+validates a plan slug -- plan authoring, orchestration and the quick lane alike
+-- REFERENCES this rule and does not restate it. A restatement is how prompt
+naming and brief naming drift apart.
+
+A valid slug is a kebab-case string: lowercase alphanumeric plus hyphens, at
+most 20 characters, beginning and ending with an alphanumeric character.
+
+To normalize a raw name into one: lowercase it, replace underscores and spaces
+with hyphens, strip every remaining invalid character, then truncate to 20
+characters. If the result begins or ends with a hyphen, trim it, so the value
+always satisfies the validity rule above.
+
+A command that normalizes a slug the user supplied STATES the normalized value
+in a one-line notice, so the user sees the name their artifacts will actually
+carry.
 
 ## The two booleans
 
@@ -45,19 +88,23 @@ Every generated phase prompt resolves exactly two boolean parameters:
 
 Single-phase plans set both booleans true.
 
-## Per-phase flow (autonomous, no confirmation)
+## Per-work-unit flow (autonomous, no confirmation)
 
-1. If `is_first_phase`: from the default branch, create and push
-   `integration/<plan_name>`.
-2. Create `<plan_name>-phase-<NN>` from the integration branch.
-3. Implement; commit on the phase branch (commit rules per
+The same four steps run for a phase and for an orchestrated session; read
+"work unit" as whichever applies.
+
+1. If this is the plan's FIRST work unit: from the default branch, create and
+   push `integration/<plan_name>`.
+2. Create the work-unit branch (`<plan_name>-phase-<NN>` or
+   `<plan_name>-session-<NN>`) from the integration branch.
+3. Implement; commit on the work-unit branch (commit rules per
    closing_sequence.md).
-4. Autonomous close: push the phase branch -> merge it into the integration
+4. Autonomous close: push the work-unit branch -> merge it into the integration
    branch with git defaults and an explicit message
-   (`git merge <phase-branch> -m "merge: ..."`) -> push integration ->
-   delete the phase branch, remote and local (`git branch -d`, never `-D`).
+   (`git merge <work-unit-branch> -m "merge: ..."`) -> push integration ->
+   delete the work-unit branch, remote and local (`git branch -d`, never `-D`).
 
-**Zero-commit rule:** a phase whose branch ends with zero commits skips
+**Zero-commit rule:** a work unit whose branch ends with zero commits skips
 push/merge/delete entirely and reports "no tracked changes this phase"
 plainly, naming why (e.g. all deliverables were config-only or gitignored).
 
@@ -82,12 +129,23 @@ the standard plan-end PR flow. No pull request is opened and NOTHING is merged
 to `main` at any point"), steps 1-3 above do NOT run: no `gh pr create`, no
 user-run `gh pr merge`, nothing reaches the protected branch, and the retained
 integration branch IS the plan's durable artifact. Everything else in this
-procedure -- branch model, the two booleans, the per-phase flow, the zero-commit
-rule, commit authorship, the hook enforcement -- is unchanged. This opt-out is
-never inferred from silence and never assumed from a plan's tone or scope: it
-must be quoted from the plan text. It permits only the removal direction; a plan
-may NOT use it to substitute a standby/manual-merge handover or any other
-Claude-run path to the protected branch.
+procedure -- branch model, the two booleans, the per-work-unit flow, the
+zero-commit rule, commit authorship, the hook enforcement -- is unchanged. This
+opt-out is never inferred from silence and never assumed from a plan's tone or
+scope: it must be quoted from the plan text. It permits only the removal
+direction; a plan may NOT use it to substitute a standby/manual-merge handover
+or any other Claude-run path to the protected branch.
+
+**Orchestrated sessions open NO PR of their own.** A session dispatched by an
+orchestrated plan ends at step 4 of the per-work-unit flow: it merges into
+`integration/<plan_name>` and stops there. It does not run `gh pr create`, and
+it never targets the protected branch. This holds even when the session is run
+by a command that opens a PR in its standalone mode -- the presence of an
+orchestration block in the prompt replaces that command's own PR step with the
+merge into integration. Only the PLAN opens a PR, once, at the end, per the
+flow above. Without this rule every session of a long-running plan would open
+its own PR to the protected branch, flooding review and destroying the
+single-accumulation-point model the integration branch exists to provide.
 
 **PR title/body convention:** the no-AI-attribution law extends verbatim to PR
 titles and bodies. Fixed body shape: the plan one-liner; a bulleted phase list
