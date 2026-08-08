@@ -9,6 +9,18 @@ ends in a reviewable GitHub pull request that the USER merges. There is no
 side-channel approval mechanism, no Claude-run merge to the protected branch,
 and no exempt plan type -- every plan follows the same topology.
 
+**Removal-direction carve-out.** A plan whose OWN git-strategy section states an
+explicit no-PR exception -- no PR opened, NOTHING merged to the protected branch
+at any point, the integration branch retained as the plan's durable artifact --
+may skip the plan-end PR flow. That direction REMOVES a Claude path to the
+protected branch rather than creating one, so the core invariant is
+strengthened, not weakened. "No exempt plan type" stands unchanged for anything
+that would ADD a path: no standby/manual-merge handover, no Claude-run merge or
+push to the protected branch, no side-channel approval, ever. The opt-out is
+NEVER inferred from silence -- it must be quoted from the plan's own
+git-strategy section; absent that explicit statement, the standard PR flow
+applies.
+
 ## Branch model
 
 - **Integration branch:** `integration/<plan_name>`, created from the default
@@ -63,6 +75,19 @@ At the final phase, after the last phase branch has merged into integration:
 3. **Merge defaults** (preference keys): `merge_style: merge-commit`
    (`gh pr merge --merge`) and `retain_integration_branch: true` -- the
    integration branch is kept after the merge; deletion is per-plan opt-in.
+
+**Plan-level opt-out (removal direction only).** If the plan's own git-strategy
+section explicitly states a no-PR exception (e.g. "PLAN-SPECIFIC EXCEPTION to
+the standard plan-end PR flow. No pull request is opened and NOTHING is merged
+to `main` at any point"), steps 1-3 above do NOT run: no `gh pr create`, no
+user-run `gh pr merge`, nothing reaches the protected branch, and the retained
+integration branch IS the plan's durable artifact. Everything else in this
+procedure -- branch model, the two booleans, the per-phase flow, the zero-commit
+rule, commit authorship, the hook enforcement -- is unchanged. This opt-out is
+never inferred from silence and never assumed from a plan's tone or scope: it
+must be quoted from the plan text. It permits only the removal direction; a plan
+may NOT use it to substitute a standby/manual-merge handover or any other
+Claude-run path to the protected branch.
 
 **PR title/body convention:** the no-AI-attribution law extends verbatim to PR
 titles and bodies. Fixed body shape: the plan one-liner; a bulleted phase list

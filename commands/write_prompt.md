@@ -79,6 +79,18 @@ Read `.claude/harness/procedures/git_strategy.md` and the key block of
   close with git-default merges and explicit messages; plan-end PR merged by the
   USER) -- a plan predating the PR law does not reintroduce standby/manual-merge
   handovers or any Claude-run path to the protected branch.
+- **Plan-end PR opt-out -- the one sanctioned BEHAVIORAL deviation.** A plan MAY opt
+  OUT of the plan-end PR flow entirely -- no PR opened, NOTHING merged to the
+  protected branch at any point, the integration branch retained as the plan's
+  durable artifact -- but ONLY when the plan's own git-strategy section states that
+  exception explicitly (e.g. "PLAN-SPECIFIC EXCEPTION to the standard plan-end PR
+  flow. No pull request is opened and NOTHING is merged to `main` at any point").
+  This direction REMOVES a Claude path to the protected branch rather than creating
+  one, so the core invariant is strengthened, not weakened -- which is exactly why it
+  is permitted while the opposite direction is not. Never infer the opt-out from
+  silence: absent an explicit plan statement, the standard PR flow applies. The
+  prohibition above stands unchanged in every case -- no plan may reintroduce a
+  standby/manual-merge handover or ANY Claude-run path to the protected branch.
 - State the zero-commit rule in the resolved block: a phase branch that ends with
   zero commits skips push/merge/delete and reports "no tracked changes this phase"
   (git_strategy.md).
@@ -94,6 +106,12 @@ Read `.claude/harness/procedures/git_strategy.md` and the key block of
   keystroke is the approval and its output lands in the transcript. Claude never
   runs `gh pr merge` (the guardrail hook flat-blocks it). Emit the user-run merge
   command verbatim in template section 9.
+- **If `is_final_phase` AND the plan-end PR opt-out applies**: emit NO PR flow at
+  all. In place of template section 9's `[Final phase only:]` PR block (the
+  `gh pr create` line and the user-run `! gh pr merge <n> --merge` line), emit the
+  plan's no-PR / nothing-to-the-protected-branch rule, quoted from the plan's own
+  git-strategy section, and name the retained integration branch as the plan's
+  durable artifact. Nothing else in section 9 changes.
 
 ## Step 4 -- Accumulated learnings (ledger read, inline filtering)
 
@@ -175,9 +193,23 @@ find <phase_dirs> -type f \
    in the plan's Deliverables / Verification / reference table, even when they
    live outside the item-2 find scope). For every data input identified, run
    `wc -c -l <file>` and, if the byte or line count would not safely fit inline
-   (rule of thumb: > ~1 MB or > ~10k lines), emit an explicit
+   (rule of thumb: > ~1 MB or > ~10k lines; ADDITIONALLY, judge bytes-per-line --
+   any file whose content is a single line, or very few lines, and exceeds
+   roughly 50 KB is unreadable inline regardless of its line count, which is the
+   normal shape of minified/serialized derived artifacts such as a one-line JSON
+   handoff file), emit an explicit
    "Explore / programmatic-only -- never Read inline" flag naming that file in
    the generated prompt's section 1, alongside the existing large-source flags.
+5. If the plan's git-strategy section (Step 2) names a DIFFERENT repository or repo
+   location than the project repo -- e.g. a harness plan whose deliverables all live in
+   the nested repo at `.claude/`, which the project repo gitignores -- resolve THAT
+   repo's branches live too: its currently checked-out branch
+   (`git -C <repo-path> branch --show-current`) and its default branch
+   (`git -C <repo-path> symbolic-ref --short refs/remotes/origin/HEAD`, falling back to
+   `git -C <repo-path> branch --list`). Section 9's resolved parameters need the
+   concrete branch the integration branch is cut FROM, and a nested repo's default
+   branch cannot be assumed to match the surrounding project's. Also state plainly in
+   the generated prompt's section 3 that this phase's work lands in that nested repo.
 
 ## Step 6 -- Select the verification case
 
@@ -243,7 +275,13 @@ per-file detail on demand via Agent(subagent_type="Explore").
 
 ## 4. Phase Objective
 
-[Verbatim from the plan.]
+[Verbatim from the plan. BUT if a later entry in the PRD's or the plan's
+`## Amendments` section contradicts the phase-objective prose (e.g. it revises a
+count, target, threshold, or scope that the original objective states), emit the
+AMENDED value DIRECTLY as the objective -- do NOT restate the superseded original
+and then append a correction note. The amendment log is authoritative over the
+original phase-objective prose, so the generated objective must read as a single,
+self-consistent statement of current truth, not a stale sentence plus a patch.]
 
 ---
 

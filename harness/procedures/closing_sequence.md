@@ -137,6 +137,10 @@ propose surgical edits:
    document's `## Amendments` section (create the section at the end of the
    document if absent): date, phase, one line per edit -- what changed and
    which decision superseded it (schema: `plan_schema.md` / `prd_schema.md`).
+   When an approved amendment supersedes a value (a count, target, threshold, or
+   scope), ALSO surgically update any not-yet-executed phase's Objective prose in
+   the same plan that restates that same value, so forward-looking phase
+   objectives stay current truth and never require a downstream correction note.
 
 This reconciliation step is the SANCTIONED mutation path past the append-only
 rule: user-approved amendments with a dated trace are legitimate; silent drift
@@ -190,6 +194,21 @@ push the integration branch, open the PR autonomously with `gh pr create`
 merges with a `!`-prefixed `gh pr merge <n> --merge` (the keystroke is the
 approval; Claude never runs `gh pr merge`). If the merge is withheld, the plan
 closes with the integration branch and the open PR as the durable artifacts.
+
+That PR flow fires UNLESS the prompt's section 9 resolved parameters record the
+plan-end PR opt-out -- an explicit no-PR exception quoted from the plan's own
+git-strategy section (git_strategy.md's removal-direction carve-out). When the
+opt-out applies, the final phase ENDS after the last integration merge and push:
+no `gh pr create`, no user-run `gh pr merge`, nothing merged to the protected
+branch at any point, and the retained integration branch IS the plan's durable
+artifact. Section 9's resolved values are authoritative for this choice -- do not
+re-derive it from the plan at close time. The opt-out is never inferred from
+silence and never assumed from a plan's tone or scope (absent an explicit,
+quoted plan statement the standard PR flow applies), and it never authorizes any
+Claude-run path to the protected branch -- no standby/manual-merge handover, no
+Claude-run merge or push to the protected branch, ever. Everything else in this
+step -- the phase push, the merge into integration, the branch delete, and the
+zero-commit rule -- is unchanged.
 
 ## Step 9: Next phase
 
