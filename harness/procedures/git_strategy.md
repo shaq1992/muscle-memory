@@ -112,8 +112,13 @@ plainly, naming why (e.g. all deliverables were config-only or gitignored).
 
 At the final phase, after the last phase branch has merged into integration:
 
-1. **Autonomous:** push the integration branch, then open the PR with
-   `gh pr create` (title/body convention below).
+1. **Autonomous:** first confirm the ACTIVE gh account owns the target repo
+   (`gh auth status`), and switch to the owning account if it is not active --
+   `gh pr create` follows gh's active account, so with multiple github.com
+   identities a plan can otherwise open the PR as the wrong user (repo-local
+   push pinning does NOT cover it; see "Identity and auth (gh)" below). Then
+   push the integration branch and open the PR with `gh pr create` (title/body
+   convention below).
 2. **User-gated:** the USER merges the PR with a `!`-prefixed
    `gh pr merge <n> --merge` -- the keystroke IS the approval, and its output
    lands in the transcript. Claude NEVER runs `gh pr merge` (the guardrail
