@@ -200,6 +200,16 @@ find <phase_dirs> -type f \
    handoff file), emit an explicit
    "Explore / programmatic-only -- never Read inline" flag naming that file in
    the generated prompt's section 1, alongside the existing large-source flags.
+5. If the plan's git-strategy section (Step 2) names a DIFFERENT repository or repo
+   location than the project repo -- e.g. a harness plan whose deliverables all live in
+   the nested repo at `.claude/`, which the project repo gitignores -- resolve THAT
+   repo's branches live too: its currently checked-out branch
+   (`git -C <repo-path> branch --show-current`) and its default branch
+   (`git -C <repo-path> symbolic-ref --short refs/remotes/origin/HEAD`, falling back to
+   `git -C <repo-path> branch --list`). Section 9's resolved parameters need the
+   concrete branch the integration branch is cut FROM, and a nested repo's default
+   branch cannot be assumed to match the surrounding project's. Also state plainly in
+   the generated prompt's section 3 that this phase's work lands in that nested repo.
 
 ## Step 6 -- Select the verification case
 
