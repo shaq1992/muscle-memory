@@ -1,6 +1,6 @@
 """Behavioral tests for the handback Stop-hook contract.
 
-The eight ratified cases from the plan's Phase 3 behavioral contract:
+The eight ratified cases of the handback Stop-hook contract:
 no-marker, foreign-session, missing handback, bad status, the three-line
 abandon path, complete-and-self-delete, mutual exclusivity with the
 phase-closing marker, and the verbatim unblocking content in every block
@@ -213,7 +213,6 @@ class TestBadStatusBlocks(HandbackHookEnv):
                 self.assertTrue(self.marker_path.exists())
 
     def test_open_stub_is_not_a_terminal_state(self):
-        # FLAGGED ADDITION to case 4 (ratified with the user during phase 3):
         # OPEN is in the file-level vocabulary but is NOT a terminal state.
         # The stub is written at session start, so accepting OPEN here would
         # make the hook vacuous -- it would demand a file the session already

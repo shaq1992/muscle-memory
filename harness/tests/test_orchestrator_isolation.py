@@ -1,6 +1,6 @@
 """Behavioral tests for the orchestrator Edit/Write isolation hook.
 
-The four ratified cases from the plan's Phase 3 behavioral contract:
+The four ratified cases of the isolation-hook contract:
 outside-allowlist blocks, inside-allowlist allows, and the two regressions
 (no marker, foreign session) in which Edit/Write behavior is entirely
 unchanged.
