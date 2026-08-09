@@ -30,12 +30,13 @@ that happens to exist, not the user saying the work belongs to a plan.
   parameters; read them, do not re-derive them. The orchestrated additions are listed
   inline below, each marked ORCHESTRATED ONLY.
 
-The heading string `## Orchestration` and those four bolded field names are OWNED by
-`commands/orchestrator.md` Step 7 item 3, which writes them, so any change to the heading
-or to a field name must land in both files in lockstep -- and in the mentions in
-`commands/on_board.md` and `harness/USER_MANUAL.md` -- because a one-sided rename silently
-drops a dispatched session back into the standalone lane, where it would open a pull
-request.
+The heading string `## Orchestration`, those four bolded field names, and the convention
+that a field's value is BARE (the value on its own line, annotations on continuation
+lines) are all OWNED by `commands/orchestrator.md` Step 7 item 3, which writes them. Any
+change to the heading, to a field name, or to that value convention must land in both
+files in lockstep -- and in the mentions in `commands/on_board.md` and
+`harness/USER_MANUAL.md` -- because a one-sided rename silently drops a dispatched session
+back into the standalone lane, where it would open a pull request.
 
 State the detected mode in a one-line notice before doing anything else, so the user can
 see which lane they are in.
@@ -51,9 +52,12 @@ see which lane they are in.
 
 **ORCHESTRATED ONLY.** The plan slug and the session number come from the
 `## Orchestration` block, not from the first token: the block's `Branch:` field carries
-them as `<plan_name>-session-<NN>`. If the invocation also supplies a slug token, it names
-only the brief; absent one, derive the brief slug from the plan name and session number
-and normalize it the same way.
+them as `<plan_name>-session-<NN>`. The branch name is EXACTLY the text on that field's
+own line and nothing else -- any indented continuation beneath it (such as the
+`(cut from integration/<plan_name>)` parenthetical) is annotation, never part of the
+name. If the invocation also supplies a slug token, it names only the brief; absent one,
+derive the brief slug from the plan name and session number and normalize it the same
+way.
 
 ## Step 0a -- Open the handback (ORCHESTRATED ONLY)
 
@@ -177,7 +181,8 @@ protected-branch invariant of `harness/procedures/git_strategy.md` holds identic
 `harness/procedures/git_strategy.md`, whose work unit here is the dispatched session:
 
 1. Cut the branch named in the block's `Branch:` field, `<plan_name>-session-<NN>`, from
-   `integration/<plan_name>` -- never from the default branch.
+   `integration/<plan_name>` -- never from the default branch. Take the name from that
+   field's own line only, per "Parse arguments" above.
 2. Implement and commit on it exactly as above (same commit rules, same no-attribution
    law).
 3. Close by merging into `integration/<plan_name>` and stop there: push the session

@@ -3,7 +3,14 @@
 A dispatched session writes .claude/handback_session.json when it reads a
 prompt carrying an "## Orchestration" block. This hook then blocks that
 session's closing turn until a schema-valid handback exists at the path the
-marker names.
+marker names -- and only that file: the check is scoped to the single path
+the marker names, never to any other document that happens to carry a
+"Status:" line.
+
+That "## Orchestration" heading string is named here for documentation only.
+This hook never parses a prompt; it keys off .claude/handback_session.json
+alone. The heading itself is owned by commands/orchestrator.md Step 7, so a
+rename there means updating this docstring too.
 
 No marker, or a marker whose session_id does not match this invocation, is a
 structural no-op -- the hook allows unconditionally. Enforcement only ever
@@ -19,7 +26,12 @@ file and the ledger merge entirely.
 Checks, in order, each blocking with a reason that names the failed check:
   1. a file exists at the marker's handback_path;
   2. a "Status:" line is present and carries a value from the closed
-     vocabulary OPEN / PARTIAL / ABANDONED / COMPLETE;
+     vocabulary OPEN / PARTIAL / ABANDONED / COMPLETE. This is the
+     SESSION-level Status vocabulary, owned by
+     harness/templates/handback_schema.md. It is NOT the PLAN-level
+     vocabulary of an orchestrated plan's state file
+     (harness/templates/state_schema.md), which is separate and never
+     enforced here even though both fields are spelled "Status";
   3. that value is a TERMINAL state. OPEN is in the file vocabulary but is
      not terminal: the stub is written at session START, so accepting OPEN
      would make this hook demand a file the session already wrote in minute
