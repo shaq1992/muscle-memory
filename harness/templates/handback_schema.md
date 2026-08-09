@@ -82,6 +82,15 @@ optional section.
 | `ABANDONED` | The session stopped deliberately without completing the work. |
 | `COMPLETE` | The dispatched scope was finished. |
 
+All four are the FILE-level vocabulary, but only `PARTIAL`, `ABANDONED` and
+`COMPLETE` are TERMINAL states: `OPEN` is the stub written at session start,
+it is not a state a live session may close in, and the enforcing Stop hook
+blocks a closing turn still carrying it. A session that reaches its Stop hook
+is by definition alive, and `OPEN` is reserved as positive evidence that a
+session DIED (see "The three legible terminal states"); accepting it would
+make the hook vacuous, since it would demand a file the session already wrote
+in minute one.
+
 ### `## Delta`
 
 The rows the orchestrator should add to, change in, or retire from the state
