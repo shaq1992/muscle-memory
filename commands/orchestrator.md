@@ -190,6 +190,14 @@ Step 8 clears.
      | ... |
    ```
 
+   The receiving command is `/grill_and_implement`: it detects the block's
+   PRESENCE and switches out of its standalone quick lane into orchestrated
+   mode, so a renamed heading silently drops it back into standalone, where it
+   would open a pull request. What comes back is a session that worked on the
+   branch the block names and merged into `integration/<plan_name>`, opening no
+   pull request of its own, per the orchestrated-no-self-PR rule in the plan-end
+   PR flow of @.claude/harness/procedures/git_strategy.md.
+
    The rows are the relevant do-not-re-validate entries, pinned invariants and
    gates, FILTERED to what this session actually touches. Filtering is the
    point: a session handed the whole table reads none of it.
