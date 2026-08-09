@@ -119,8 +119,9 @@ context.
 - There is no summary ritual, no validator script and no schema test on this
   path. Resume is meant to be light and rare; attaching ceremony to it would
   make the cheap path expensive and push sessions toward not resuming at all.
-- If the header `Status:` is terminal, follow the terminal-status rule in
-  @.claude/harness/templates/state_schema.md: report it and stop.
+- If the header `Status:` -- the PLAN-level status of the state file, owned by
+  @.claude/harness/templates/state_schema.md -- is terminal, follow that file's
+  terminal-status rule: report it and stop.
 
 If the state file is missing a section, is out of order, or contradicts itself,
 say so plainly and fix it as a state edit before doing anything else. Do not
@@ -184,11 +185,17 @@ Step 8 clears.
 
    - **State file:** docs/orchestration/<plan_name>_state.md
    - **Handback:** docs/orchestration/<plan_name>/handbacks/<NN>.md
-   - **Branch:** <plan_name>-session-<NN>, cut from integration/<plan_name>
+   - **Branch:** <plan_name>-session-<NN>
+     (cut from integration/<plan_name>)
    - **Rows this session must obey:**
      | <verbatim row copied from the state file's Established table> |
      | ... |
    ```
+
+   The `Branch:` field's VALUE is read VERBATIM as a branch name by the
+   receiving command, so nothing but the branch name may appear in it -- which
+   is why the "cut from" clause sits outside the value, on its own continuation
+   line.
 
    The receiving command is `/grill_and_implement`: it detects the block's
    PRESENCE and switches out of its standalone quick lane into orchestrated
@@ -283,7 +290,11 @@ The whole of an ingest is these five actions:
    Append only; never edit, reorder or delete an existing line.
 4. **Update `## Dispatched`.** Clear the row on a `COMPLETE` handback; update its
    status for `PARTIAL` or `ABANDONED`; leave it standing, visibly outstanding,
-   for a handback still at `OPEN`.
+   for a handback still at `OPEN`. A handback's `Status` is the SESSION-level
+   vocabulary of @.claude/harness/templates/handback_schema.md and belongs only
+   in that row -- NEVER copy it into the state file's header `Status:` line,
+   whose PLAN-level vocabulary is separate even though both fields are named
+   `Status`.
 5. **Refill or empty `## Next`.** Once the ingested session's scope is finished,
    the committed horizon is STALE -- it now describes work that is already done.
    Either write the next committed session into it, or empty it with an explicit
@@ -361,8 +372,9 @@ On that declaration:
    active-account check and its title/body convention. Nothing about that flow
    is special-cased here.
 2. Record the PR link in the state file.
-3. Set the header `Status:` to its terminal value per
-   @.claude/harness/templates/state_schema.md.
+3. Set the header `Status:` -- the PLAN-level status, owned by
+   @.claude/harness/templates/state_schema.md -- to its terminal value per that
+   schema.
 4. The USER merges. The orchestrator never runs `gh pr merge`.
 
 If the user withholds the merge, the plan still ends: the integration branch and
