@@ -94,8 +94,19 @@ Read `.claude/harness/procedures/git_strategy.md` and the key block of
 - State the zero-commit rule in the resolved block: a phase branch that ends with
   zero commits skips push/merge/delete and reports "no tracked changes this phase"
   (git_strategy.md).
+- **Resolve the FILENAME of every new artifact a LATER phase must reference by
+  name.** Read this phase's `### Handoff Artifact` and the `### Deliverables` of
+  the phases after it: wherever a later phase names an artifact THIS phase
+  creates, resolve its concrete path now and emit it in section 9. A phase handed
+  only a description of an artifact it did not create has to guess the name or
+  stop and ask the user -- and a guessed name silently splits one artifact into
+  two paths. Emit the paths verbatim, or "none" when this phase creates no such
+  artifact.
 - **If `is_final_phase`**: resolve the plan-end PR flow for emission -- after the
-  last integration merge, push the integration branch and open the PR autonomously
+  last integration merge, confirm the ACTIVE gh account owns the target repo
+  (`gh auth status`) and switch to the owning account if it is not active, since
+  `gh pr create` follows gh's active account and repo-local push pinning does not
+  cover it; then push the integration branch and open the PR autonomously
   with `gh pr create` (title/body per git_strategy.md's PR convention: plan
   one-liner, bulleted phase list drawn from the per-phase `feat:` commits --
   under git-default merges a phase merge FAST-FORWARDS whenever the integration
@@ -382,7 +393,12 @@ Tests-as-deliverables policy: per @.claude/preferences.md (Verification section)
   with -d, never -D)
 - Zero-commit rule: if the phase branch ends with zero commits, skip
   push/merge/delete and report "no tracked changes this phase" plainly.
-- [Final phase only:] plan-end PR flow: push [integration-branch], then open the PR
+- New artifacts this phase creates that a LATER phase references by name:
+  [concrete paths, or "none"]
+- [Final phase only:] plan-end PR flow: confirm the ACTIVE gh account owns the
+  target repo (`gh auth status`) and switch if it does not -- `gh pr create`
+  follows gh's active account, which repo-local push pinning does not cover --
+  then push [integration-branch] and open the PR
   autonomously with `gh pr create` (title/body per
   @.claude/harness/procedures/git_strategy.md's PR convention -- no AI attribution).
   The USER merges it with a `!`-prefixed command in this session:

@@ -12,8 +12,11 @@ section set, including `## Technical Requirements`, in its single pass.
 
 ## File location
 
-`docs/prds/<plan_name>_prd.md` -- `<plan_name>` is a kebab-case slug, max 20
-chars, alphanumeric + hyphens only.
+`docs/prds/<plan_name>_prd.md` -- `<plan_name>` is the plan slug, normalized
+exactly once per the "Slug normalization" rule in the branch-model section of
+`harness/procedures/git_strategy.md`. That rule is the single source for slug
+shape and is not restated here: a restatement is how document naming and branch
+naming drift apart.
 
 ## Structure
 

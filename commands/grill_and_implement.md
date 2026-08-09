@@ -171,8 +171,12 @@ protected-branch invariant of `harness/procedures/git_strategy.md` holds identic
 1. Cut ONE short-lived branch `quick/<slug>` from the default branch.
 2. Implement the brief in-session; commit on that branch (conventional messages, no AI
    attribution -- ever). Verify per the brief's outline and report results plainly.
-3. Push the branch and open the PR with `gh pr create`, using the brief as the PR body
-   source (title from the brief's scope line; no AI attribution in title or body).
+3. Confirm the ACTIVE gh account owns the target repo (`gh auth status`) and switch to
+   the owning account if it is not active -- `gh pr create` follows gh's active account,
+   and repo-local push pinning does NOT cover it, so with two github.com identities the
+   PR otherwise opens as the wrong user. Then push the branch and open the PR with
+   `gh pr create`, using the brief as the PR body source (title from the brief's scope
+   line; no AI attribution in title or body).
 4. The USER merges with a `!`-prefixed `gh pr merge <n> --merge` -- the keystroke is the
    approval. Claude never runs `gh pr merge`. If the merge is withheld, the branch and
    open PR are the durable artifacts.
