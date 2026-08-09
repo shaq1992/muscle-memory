@@ -5,8 +5,16 @@
 /settings.json
 /settings.local.json
 /preferences.md
-/phase_closing.json
 /projects/
+
+# Session markers written at runtime by the closing sequence, the orchestrator
+# and the commands they dispatch. Every one is keyed to a live session_id and is
+# meaningless to anyone else, so none is ever committed. The glob covers the
+# `<thing>_session.json` naming every marker follows, so a marker added later is
+# ignored without editing this file; phase_closing.json predates that convention
+# and is listed on its own.
+/phase_closing.json
+/*_session.json
 
 # Transient state
 __pycache__/
