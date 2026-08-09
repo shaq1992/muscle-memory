@@ -1,11 +1,12 @@
 # Workflow Harness User Manual
 
 The `.claude/` directory is a portable-by-design, multi-session development workflow
-system for Claude Code: three grilling modes, a reference-based phase compiler, a
-PR-based integration-branch git strategy with a deterministic guardrail hook (every
-plan ends in a pull request merged by the USER), a rolling per-plan learnings ledger,
-a slim per-turn CLAUDE.md, and a two-surface glossary. Commands plan, implement, and
-track work across sessions -- most non-trivial tasks cannot finish inside one context
+system for Claude Code: three grilling modes, a reference-based phase compiler, an
+orchestrator for plans that cannot be specified up front, a PR-based
+integration-branch git strategy with a deterministic guardrail hook (every plan ends
+in a pull request merged by the USER), a rolling per-plan learnings ledger, a slim
+per-turn CLAUDE.md, and a two-surface glossary. Commands plan, implement, and track
+work across sessions -- most non-trivial tasks cannot finish inside one context
 window.
 
 This is the deep-reference tier of the documentation: `README.md` (harness repo root)
@@ -28,8 +29,9 @@ self-improver flow (or upstream releases):
 ```
 .claude/
   commands/       -- invocable commands ONLY (everything here shows in the skills listing)
-  agents/         -- workflow agents (self-improver)
-  hooks/          -- deterministic hooks: git_guardrails.py, enforce_phase_closing.py
+  agents/         -- workflow agents (self-improver, investigator)
+  hooks/          -- deterministic hooks: git_guardrails.py, enforce_phase_closing.py,
+                     enforce_handback.py, enforce_orchestrator_isolation.py
   harness/        -- read-only-in-daily-use machinery
     USER_MANUAL.md         -- this file
     INSTALL.md             -- recipient install guide (clone or zip, then /on_board)
@@ -37,6 +39,7 @@ self-improver flow (or upstream releases):
     procedures/            -- git_strategy, closing_sequence, monitoring,
                               verification_cases, self_improvement (portable law)
     templates/             -- prd_schema, plan_schema, claude_md_skeleton,
+                              state_schema, handback_schema,
                               preferences_template.md
     scripts/               -- validate_prompt.py, make_portable_zip.sh
     tests/                 -- stdlib-unittest suite for the hooks
@@ -61,7 +64,8 @@ self-improver jurisdiction:
                      interpreter detected on YOUR machine
 CLAUDE.md         -- per-turn protective skeleton (project root; generated from the
                      skeleton template, then filled by the user)
-docs/             -- prds/, multi_phase_plans/, prompts/, learnings/, quick/ outputs
+docs/             -- prds/, multi_phase_plans/, prompts/, learnings/, quick/,
+                     orchestration/ outputs, plus the append-only observations.md
 context/          -- durable local-only project knowledge: architecture.md,
                      decisions.md, glossary.md
 ```
@@ -171,6 +175,18 @@ document reconciliation, commit, and the autonomous git close.
 (discovers branches via the learnings files' `**Branch:**` lines). Output in
 `docs/jira_and_standup/DDMMYY/`.
 
+### Long-running plans: /orchestrator
+
+```
+/orchestrator <plan_name> [additional text]
+```
+
+The third lane, for plans whose later steps are NOT knowable in advance. It replaces
+steps 1-2 above with a single durable state file and dispatches one session at a time
+-- see "The orchestrated lane" below. It does not replace the canonical arc: a plan
+that can genuinely be specified up front should still be run as a PRD plus a phased
+plan, which is the only path that produces a stakeholder-readable spec.
+
 ### Small tasks: /grill_and_implement
 
 ```
@@ -183,7 +199,79 @@ is insufficient), a short brief written to `docs/quick/<slug>_brief.md`, a go/no
 gate, then in-session implementation on a `quick/<slug>` branch cut from the default
 branch, push + `gh pr create` -- you merge the PR. The brief doubles as the PR body.
 No PRD, no plan, no ledger, no phase apparatus; the no-Claude-path-to-protected-
-branch invariant holds identically.
+branch invariant holds identically. It is also the command that RECEIVES an
+orchestrated session prompt: handed a prompt carrying an `## Orchestration` block it
+switches lanes automatically (see below). Absent that block it behaves exactly as
+described here.
+
+## The orchestrated lane
+
+`/orchestrator <plan_name>` drives a plan from ONE document:
+`docs/orchestration/<plan_name>_state.md`. For a plan run this way that file REPLACES
+the PRD, the multi-phase plan, the learnings ledger and the per-phase learnings files
+entirely. The canonical arc and its ledger enforcement are untouched and keep serving
+canonical plans exactly as before.
+
+Why a file rather than the conversation: context is a cache, and a cache can be
+silently dropped by compaction. Every decision is written THROUGH to state before the
+orchestrator replies, so a fresh session with zero history resumes from the file alone.
+Schemas: `harness/templates/state_schema.md` (state) and
+`harness/templates/handback_schema.md` (handback).
+
+**The loop, as you actually run it:**
+
+1. **`/orchestrator <plan_name>`** -- the same invocation initialises or resumes; the
+   file's existence on disk is the only signal, so you never have to remember which
+   mode you are in. Init is a grilling capped at FIVE questions covering the objective,
+   its acceptance criteria, known invariants and gates, and the first committed session.
+2. **You say "dispatch"** -- the orchestrator never dispatches on its own initiative.
+   It writes a session prompt to
+   `docs/prompts/DDMMYY/<plan_name>_session_<NN>_prompt.md` carrying a fixed
+   `## Orchestration` block, records the expectation in the state file's `## Dispatched`
+   BEFORE the session runs, and reports the path only -- never the prompt body.
+   One tree-holding session at a time: while a session is outstanding, a second dispatch
+   is refused by name rather than queued.
+3. **You paste that prompt into a fresh session.** `/grill_and_implement` detects the
+   `## Orchestration` block and runs as an orchestrated session: it writes a handback
+   STUB at `docs/orchestration/<plan_name>/handbacks/<NN>.md` in minute one, works on
+   `<plan_name>-session-<NN>` cut from `integration/<plan_name>`, merges back into
+   integration, and opens NO PR of its own.
+4. **You tell the orchestrator the session came back.** Ingest is mechanical: the
+   handback's `## Delta` rows arrive pre-formatted in the state file's own table shape,
+   so the orchestrator transcribes rather than re-authors. That is what keeps an ingest
+   nearly free in context, which is what lets a plan run for months.
+5. **You declare the plan done.** Only then does the plan-end PR flow fire -- push
+   integration, `gh pr create`, and you merge. Nothing else in this lane ever reaches
+   the protected branch.
+
+**The three legible end states** come from writing the handback stub early: a stub still
+at `Status: OPEN` is positive evidence the session DIED, `PARTIAL` / `ABANDONED` is an
+honest early exit, `COMPLETE` is a real close, and no file at all means the session was
+never run. The abandon path deliberately costs about three lines -- a status field and
+one sentence -- because an expensive escape hatch produces silent abandonment, not
+better reports.
+
+**Enforcement.** `.claude/hooks/enforce_handback.py` (Stop) blocks a dispatched
+session's closing turn until a schema-valid handback exists at the path its marker names;
+it and `enforce_phase_closing.py` are mutually exclusive by construction, reading
+different marker files. `.claude/hooks/enforce_orchestrator_isolation.py` (PreToolUse on
+Edit/Write/NotebookEdit) keeps an orchestrator session out of the implementation work --
+an anti-drift guardrail, not a sandbox: a Bash heredoc bypasses it entirely, and it is
+documented that way on purpose.
+
+**Structural observations.** Sessions report defects in the WORKFLOW MACHINERY (not in
+your project's logic) under a closed tag vocabulary; they accumulate in one append-only
+`docs/observations.md`, written by handback ingestion and by standalone
+`/grill_and_implement` closes alike. When a tag reaches two occurrences anywhere in that
+file, the orchestrator emits ONE line saying so. `/orchestrator improve` then runs in a
+FRESH session with zero plan context and hands the approved items to the existing
+self-improver flow unchanged -- sessions report, the orchestrator counts, execution
+happens out of process.
+
+**Delegation.** Long reads and corpus searches go to the `investigator` sub-agent, whose
+isolation law (read-only outside the scratchpad, named do-not-touch paths, a hard output
+budget, never the state file) lives in `agents/investigator.md` so it binds whether or
+not the caller restated it.
 
 ## Git strategy (the PR law)
 
@@ -191,9 +279,10 @@ Full law: `harness/procedures/git_strategy.md`; parameters: `preferences.md`'s k
 block.
 
 - **Unified integration-branch strategy.** A plan cuts `integration/<plan_name>` from
-  the default branch in its first phase; phase branches (`<plan_name>-phase-NN`,
-  zero-padded) branch from it and merge back into it. The protected branch is never
-  touched by Claude.
+  the default branch in its first WORK UNIT; work-unit branches branch from it and
+  merge back into it -- `<plan_name>-phase-NN` for a canonical phase,
+  `<plan_name>-session-NN` for an orchestrated session, zero-padded either way. The
+  protected branch is never touched by Claude.
 - **Autonomous phase-level git** (no confirmation): push the phase branch, merge into
   integration with git defaults and an explicit `-m "merge: ..."` message, push
   integration, delete the phase branch (remote + local, `-d`). A phase branch with
@@ -248,6 +337,10 @@ Two surfaces with distinct jobs:
   ledger may never hold two contradicting bullets; ambiguous supersessions are
   surfaced to you, never silently resolved.
 
+An ORCHESTRATED plan has neither surface: its state file subsumes both, and a
+dispatched session's handback replaces the per-phase learnings file and the ledger
+merge outright.
+
 ## Phase-closing enforcement (Stop hook)
 
 `.claude/hooks/enforce_phase_closing.py` mechanically enforces the "write learnings"
@@ -258,6 +351,12 @@ file exists in the required schema (`**Branch:**` first line, `## Learnings` hea
 and the plan ledger's `Last merged: phase NN` stamp matches the marker's phase, then
 the hook self-deletes the marker and allows. Each block reason names the specific
 failed check. Full mechanics: `closing_sequence.md` steps 4-5.
+
+This hook serves CANONICAL phases only. Its orchestrated counterpart is
+`enforce_handback.py`, which enforces the handback obligation instead; the two are
+mutually exclusive by construction because they read different marker files
+(`phase_closing.json` vs `handback_session.json`) and neither honors the other's. A
+session writes one marker or the other, never both.
 
 ## Glossaries
 
@@ -301,7 +400,8 @@ its words.
 |---------|-------------|-------------|
 | /grilling_session | Planning any feature or change (mixed / functional / technical) | PRD + plan in docs/ |
 | /write_prompt | Ready to implement a phase | Validated reference-based prompt in docs/prompts/DDMMYY/ |
-| /grill_and_implement | Task too small for a plan | Brief in docs/quick/ + a quick/<slug> PR you merge |
+| /orchestrator | A plan whose later steps are not knowable up front (init, resume, dispatch, ingest) | State file in docs/orchestration/ + session prompts in docs/prompts/DDMMYY/ |
+| /grill_and_implement | Task too small for a plan -- and the receiver of an orchestrated session prompt | Brief in docs/quick/ + a quick/<slug> PR you merge (orchestrated: a handback, no PR) |
 | /jira_and_status_update | After work lands | Tickets + standup in docs/jira_and_standup/ |
 | /on_board | First-time onboarding after clone-or-unzip | Verified install: scaffolding, preferences, tour, self-check |
 | /bootstrap_to_custom_commands | In-place scaffolding generation / post-upgrade re-run | Fresh per-project scaffolding (never overwrites yours) |
