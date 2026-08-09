@@ -171,6 +171,16 @@ attribution anywhere, ever.
 
 (Full law: `git_strategy.md`; parameters from `.claude/preferences.md`.)
 
+**Repo scope -- read before running anything below.** Every git command in this
+step runs against the repo named by the REPO value in the prompt's section 9
+resolved parameters, which is NOT always the project repo: a plan whose
+deliverables live in a nested repo (e.g. the harness at `.claude/`, which the
+project repo gitignores) does all of its branching, committing and merging
+THERE. Prefix every command with `git -C <repo>` accordingly -- `<repo>` is `.`
+for the project repo and the nested path otherwise. The bare `git checkout` /
+`git merge` / `git push` forms silently target whichever repo the working
+directory happens to be in, which for a nested-repo plan is the wrong one.
+
 **Zero-commit rule:** if the phase branch has zero commits, skip
 push/merge/delete entirely and report "no tracked changes this phase" plainly,
 then confirm the session ends on the expected branch
@@ -179,16 +189,21 @@ then confirm the session ends on the expected branch
 Otherwise, perform the autonomous close -- no user confirmation, no surfacing
 of commands for manual execution:
 
-1. Push the phase branch to origin.
-2. `git checkout integration/<plan_name>`, then merge with git defaults and an
-   explicit message:
-   `git merge <phase-branch> -m "merge: <plan_name> phase <N> -- <brief description>"`.
-3. Push the integration branch.
-4. Delete the phase branch, remote and local (`git branch -d`, never `-D`).
+1. Push the phase branch: `git -C <repo> push -u origin <phase-branch>`.
+2. `git -C <repo> checkout integration/<plan_name>`, then merge with git
+   defaults and an explicit message:
+   `git -C <repo> merge <phase-branch> -m "merge: <plan_name> phase <N> -- <brief description>"`.
+3. Push the integration branch: `git -C <repo> push origin integration/<plan_name>`.
+4. Delete the phase branch, remote and local
+   (`git -C <repo> branch -d`, never `-D`).
 
 Report each operation's outcome (hashes, branch states) to the user.
 
 If `is_final_phase` is true: run the plan-end PR flow per git_strategy.md --
+FIRST confirm the ACTIVE gh account owns the target repo (`gh auth status`) and
+switch to the owning account if it is not active, because `gh pr create` follows
+gh's active account and repo-local push pinning does NOT cover it (with two
+github.com identities the PR otherwise opens as the wrong user); then
 push the integration branch, open the PR autonomously with `gh pr create`
 (title/body per the PR convention, no AI attribution), then hand off: the USER
 merges with a `!`-prefixed `gh pr merge <n> --merge` (the keystroke is the

@@ -81,6 +81,15 @@ concrete, named test cases stating expected observable behavior, ratified by the
 user during the session's stop-sequence choreography.
 
 - Only phases that actually expect a behavior change carry a block.
+- **Every case states the FAILURE it prevents, not only its assertion.** Write
+  what breaks in the absence of the behavior -- the bad input that gets through,
+  the wrong path that gets taken, the silent success that should have been a
+  block -- and only then what the test asserts. A case that carries an assertion
+  alone can be satisfied by an implementation that never fires: an implementer
+  reading it literally builds exactly the stated check and ships a mechanism that
+  enforces nothing, because the assertion held vacuously. The failure clause is
+  what makes that outcome visibly wrong at implementation time rather than after
+  the phase closes.
 - The block opens with a parenthetical stating: write these test cases FIRST,
   run them RED, implement to green; where the suite lives; and that no tests
   beyond this contract may be added without flagging them explicitly.
