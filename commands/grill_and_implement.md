@@ -50,10 +50,10 @@ see which lane they are in.
    question.
 
 **ORCHESTRATED ONLY.** The plan slug and the session number come from the
-`## Orchestration` block, not from the first token: the block's Branch field carries them
-as `<plan_name>-session-<NN>`. If the invocation also supplies a slug token, it names only
-the brief; absent one, derive the brief slug from the plan name and session number and
-normalize it the same way.
+`## Orchestration` block, not from the first token: the block's `Branch:` field carries
+them as `<plan_name>-session-<NN>`. If the invocation also supplies a slug token, it names
+only the brief; absent one, derive the brief slug from the plan name and session number
+and normalize it the same way.
 
 ## Step 0a -- Open the handback (ORCHESTRATED ONLY)
 
@@ -176,7 +176,7 @@ protected-branch invariant of `harness/procedures/git_strategy.md` holds identic
 **ORCHESTRATED ONLY** -- steps 1 and 3-4 above are REPLACED by the per-work-unit flow in
 `harness/procedures/git_strategy.md`, whose work unit here is the dispatched session:
 
-1. Cut the branch the block names, `<plan_name>-session-<NN>`, from
+1. Cut the branch named in the block's `Branch:` field, `<plan_name>-session-<NN>`, from
    `integration/<plan_name>` -- never from the default branch.
 2. Implement and commit on it exactly as above (same commit rules, same no-attribution
    law).
