@@ -30,6 +30,13 @@ that happens to exist, not the user saying the work belongs to a plan.
   read them, do not re-derive them. The orchestrated additions are listed inline below,
   each marked ORCHESTRATED ONLY.
 
+The heading string `## Orchestration` and those four bolded field names are OWNED by
+`commands/orchestrator.md` Step 7 item 3, which writes them, so any change to the heading
+or to a field name must land in both files in lockstep -- and in the mentions in
+`commands/on_board.md` and `harness/USER_MANUAL.md` -- because a one-sided rename silently
+drops a dispatched session back into the standalone lane, where it would open a pull
+request.
+
 State the detected mode in a one-line notice before doing anything else, so the user can
 see which lane they are in.
 
