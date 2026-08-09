@@ -25,10 +25,10 @@ that happens to exist, not the user saying the work belongs to a plan.
   state file, an orchestrator, or a handback. A user who has never seen an orchestrator
   can run this command end to end.
 - **`## Orchestration` block present -> ORCHESTRATED.** The block is written by
-  `/orchestrator` and carries four bolded fields -- the state file, the handback path, the
-  branch, and the rows this session must obey. Those fields are the session's parameters;
-  read them, do not re-derive them. The orchestrated additions are listed inline below,
-  each marked ORCHESTRATED ONLY.
+  `/orchestrator` and carries four bolded fields -- the state file, the `Handback:` field,
+  the branch, and the rows this session must obey. Those fields are the session's
+  parameters; read them, do not re-derive them. The orchestrated additions are listed
+  inline below, each marked ORCHESTRATED ONLY.
 
 The heading string `## Orchestration` and those four bolded field names are OWNED by
 `commands/orchestrator.md` Step 7 item 3, which writes them, so any change to the heading
@@ -61,11 +61,11 @@ Do this the moment the prompt has been read, BEFORE any question and before any 
 handback written only at the end is absent when a session dies, and an absent file is
 indistinguishable from a session that was never dispatched.
 
-1. **Write the stub** at the block's Handback path -- the schema, the `Status:` vocabulary
-   and the read receipt are defined in `harness/templates/handback_schema.md`; follow it
-   and do not restate it. The stub carries `Status: OPEN` and echoes back, VERBATIM, the
-   rows the block listed under "Rows this session must obey". A paraphrased echo is not a
-   read receipt.
+1. **Write the stub** at the path in the block's `Handback:` field -- the schema, the
+   `Status:` vocabulary and the read receipt are defined in
+   `harness/templates/handback_schema.md`; follow it and do not restate it. The stub
+   carries `Status: OPEN` and echoes back, VERBATIM, the rows the block listed under
+   "Rows this session must obey". A paraphrased echo is not a read receipt.
 2. **Write the handback marker** at `.claude/handback_session.json`, with exactly these
    keys:
 
@@ -74,7 +74,7 @@ indistinguishable from a session that was never dispatched.
      "session_id": "<value of $CLAUDE_CODE_SESSION_ID>",
      "plan_name": "<plan name from the block>",
      "session_number": "<NN from the block>",
-     "handback_path": "<the block's Handback path>"
+     "handback_path": "<path from the block's Handback: field>"
    }
    ```
 
