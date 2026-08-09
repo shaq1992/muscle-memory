@@ -72,6 +72,11 @@ Status: ACTIVE | COMPLETE | ABANDONED
 ## Dispatched
 ```
 
+The header `Status:` line is the PLAN-level status of the state file, distinct
+from the SESSION-level `Status:` line defined in
+`harness/templates/handback_schema.md`; the two vocabularies are separate and
+must never be conflated even though both fields are named `Status`.
+
 ### `## Objective`
 
 The objective, plus its ACCEPTANCE CRITERIA, written before looking at any
