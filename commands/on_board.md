@@ -141,8 +141,13 @@ A short (~15 line) tour, novice-appropriate:
   a fresh session to implement -> every plan ends in a GitHub PR that YOU merge
   (Claude has no path to your protected branch -- enforced by the hooks verified in
   Step 7).
+- **The orchestrated lane:** `/orchestrator <plan_name>` for a plan whose later steps
+  are NOT knowable up front -- one durable state file instead of a PRD and a plan, one
+  dispatched session at a time on your word, each returning a handback the orchestrator
+  ingests. It coexists with the canonical arc; pick the lane at plan start.
 - **The quick lane:** `/grill_and_implement <slug> <task>` for tasks too small for a
-  full plan.
+  full plan. It is also what you paste an orchestrated session prompt into -- it
+  switches lanes on its own when the prompt carries an `## Orchestration` block.
 - **Where to read more:** README.md (pitch + install paths) -> harness/INSTALL.md
   (install detail) -> harness/USER_MANUAL.md (deep reference).
 
