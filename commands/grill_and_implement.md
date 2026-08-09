@@ -25,10 +25,10 @@ that happens to exist, not the user saying the work belongs to a plan.
   state file, an orchestrator, or a handback. A user who has never seen an orchestrator
   can run this command end to end.
 - **`## Orchestration` block present -> ORCHESTRATED.** The block is written by
-  `/orchestrator` and carries four bolded fields -- the state file, the `Handback:` field,
-  the branch, and the rows this session must obey. Those fields are the session's
-  parameters; read them, do not re-derive them. The orchestrated additions are listed
-  inline below, each marked ORCHESTRATED ONLY.
+  `/orchestrator` and carries four bolded fields, spelled exactly `State file:`,
+  `Handback:`, `Branch:` and `Rows this session must obey:`. Those fields are the
+  session's parameters; read them, do not re-derive them. The orchestrated additions are
+  listed inline below, each marked ORCHESTRATED ONLY.
 
 The heading string `## Orchestration`, those four bolded field names, and the convention
 that a field's value is BARE (the value on its own line, annotations on continuation
