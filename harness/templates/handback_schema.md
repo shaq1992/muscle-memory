@@ -41,7 +41,7 @@ the gates.
 That echo is a READ RECEIPT. Its value is timing, not content: it catches a
 session that never registered its isolation clauses IN MINUTE ONE, while the
 session can still be corrected, rather than in a post-mortem after the clause
-was already breached. A session that cannot echo its clauses has not read them.
+was already breached. A session that cannot echo its clauses has not read them. Because the echo's value is timing and not content, the orchestrator's ingest (Step 9 of `commands/orchestrator.md`, the "Never read back the read receipt" law) deliberately does NOT read this block back -- any change that repurposes the echo to carry content must update both files in lockstep.
 
 The echo is copied VERBATIM. A paraphrased echo proves nothing -- it is
 evidence the session read the prompt closely enough to reword it, which is not
