@@ -32,8 +32,9 @@ Checks, in order, each blocking with a reason that names the failed check:
      vocabulary of an orchestrated plan's state file
      (harness/templates/state_schema.md), which is separate and never
      enforced here even though both fields are spelled "Status";
-  3. that value is a TERMINAL state. OPEN is in the file vocabulary but is
-     not terminal: the stub is written at session START, so accepting OPEN
+  3. that value is a TERMINAL state, UNLESS the session has declared a
+     question pause (below). OPEN is in the file vocabulary but is not
+     terminal: the stub is written at session START, so accepting OPEN
      would make this hook demand a file the session already wrote in minute
      one. OPEN is reserved as positive evidence that a session DIED, and a
      session reaching its Stop hook is alive;
@@ -44,6 +45,24 @@ about THREE LINES: a status field and one sentence. Every block message
 prints that minimal content VERBATIM, because a blocked session has by
 definition already failed to guess the required shape, and pointing it at a
 schema is telling it to guess again.
+
+THE QUESTION PAUSE. A session that stops to put a question to the user --
+the STOP-and-ask ambiguity protocol, or the grilling step of
+commands/grill_and_implement.md -- is NOT a session that died, and must
+never be pushed to declare itself ABANDONED or PARTIAL to hand control back.
+Such a session declares the pause by writing .claude/handback_pause.json
+carrying its own session_id; check 3 then accepts the non-terminal status,
+the declaration is CONSUMED (single use, so every pause is re-declared), and
+the handback marker is DELIBERATELY LEFT IN PLACE so the obligation still
+fires at the real close.
+
+The pause declaration is a hook-owned ephemeral file, not part of the
+handback document: the SESSION-level Status vocabulary and the four-part
+handback shape owned by harness/templates/handback_schema.md are unchanged
+by it, and a pause leaves the handback exactly as the schema describes it --
+`Status: OPEN`, read receipt intact. Checks 1 and 2 are NOT waived by a
+pause: a session that never wrote its stub is blocked whether it is pausing
+or closing, which is the failure this hook exists to catch.
 
 Deliberately ignores the "stop_hook_active" re-entry flag: the block
 condition here is fully within the model's control (write the missing or
@@ -60,6 +79,7 @@ HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 CLAUDE_DIR = os.path.dirname(HOOK_DIR)
 PROJECT_DIR = os.path.dirname(CLAUDE_DIR)
 MARKER_PATH = os.path.join(CLAUDE_DIR, "handback_session.json")
+PAUSE_MARKER_PATH = os.path.join(CLAUDE_DIR, "handback_pause.json")
 
 STATUS_RE = re.compile(r"^Status:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
 STATUS_VOCABULARY = ("OPEN", "PARTIAL", "ABANDONED", "COMPLETE")
@@ -79,17 +99,58 @@ ABANDON_MINIMUM = (
     "Blocked on the staging credentials; nothing was changed.\n"
 )
 
+# The other cheap exit: a session pausing to ASK, which is not a death and
+# must not be dressed up as one. Printed verbatim alongside ABANDON_MINIMUM
+# whenever the status is merely unadvanced, for the same reason -- a blocked
+# session must not have to guess.
+PAUSE_INSTRUCTION = (
+    "If you are NOT closing but PAUSING to put a question to the user -- the "
+    "STOP-and-ask ambiguity protocol, or the grilling step -- do NOT advance "
+    "the status: a pause is not a death, and ABANDONED would misreport a "
+    "healthy session. Declare the pause instead, then stop again. Verbatim, "
+    "one Bash line:\n"
+    "\n"
+    '  echo "{\\"session_id\\": \\"$CLAUDE_CODE_SESSION_ID\\"}" > '
+    ".claude/handback_pause.json\n"
+    "\n"
+    "The handback stays 'Status: OPEN' with its read receipt intact. The "
+    "declaration is single use -- this hook consumes it, keeps the handback "
+    "marker, and the handback obligation fires again at the real close."
+)
+
 
 def _allow():
     sys.exit(0)
 
 
-def _block(reason):
+def _block(reason, extra=None):
     full = "{0}\n\nThe MINIMAL content that unblocks this, verbatim -- a status field and one sentence, nothing else:\n\n{1}".format(
         reason, ABANDON_MINIMUM
     )
+    if extra:
+        full = "{0}\n{1}".format(full, extra)
     print(json.dumps({"decision": "block", "reason": full}))
     sys.exit(0)
+
+
+def _consume_pause_declaration(session_id):
+    """True if THIS session declared a question pause; consumes the file."""
+    if not os.path.isfile(PAUSE_MARKER_PATH):
+        return False
+    try:
+        with open(PAUSE_MARKER_PATH, "r", encoding="utf-8") as f:
+            declaration = json.load(f)
+    except (json.JSONDecodeError, ValueError, OSError):
+        return False
+    if not isinstance(declaration, dict):
+        return False
+    if declaration.get("session_id") != session_id:
+        return False
+    try:
+        os.remove(PAUSE_MARKER_PATH)
+    except OSError:
+        pass
+    return True
 
 
 def _resolve_path(path):
@@ -184,13 +245,20 @@ def main():
         return
 
     if status not in TERMINAL_STATUSES:
+        if _consume_pause_declaration(current_session_id):
+            # A declared question pause: allow the turn to close WITHOUT a
+            # terminal status, and keep the marker so the real close is
+            # still enforced.
+            _allow()
+            return
         _block(
             "Handback schema check failed: {0} is still 'Status: {1}' -- the "
             "unadvanced stub. OPEN is reserved as evidence that a session "
-            "died, so it is not a state a live session may close in. Advance "
+            "died, so it is not a state a live session may CLOSE in. Advance "
             "the status to one of {2} before stopping.".format(
                 handback_path, status, " / ".join(TERMINAL_STATUSES)
-            )
+            ),
+            extra=PAUSE_INSTRUCTION,
         )
         return
 
