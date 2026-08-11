@@ -271,6 +271,15 @@ pre-formatted in the state file's own table shape, so there is nothing left to
 author -- and it is what keeps an ingest nearly free in orchestrator context,
 which is what lets a plan run for months.
 
+**Never read back the read receipt.** When ingesting, read ONLY the `Status:`
+line and the three content sections (`## Delta`, `## For the next session`,
+`## Structural observations`), slicing to them by their fixed headings. NEVER
+read the `**Handed to this session (read receipt):**` echo block -- it is a
+verbatim reproduction of the rows the orchestrator itself wrote into the
+dispatch prompt, so it carries zero new information; its sole purpose is a
+minute-one timing check owned by the closing hook, not the ingest. Reading it
+back only burns orchestrator context on text already on disk.
+
 The whole of an ingest is these five actions:
 
 1. **`## Delta` rows go into state VERBATIM.** Append or apply them to
