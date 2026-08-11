@@ -172,9 +172,19 @@ Step 8 clears.
    in `## Dispatched`. Numbers are monotonic and NEVER reused -- including for
    sessions that were abandoned or never run -- because a reused number collides
    two sessions onto one set of artifact paths. Zero-pad to two digits.
-2. **Resolve the prompt path.** Run `date +%d%m%y` (Bash tool) at write time --
-   never compute a date from memory -- and write the prompt to
-   `docs/prompts/<DDMMYY>/<plan_name>_session_<NN>_prompt.md`.
+2. **Resolve the prompt path.** DERIVE the dated directory with a Bash command
+   AT EACH dispatch -- never type the date token by hand and never reuse a value
+   from an earlier dispatch, session or turn. Interpolate `$(date +%d%m%y)`
+   directly in the same invocation that creates the directory and writes the
+   file, so the date is resolved fresh every time:
+
+   ```
+   mkdir -p "docs/prompts/$(date +%d%m%y)"
+   # then write the prompt to
+   #   docs/prompts/$(date +%d%m%y)/<plan_name>_session_<NN>_prompt.md
+   ```
+
+   The filename convention `<plan_name>_session_<NN>_prompt.md` is unchanged.
 3. **Write the prompt**, carrying a fixed `## Orchestration` block. Its presence
    is the ONLY signal by which a receiving command knows it is orchestrated, so
    the heading is spelled exactly this way and the block is never renamed,
