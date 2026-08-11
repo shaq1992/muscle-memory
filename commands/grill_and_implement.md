@@ -96,11 +96,43 @@ do-not-re-validate entry is not an invitation to check it again.
 
 ## Step 1 -- Grill (capped at 8 questions)
 
-Mixed-style grilling (what/why AND how), HARD-CAPPED at 8 questions total. Follow the
-grilling question format and rules from `/grilling_session` -- markdown multiple-choice
-with 3-4 options plus "Other (describe)", recommendation after the options, batching of
-up to 3 genuinely independent questions per turn, `linger` and asides handled the same
-way -- but scaled down:
+Mixed-style grilling (what/why AND how), HARD-CAPPED at 8 questions total.
+
+**Ask the questions through the AskUserQuestion tool by default, in BOTH modes.** The tool
+renders the options as a natively selectable list, records WHICH option the user chose
+structurally instead of leaving you to map free text like "b, b, b" back onto your own
+prose, and always offers "Other" itself. So do NOT hand-roll a markdown question block
+here, do NOT add an "Other (describe)" option of your own -- it is redundant -- and do not
+fall back to prose questions the user has to answer in free text.
+
+This is the one place `/grill_and_implement` DEPARTS from `/grilling_session`: that
+command's markdown OUTPUT FORMAT does not apply in this lane, and nothing below inherits
+it. Its grilling CONDUCT still does -- questions getting progressively more specific as
+context builds, contradictions surfaced before requirements questions, a novel idea
+offered as an option rather than as a separate prompt, and `linger` plus general asides
+handled the same way (a `linger` sub-loop is freeform by definition, so it suspends the
+tool here exactly as it suspends multiple-choice there).
+
+Using the tool concretely:
+
+- **The recommendation moves INTO the options, it is not dropped.** The tool's own
+  guidance is that the recommended option comes FIRST and its label carries
+  "(Recommended)"; the reasoning that used to sit under the options goes in that option's
+  description. Every question still carries a recommendation.
+- **One call carries 1-4 questions, and the batching rule caps a turn at 3** genuinely
+  independent questions -- no question's best answer could change based on another's. The
+  tighter of the two governs, so 3 per call is the working maximum; send a batch as ONE
+  call rather than one call per question, and never invent a fourth question to fill the
+  tool's slot.
+- **Reach for multiSelect** when the answers are genuinely additive (which files are in
+  scope, which checks to run) rather than mutually exclusive, and use the per-option
+  description to preview what picking it commits the session to.
+- **Escape hatch -- narrow and honest.** Ask in prose ONLY when the tool genuinely cannot
+  carry the question: its options cannot be enumerated in advance, or answering it needs a
+  long worked example or code block that will not fit an option description. State in one
+  line why the tool was bypassed. "Typing it out was faster" is not one of those cases.
+
+Scaled-down rules for this lane:
 
 - Before any question that proposes file locations or git behavior, read `.gitignore` and
   `.claude/preferences.md` and answer from them instead of asking.
