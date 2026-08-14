@@ -101,6 +101,8 @@ replying:
 - `## Next` carries the one committed session, fully specified.
 - `## Maybe` may be empty, and usually should be at init.
 - `## Dispatched` is empty until the first dispatch.
+- `## Orchestrator log` seeds its two required lines: `- Incarnations: 1` and
+  `- Next row ID: E001`.
 
 Initialising the plan does not create any branch. The integration branch is cut
 by the plan's first work unit under the per-work-unit flow in
@@ -110,7 +112,10 @@ are the plan-end push and pull request in Step 12.
 ## Step 4 -- RESUME (a state file exists)
 
 Read the state file and resume from IT ALONE. Nothing else is recovered
-context.
+context. Rebirth is state-file-only: there is no successor-prompt artifact,
+and hand-written orchestrator resume prompts are a retired practice. As the
+first state edit of the resume, bump the incarnation count in
+`## Orchestrator log`.
 
 - Any additional text in the invocation is NEW INPUT -- a new instruction, a new
   constraint, a new correction. It is never treated as context handed forward
@@ -296,8 +301,13 @@ The whole of an ingest is these five actions:
    `## Established` and `## Open` exactly as written, honouring each row's
    stated add / change / retire intent. Do not re-word, tighten, merge or
    re-classify a row. The session that did the work is the author; the
-   orchestrator is the scribe. If a delta row conflicts with an existing row,
-   apply the no-contradiction law from
+   orchestrator is the scribe. The ID cell is the ONE exception, because only
+   the orchestrator holds the counter: on an `add` row, replace the `-`
+   placeholder in the ID cell with the `Next row ID` value from
+   `## Orchestrator log` and advance that counter in the same write; a
+   `change` keeps the row's existing ID, and a `retire` retires the ID with
+   the row, never to be reissued. If a delta row conflicts with an existing
+   row, apply the no-contradiction law from
    @.claude/harness/templates/state_schema.md rather than inventing a
    resolution.
 2. **`## For the next session` is ADVISORY.** It informs the orchestrator's

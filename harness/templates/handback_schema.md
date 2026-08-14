@@ -98,8 +98,14 @@ file's `## Established` and `## Open` tables.
 
 They are written PRE-FORMATTED, in the state file's own table shape, with the
 same columns and the same closed vocabularies. Mark each row's intent
-explicitly -- add, change, or retire -- and for a retire or change, quote
-enough of the existing row to identify it unambiguously.
+explicitly -- add, change, or retire -- and for a retire or change, name the
+existing row by its ID (quote enough of its text as well where that helps a
+human reader, or where the plan's state file predates the v2 ID migration).
+
+**The ID cell on an `add` row is written as `-`.** The `## Established` ID
+counter lives in the state file's `## Orchestrator log` and belongs to the
+orchestrator alone; a session inventing a concrete ID would be guessing
+another plan-writer's counter. The orchestrator stamps the real ID at ingest.
 
 Pre-formatting is what makes ingestion MECHANICAL rather than interpretive. The
 orchestrator appends rows it does not have to author, so each fact is written

@@ -22,9 +22,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import CLOSING_HOOK, PLAN_NAME, PROJECT_ROOT
+from helpers import CLOSING_HOOK, HARNESS_ROOT, PLAN_NAME
 
-HANDBACK_HOOK = PROJECT_ROOT / ".claude" / "hooks" / "enforce_handback.py"
+HANDBACK_HOOK = HARNESS_ROOT / "hooks" / "enforce_handback.py"
 
 SESSION_NUMBER = 7
 

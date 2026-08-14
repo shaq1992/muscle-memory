@@ -21,13 +21,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-GUARDRAIL_HOOK = PROJECT_ROOT / ".claude" / "hooks" / "git_guardrails.py"
-CLOSING_HOOK = PROJECT_ROOT / ".claude" / "hooks" / "enforce_phase_closing.py"
-SETTINGS_JSON = PROJECT_ROOT / ".claude" / "settings.json"
-VALIDATE_PROMPT = (
-    PROJECT_ROOT / ".claude" / "harness" / "scripts" / "validate_prompt.py"
-)
+# Anchor on the HARNESS repo root (the directory holding hooks/, harness/,
+# settings.json), not the host project root. The harness repo is normally
+# checked out at <project>/.claude/, but during a harness plan it is also
+# checked out as a linked git worktree elsewhere; resolving via the repo root
+# keeps the suite runnable from BOTH layouts, always testing the checkout it
+# lives in.
+HARNESS_ROOT = Path(__file__).resolve().parents[2]
+GUARDRAIL_HOOK = HARNESS_ROOT / "hooks" / "git_guardrails.py"
+CLOSING_HOOK = HARNESS_ROOT / "hooks" / "enforce_phase_closing.py"
+SETTINGS_JSON = HARNESS_ROOT / "settings.json"
+VALIDATE_PROMPT = HARNESS_ROOT / "harness" / "scripts" / "validate_prompt.py"
 
 PLAN_NAME = "example-plan"
 

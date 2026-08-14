@@ -24,11 +24,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import PLAN_NAME, PROJECT_ROOT, decision_and_reason
+from helpers import HARNESS_ROOT, PLAN_NAME, decision_and_reason
 
-ISOLATION_HOOK = (
-    PROJECT_ROOT / ".claude" / "hooks" / "enforce_orchestrator_isolation.py"
-)
+ISOLATION_HOOK = HARNESS_ROOT / "hooks" / "enforce_orchestrator_isolation.py"
 
 STATE_REL = "docs/orchestration/{0}_state.md".format(PLAN_NAME)
 

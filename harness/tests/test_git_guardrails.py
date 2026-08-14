@@ -16,6 +16,7 @@ Stdlib-only. Run with: python3 -m unittest discover .claude/harness/tests
 
 import json
 import shutil
+import unittest
 
 from helpers import (
     BASE_PARAMS,
@@ -235,6 +236,11 @@ class TestNonGitCommandsPassFlaggedExtra(GuardrailEnv):
 # tree over there.
 # ---------------------------------------------------------------------------
 class TestClosingHookRegistrationFlaggedExtra(GuardrailEnv):
+    @unittest.skipUnless(
+        SETTINGS_JSON.is_file(),
+        "settings.json is a gitignored environment file: present only in the "
+        "live .claude checkout, absent from a linked worktree checkout",
+    )
     def test_hooks_registered_with_stdlib_python3(self):
         settings = json.loads(SETTINGS_JSON.read_text(encoding="utf-8"))
         pre_hooks = json.dumps(settings.get("hooks", {}).get("PreToolUse", []))
@@ -312,3 +318,72 @@ class TestMissingPreferencesFileFallsBack(GuardrailEnv):
         v, reason = verdict("git -C .claude push origin feature-x")
         self.assertEqual("deny", v)
         self.assertIn("harness_push_remote", reason)
+
+
+# ---------------------------------------------------------------------------
+# 14. Harness attribution covers linked worktrees of the harness repo.
+# Failure prevented: a harness plan editing via a linked worktree (e.g.
+# .claude/worktrees/<plan>) could push to an ARBITRARY remote, because
+# attribution matched only a repo root whose basename is ".claude" -- a
+# linked worktree's root carries the worktree's own name, so its pushes
+# silently bypassed the fail-closed harness_push_remote allowlist.
+# ---------------------------------------------------------------------------
+class TestHarnessWorktreePushAllowlist(GuardrailEnv):
+    def _add_harness_worktree(self, dest, branch):
+        git(self.harness, "worktree", "add", str(dest), "-b", branch)
+        return dest
+
+    def test_worktree_push_key_absent_blocked(self):
+        wt = self._add_harness_worktree(
+            self.harness / "worktrees" / "wt", "wt-branch"
+        )
+        self.set_harness_push_remote(None)
+        # both invocation forms: cwd inside the worktree, and -C from outside
+        self.assert_denied(
+            "git push origin wt-branch",
+            cwd=wt,
+            reason_contains="harness_push_remote",
+        )
+        self.assert_denied(
+            "git -C .claude/worktrees/wt push origin wt-branch",
+            reason_contains="harness_push_remote",
+        )
+
+    def test_worktree_push_matching_remote_allowed(self):
+        wt = self._add_harness_worktree(
+            self.harness / "worktrees" / "wt", "wt-branch"
+        )
+        self.set_harness_push_remote(MATCHING_REMOTE_PATTERN)
+        self.assert_allowed("git push origin wt-branch", cwd=wt)
+        self.assert_allowed("git -C .claude/worktrees/wt push origin wt-branch")
+
+    def test_worktree_push_mismatching_remote_blocked(self):
+        wt = self._add_harness_worktree(
+            self.harness / "worktrees" / "wt", "wt-branch"
+        )
+        self.set_harness_push_remote(MISMATCHING_REMOTE_PATTERN)
+        self.assert_denied(
+            "git push origin wt-branch",
+            cwd=wt,
+            reason_contains="harness_push_remote",
+        )
+
+    def test_worktree_outside_harness_dir_still_attributed(self):
+        # attribution follows the gitdir pointer, not the worktree's location
+        wt = self._add_harness_worktree(
+            self.repo.parent / "outside_wt", "outside-branch"
+        )
+        self.set_harness_push_remote(None)
+        self.assert_denied(
+            "git push origin outside-branch",
+            cwd=wt,
+            reason_contains="harness_push_remote",
+        )
+
+    def test_project_repo_worktree_not_attributed_as_harness(self):
+        # a linked worktree of the PROJECT repo is not a harness push and is
+        # never subject to the harness allowlist
+        proj_wt = self.repo.parent / "proj_wt"
+        git(self.repo, "worktree", "add", str(proj_wt), "-b", "proj-branch")
+        self.set_harness_push_remote(None)
+        self.assert_allowed("git push origin proj-branch", cwd=proj_wt)
