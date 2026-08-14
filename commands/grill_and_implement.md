@@ -68,8 +68,11 @@ indistinguishable from a session that was never dispatched.
 1. **Write the stub** at the path in the block's `Handback:` field -- the schema, the
    `Status:` vocabulary and the read receipt are defined in
    `harness/templates/handback_schema.md`; follow it and do not restate it. The stub
-   carries `Status: OPEN` and echoes back, VERBATIM, the rows the block listed under
-   "Rows this session must obey". A paraphrased echo is not a read receipt.
+   carries `Status: OPEN` and the two-line read receipt: `- Rows:` with the E-IDs from
+   the FIRST CELL of each row the block listed under "Rows this session must obey"
+   (comma-separated), and `- Prompt-SHA256:` with the output of `sha256sum` run on the
+   PROMPT FILE this session was invoked with -- compute it, never guess it; the closing
+   hook verifies both against the dispatch manifest.
 2. **Write the handback marker** at `.claude/handback_session.json`, with exactly these
    keys:
 

@@ -190,10 +190,35 @@ Step 8 clears.
    ```
 
    The filename convention `<plan_name>_session_<NN>_prompt.md` is unchanged.
-3. **Write the prompt**, carrying a fixed `## Orchestration` block. Its presence
-   is the ONLY signal by which a receiving command knows it is orchestrated, so
-   the heading is spelled exactly this way and the block is never renamed,
-   nested, or made conditional:
+3. **Assemble the prompt with the dispatch script.** The orchestrator authors
+   ONLY the task body (to a scratch file) and selects the row E-IDs this
+   session must obey; `harness/scripts/assemble_dispatch.py` writes the WHOLE
+   prompt file and the dispatch manifest in the same run:
+
+   ```
+   python3 .claude/harness/scripts/assemble_dispatch.py \
+     --state docs/orchestration/<plan_name>_state.md \
+     --body <task_body_file> --plan <plan_name> --session <NN> \
+     --branch <plan_name>-session-<NN> --rows E006,E007,... \
+     --out "docs/prompts/$(date +%d%m%y)/<plan_name>_session_<NN>_prompt.md"
+   ```
+
+   The script extracts the named rows VERBATIM from the state file
+   (fail-closed on a missing E-ID), appends the fixed `## Orchestration`
+   block below, and writes the manifest to
+   `docs/orchestration/<plan_name>/dispatches/<NN>.json` -- session number,
+   row IDs, and the SHA-256 of the prompt file's exact bytes, so the
+   manifest matches the prompt by construction. That hash is what the
+   session's read receipt is verified against
+   (`harness/templates/handback_schema.md`); a prompt hand-edited after
+   assembly is a different dispatch and fails verification by design, so on
+   any change to the body, re-run the assembler rather than editing the
+   prompt. It is deterministic-validation law: surface the script's output
+   verbatim, and never dispatch on a FAIL.
+
+   The block's presence is the ONLY signal by which a receiving command
+   knows it is orchestrated, so the heading is spelled exactly this way and
+   the block is never renamed, nested, or made conditional:
 
    ```
    ## Orchestration
@@ -228,7 +253,9 @@ Step 8 clears.
    state named as its source, has ONE author and cannot drift into disagreement;
    a paraphrase has two, and two authors of one fact is how the copies come
    apart. So the prompt may carry verbatim rows and nothing else -- no
-   paraphrase, no summary, no tightened wording.
+   paraphrase, no summary, no tightened wording. The assembler enforces this
+   by construction: it copies each row line byte-for-byte from state, so the
+   orchestrator's part is SELECTING IDs, never transcribing text.
 5. **A fact in a prompt and absent from state is a BUG.** If, while writing the
    prompt, something needs saying that exists nowhere in state, stop writing the
    prompt: put it in state first, as a row, then copy that row into the prompt.
@@ -289,11 +316,15 @@ which is what lets a plan run for months.
 **Never read back the read receipt.** When ingesting, read ONLY the `Status:`
 line and the three content sections (`## Delta`, `## For the next session`,
 `## Structural observations`), slicing to them by their fixed headings. NEVER
-read the `**Handed to this session (read receipt):**` echo block -- it is a
-verbatim reproduction of the rows the orchestrator itself wrote into the
-dispatch prompt, so it carries zero new information; its sole purpose is a
-minute-one timing check owned by the closing hook, not the ingest. Reading it
-back only burns orchestrator context on text already on disk.
+read the `**Handed to this session (read receipt):**` block -- it is a row-ID
+list plus the dispatched prompt's hash, derivable entirely from the dispatch
+the orchestrator itself issued, so it carries zero new information. Its
+verification against the dispatch manifest is the CLOSING HOOK's job
+(`hooks/enforce_handback.py`, minute one), never the ingest's; while the live
+hook predates that check, run it manually instead --
+`python3 hooks/enforce_handback.py --check-receipt <handback_path>` -- and
+read only its OK/FAIL verdict. Reading the receipt back only burns
+orchestrator context on text already on disk.
 
 The whole of an ingest is these five actions:
 

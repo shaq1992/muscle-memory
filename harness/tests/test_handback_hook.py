@@ -6,6 +6,13 @@ abandon path, complete-and-self-delete, mutual exclusivity with the
 phase-closing marker, and the verbatim unblocking content in every block
 reason.
 
+Schema v2 (D3) adds the read-receipt verification cases: when a dispatch
+manifest exists at docs/orchestration/<plan>/dispatches/<NN>.json, the
+receipt's row-ID list and prompt hash are verified against it on every Stop
+evaluation except an ABANDONED close; a missing manifest is a structural
+no-op on the hook path and a loud failure on the manual --check-receipt
+path. Each new case states the failure it prevents.
+
 Like test_closing_hook.py, the contract is exercised through hook COPIES
 inside a temp tree, so each hook's own-location-derived project root (and
 therefore the marker path and the relative handback_path resolution) points
@@ -41,6 +48,37 @@ STUB_HANDBACK = (
     "\n"
     "**Handed to this session (read receipt):**\n"
     "- | greenlist | the fixture row |\n"
+)
+
+# The v2 (D3) receipt shape: a row-ID list plus the SHA-256 of the dispatched
+# prompt file, verified against the dispatch manifest.
+PROMPT_SHA = "ab" * 32
+OTHER_SHA = "cd" * 32
+
+ID_RECEIPT_HEADER = (
+    "**Handed to this session (read receipt):**\n"
+    "- Rows: E001, E002\n"
+    "- Prompt-SHA256: " + PROMPT_SHA + "\n"
+)
+
+ID_RECEIPT_STUB = "Status: OPEN\n\n" + ID_RECEIPT_HEADER
+
+ID_RECEIPT_COMPLETE = (
+    "Status: COMPLETE\n"
+    "\n"
+    + ID_RECEIPT_HEADER
+    + "\n"
+    "## Delta\n"
+    "\n"
+    "none\n"
+    "\n"
+    "## For the next session\n"
+    "\n"
+    "Nothing outstanding.\n"
+    "\n"
+    "## Structural observations\n"
+    "\n"
+    "none\n"
 )
 
 COMPLETE_HANDBACK = (
@@ -122,6 +160,37 @@ class HandbackHookEnv(unittest.TestCase):
 
     def write_handback(self, text=COMPLETE_HANDBACK):
         self.handback_path.write_text(text, encoding="utf-8")
+
+    def write_manifest(self, row_ids=("E001", "E002"), sha=PROMPT_SHA):
+        self.manifest_rel = (
+            "docs/orchestration/{0}/dispatches/{1:02d}.json".format(
+                PLAN_NAME, SESSION_NUMBER
+            )
+        )
+        path = self.proj / self.manifest_rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "plan_name": PLAN_NAME,
+                    "session_number": "{0:02d}".format(SESSION_NUMBER),
+                    "row_ids": list(row_ids),
+                    "prompt_path": (
+                        "docs/prompts/140826/{0}_session_{1:02d}_prompt.md"
+                        .format(PLAN_NAME, SESSION_NUMBER)
+                    ),
+                    "prompt_sha256": sha,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def declare_pause(self, session=None):
+        (self.proj / ".claude" / "handback_pause.json").write_text(
+            json.dumps({"session_id": session or self.SESSION}),
+            encoding="utf-8",
+        )
 
     # -- hook drivers ------------------------------------------------------
 
@@ -331,3 +400,150 @@ class TestBlockMessageStatesUnblockingContent(HandbackHookEnv):
                     "block reason {0} omits the verbatim unblocking "
                     "content: {1!r}".format(i, reason),
                 )
+
+
+class TestReceiptVerification(HandbackHookEnv):
+    def test_matching_receipt_completes(self):
+        # Prevents: the new verification breaking the healthy close -- a
+        # session whose receipt matches its manifest must close exactly as
+        # before, marker removed.
+        self.write_marker()
+        self.write_manifest()
+        self.write_handback(ID_RECEIPT_COMPLETE)
+        self.assert_allowed_stop()
+        self.assertFalse(self.marker_path.exists())
+
+    def test_tampered_rows_block(self):
+        # Prevents: a session acknowledging rows it was not handed, or
+        # silently dropping one it was -- the exact drift the manifest
+        # exists to catch.
+        self.write_marker()
+        self.write_manifest(row_ids=("E001", "E002", "E003"))
+        self.write_handback(ID_RECEIPT_COMPLETE)
+        reason = self.assert_blocked(reason_contains="E003")
+        self.assertIn(ABANDON_MINIMUM, reason)
+        self.assertTrue(self.marker_path.exists())
+
+    def test_hash_mismatch_blocks(self):
+        # Prevents: a receipt written against an edited or wrong prompt file
+        # passing as verified.
+        self.write_marker()
+        self.write_manifest(sha=OTHER_SHA)
+        self.write_handback(ID_RECEIPT_COMPLETE)
+        reason = self.assert_blocked(reason_contains="SHA256")
+        self.assertIn(ABANDON_MINIMUM, reason)
+        self.assertTrue(self.marker_path.exists())
+
+    def test_missing_manifest_skips_verification(self):
+        # Prevents: an unresolvable block on a hand-written dispatch -- the
+        # manifest is the ORCHESTRATOR's artifact, and a session cannot
+        # legitimately create it, so its absence is a structural no-op and
+        # the v5 checks run unchanged.
+        self.write_marker()
+        self.write_handback(COMPLETE_HANDBACK)
+        self.assert_allowed_stop()
+        self.assertFalse(self.marker_path.exists())
+
+    def test_abandoned_exempt_from_receipt_check(self):
+        # Prevents: the abandon path's cost creeping past the binding
+        # constraint -- a status field and one sentence must still close,
+        # manifest or no manifest.
+        self.write_marker()
+        self.write_manifest()
+        self.write_handback(ABANDON_MINIMUM)
+        self.assert_allowed_stop()
+        self.assertFalse(self.marker_path.exists())
+
+    def test_pause_with_bad_receipt_blocks(self):
+        # Prevents: the minute-one signal being skippable via a question
+        # pause -- the FIRST pause of a dispatched session is exactly the
+        # moment the verification is for.
+        self.write_marker()
+        self.write_manifest(sha=OTHER_SHA)
+        self.write_handback(ID_RECEIPT_STUB)
+        self.declare_pause()
+        reason = self.assert_blocked(reason_contains="SHA256")
+        self.assertIn(ABANDON_MINIMUM, reason)
+        # The pause declaration is NOT consumed by a receipt block: once the
+        # receipt is fixed, the already-declared pause still lets the
+        # question turn close.
+        self.assertTrue(
+            (self.proj / ".claude" / "handback_pause.json").exists()
+        )
+        self.write_handback(ID_RECEIPT_STUB.replace(PROMPT_SHA, OTHER_SHA))
+        self.assert_allowed_stop()
+        self.assertTrue(self.marker_path.exists())
+
+    def test_pause_with_good_receipt_allows(self):
+        # Prevents: the verification breaking the healthy question pause.
+        self.write_marker()
+        self.write_manifest()
+        self.write_handback(ID_RECEIPT_STUB)
+        self.declare_pause()
+        self.assert_allowed_stop()
+        self.assertTrue(self.marker_path.exists())
+
+    def test_v5_receipt_with_manifest_blocks(self):
+        # Prevents: a script-dispatched session writing the retired verbatim
+        # echo instead of the verifiable ID receipt and passing anyway.
+        self.write_marker()
+        self.write_manifest()
+        self.write_handback(COMPLETE_HANDBACK)
+        reason = self.assert_blocked(reason_contains="- Rows:")
+        self.assertIn(ABANDON_MINIMUM, reason)
+        self.assertTrue(self.marker_path.exists())
+
+
+class TestManualCheckMode(HandbackHookEnv):
+    """The --check-receipt argv mode: the dogfooding-interim entry point."""
+
+    def run_check(self, *args):
+        return subprocess.run(
+            [sys.executable, str(self.hook_copy), "--check-receipt"]
+            + list(args),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    def test_check_receipt_ok(self):
+        # Prevents: the manual checker disagreeing with the hook on a
+        # receipt the hook would pass.
+        manifest_path = self.write_manifest()
+        self.write_handback(ID_RECEIPT_STUB)
+        r = self.run_check(
+            str(self.handback_path), "--manifest", str(manifest_path)
+        )
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("OK", r.stdout)
+
+    def test_check_receipt_mismatch_fails(self):
+        # Prevents: the dogfooding interim running blind -- a tampered or
+        # stale receipt must fail loudly when checked by hand.
+        manifest_path = self.write_manifest(sha=OTHER_SHA)
+        self.write_handback(ID_RECEIPT_STUB)
+        r = self.run_check(
+            str(self.handback_path), "--manifest", str(manifest_path)
+        )
+        self.assertEqual(1, r.returncode)
+        self.assertIn("FAIL", r.stdout)
+
+    def test_check_receipt_missing_manifest_fails(self):
+        # Prevents: a silent pass when the orchestrator -- the manifest's
+        # owner -- checks a dispatch that never got one. Unlike the hook
+        # path, the manual path fails loudly here.
+        self.write_handback(ID_RECEIPT_STUB)
+        r = self.run_check(str(self.handback_path))
+        self.assertEqual(1, r.returncode)
+        self.assertIn("FAIL", r.stdout)
+        self.assertIn("manifest", r.stdout.lower())
+
+    def test_check_receipt_derives_manifest_path(self):
+        # Prevents: the checker needing hand-fed paths for the standard
+        # layout -- .../<plan>/handbacks/<NN>.md implies
+        # .../<plan>/dispatches/<NN>.json.
+        self.write_manifest()
+        self.write_handback(ID_RECEIPT_STUB)
+        r = self.run_check(str(self.handback_path))
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("OK", r.stdout)
