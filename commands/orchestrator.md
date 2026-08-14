@@ -307,15 +307,20 @@ positive evidence the session died, and no file at all means the session was
 never run.
 
 **What MECHANICAL means.** It describes HOW the rows are applied, not what sets
-the ingest off. The orchestrator TRANSCRIBES; it does not interpret, summarise or
-re-author. That is a property of the handback format -- the rows arrive
-pre-formatted in the state file's own table shape, so there is nothing left to
-author -- and it is what keeps an ingest nearly free in orchestrator context,
-which is what lets a plan run for months.
+the ingest off. The mechanical legs are EXECUTED by
+`harness/scripts/ingest_handback.py` -- the orchestrator's pen under the
+one-writer rule, invoked only by the orchestrator -- and the orchestrator reads
+the script's ~10-line summary, never re-parsing what the script already parsed.
+Nothing is interpreted, summarised or re-authored on the way through: the rows
+arrive pre-formatted in the state file's own table shape (the session that did
+the work is the author) and the script applies them verbatim. That is what
+keeps an ingest nearly free in orchestrator context, which is what lets a plan
+run for months.
 
-**Never read back the read receipt.** When ingesting, read ONLY the `Status:`
-line and the three content sections (`## Delta`, `## For the next session`,
-`## Structural observations`), slicing to them by their fixed headings. NEVER
+**Never read back the read receipt.** When ingesting, read ONLY the script's
+summary and the `## For the next session` section (sliced to by its fixed
+heading) -- the script consumes `Status:`, `## Delta` and `## Structural
+observations` so the orchestrator does not have to. NEVER
 read the `**Handed to this session (read receipt):**` block -- it is a row-ID
 list plus the dispatched prompt's hash, derivable entirely from the dispatch
 the orchestrator itself issued, so it carries zero new information. Its
@@ -326,34 +331,57 @@ hook predates that check, run it manually instead --
 read only its OK/FAIL verdict. Reading the receipt back only burns
 orchestrator context on text already on disk.
 
-The whole of an ingest is these five actions:
+The whole of an ingest is these five actions. Actions 1, 3 and 4 are the
+SCRIPT's -- run it once and read the summary:
 
-1. **`## Delta` rows go into state VERBATIM.** Append or apply them to
-   `## Established` and `## Open` exactly as written, honouring each row's
-   stated add / change / retire intent. Do not re-word, tighten, merge or
-   re-classify a row. The session that did the work is the author; the
-   orchestrator is the scribe. The ID cell is the ONE exception, because only
-   the orchestrator holds the counter: on an `add` row, replace the `-`
-   placeholder in the ID cell with the `Next row ID` value from
-   `## Orchestrator log` and advance that counter in the same write; a
-   `change` keeps the row's existing ID, and a `retire` retires the ID with
-   the row, never to be reissued. If a delta row conflicts with an existing
-   row, apply the no-contradiction law from
-   @.claude/harness/templates/state_schema.md rather than inventing a
-   resolution.
+```
+python3 .claude/harness/scripts/ingest_handback.py \
+  --state docs/orchestration/<plan_name>_state.md \
+  docs/orchestration/<plan_name>/handbacks/<NN>.md
+```
+
+`--check` first is a free dry-run: same validation, same summary, nothing
+written. The script is FAIL-CLOSED: on a malformed handback, or a Delta row it
+cannot apply unambiguously, it exits 1 with the state file untouched --
+surface its FAIL lines verbatim and resolve with the user, never by quietly
+hand-editing the handback into an ingestable shape.
+
+1. **`## Delta` rows go into state VERBATIM -- applied by the script.** It
+   honours each marker block's stated add / change / retire intent against
+   `## Established` ONLY (the block grammar is owned by
+   @.claude/harness/templates/handback_schema.md); nothing is re-worded,
+   tightened, merged or re-classified on the way through. On an `add` row the
+   script replaces the `-` placeholder in the ID cell with the `Next row ID`
+   value from `## Orchestrator log` and advances that counter in the same
+   write; a `change` replaces the identified row and keeps its ID; a `retire`
+   HARD-DELETES the row line -- the ID is never reused, the summary names the
+   retired IDs, and the retiring handback is the durable trail. Rows under an
+   `OPEN (orchestrator-manual):` marker are NOT applied: the script only
+   counts them in the summary, and the orchestrator applies them to `## Open`
+   by hand -- `## Open` is orchestrator-manual, always. The script also runs
+   the STRUCTURAL side of the no-contradiction check: an incoming statement
+   duplicating an existing row is FLAGGED in the summary, never resolved.
+   Judging SEMANTIC contradiction stays the orchestrator's: on a flagged pair
+   or a clash the orchestrator notices in the applied rows, apply the
+   no-contradiction law from @.claude/harness/templates/state_schema.md
+   rather than inventing a resolution.
 2. **`## For the next session` is ADVISORY.** It informs the orchestrator's
    judgement and nothing more. Where it conflicts with state, STATE WINS. A line
    from it enters the file only as the orchestrator's own decision, under
-   write-through trigger (d) -- never by transcription.
-3. **Append the structural observations** to `docs/observations.md`, verbatim,
-   one line per observation in the fixed shape defined in the handback schema.
-   Append only; never edit, reorder or delete an existing line.
-4. **Update `## Dispatched`.** Clear the row on a `COMPLETE` handback; update its
-   status for `PARTIAL` or `ABANDONED`; leave it standing, visibly outstanding,
-   for a handback still at `OPEN`. A handback's `Status` is the SESSION-level
-   vocabulary of @.claude/harness/templates/handback_schema.md and belongs only
-   in that row -- NEVER copy it into the state file's header `Status:` line,
-   whose PLAN-level vocabulary is separate even though both fields are named
+   write-through trigger (d) -- never by transcription. This section is the one
+   part of the handback the orchestrator still reads itself; the script
+   deliberately never parses it.
+3. **Structural observations are appended by the script** to
+   `docs/observations.md`, verbatim, one line per observation in the fixed
+   dated shape defined in the handback schema. Append only; never edit, reorder
+   or delete an existing line.
+4. **`## Dispatched` is updated by the script.** It clears the row on a
+   `COMPLETE` handback; updates its status for `PARTIAL` or `ABANDONED`; leaves
+   it standing, visibly outstanding, for a handback still at `OPEN`. A
+   handback's `Status` is the SESSION-level vocabulary of
+   @.claude/harness/templates/handback_schema.md and belongs only in that row
+   -- NEVER copy it into the state file's header `Status:` line, whose
+   PLAN-level vocabulary is separate even though both fields are named
    `Status`.
 5. **Refill or empty `## Next`.** Once the ingested session's scope is finished,
    the committed horizon is STALE -- it now describes work that is already done.
@@ -363,6 +391,12 @@ The whole of an ingest is these five actions:
    next, and would re-derive a session that has already returned. Refilling
    `## Next` is not dispatching, so it does not breach Step 6 -- but a horizon
    the user has not chosen is a proposal, and must be written as one.
+
+The summary's last line reports `## Established`'s row count and byte size
+against the GC threshold (80 rows OR 45 KB -- either bound trips). An OVER
+report is the D6 trigger EVIDENCE for suggesting a garbage-collection pass; GC
+never auto-runs. The summary also WARNS on incoming rows over ~600 bytes per
+the row-discipline law -- a prompt for judgement, never a block.
 
 All five happen before replying (write-through trigger (a)).
 

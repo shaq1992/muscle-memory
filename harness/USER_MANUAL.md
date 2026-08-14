@@ -243,8 +243,10 @@ Schemas: `harness/templates/state_schema.md` (state) and
    integration, and opens NO PR of its own.
 4. **You tell the orchestrator the session came back.** Ingest is mechanical: the
    handback's `## Delta` rows arrive pre-formatted in the state file's own table shape,
-   so the orchestrator transcribes rather than re-authors. That is what keeps an ingest
-   nearly free in context, which is what lets a plan run for months.
+   and the ingest script (`harness/scripts/ingest_handback.py`, the orchestrator's pen)
+   applies them verbatim -- nobody re-authors a row, and the orchestrator reads only the
+   script's short summary. That is what keeps an ingest nearly free in context, which is
+   what lets a plan run for months.
 5. **You declare the plan done.** Only then does the plan-end PR flow fire -- push
    integration, `gh pr create`, and you merge. Nothing else in this lane ever reaches
    the protected branch.
