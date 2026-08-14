@@ -34,19 +34,48 @@ a session that was never dispatched. See "The three legible terminal states".
 
 ## The read receipt
 
-The stub echoes back, verbatim, the rows the session was handed in its prompt's
-orchestration block: the do-not-re-validate entries, the pinned invariants and
-the gates.
+The stub carries, under the header `**Handed to this session (read
+receipt):**`, exactly TWO lines derived from the dispatched prompt:
 
-That echo is a READ RECEIPT. Its value is timing, not content: it catches a
-session that never registered its isolation clauses IN MINUTE ONE, while the
-session can still be corrected, rather than in a post-mortem after the clause
-was already breached. A session that cannot echo its clauses has not read them. Because the echo's value is timing and not content, the orchestrator's ingest (Step 9 of `commands/orchestrator.md`, the "Never read back the read receipt" law) deliberately does NOT read this block back -- any change that repurposes the echo to carry content must update both files in lockstep.
+```
+- Rows: E006, E007, E043
+- Prompt-SHA256: <64 lowercase hex digits>
+```
 
-The echo is copied VERBATIM. A paraphrased echo proves nothing -- it is
-evidence the session read the prompt closely enough to reword it, which is not
-the property being tested, and a reworded clause is a second author for a fact
-that must have exactly one.
+- `- Rows:` is the comma-separated list of E-IDs from the FIRST CELL of each
+  row in the prompt's "Rows this session must obey" block.
+- `- Prompt-SHA256:` is the SHA-256 digest over the EXACT BYTES of the
+  dispatched prompt file -- the file the session was invoked with -- as one
+  `sha256sum <prompt file>` call produces it. That same digest was recorded
+  at dispatch time in the dispatch manifest
+  (`docs/orchestration/<plan_name>/dispatches/<NN>.json`, written by
+  `harness/scripts/assemble_dispatch.py` in the same run that wrote the
+  prompt, so manifest and prompt match by construction).
+
+This is a READ RECEIPT. Its value is timing: it catches a session that never
+registered its isolation clauses IN MINUTE ONE, while the session can still
+be corrected, rather than in a post-mortem after the clause was already
+breached. `hooks/enforce_handback.py` VERIFIES the receipt against the
+dispatch manifest -- row-ID set equality plus case-insensitive hash equality
+-- on every Stop evaluation except an ABANDONED close, question pauses
+included, and also offers the same verification manually as
+`--check-receipt <handback> [--manifest <path>]`. When NO manifest exists at
+the conventional path, the hook skips verification (the manifest is the
+orchestrator's artifact; a session cannot legitimately create it), while the
+manual mode fails loudly -- its caller is the orchestrator, the manifest's
+owner.
+
+Because the receipt carries no content of its own -- it is derivable
+entirely from the dispatched prompt -- the orchestrator's ingest (Step 9 of
+`commands/orchestrator.md`, the "Never read back the read receipt" law)
+deliberately does NOT read it back; verification is the hook's job, never
+the ingest's. Any change that repurposes the receipt to carry content must
+update both files in lockstep.
+
+The retired v5 shape -- a verbatim echo of every handed row, ~11 KB per
+handback -- proved only that the session could copy text and was never
+actually verified. The ID-plus-hash receipt is both cheaper and the first
+shape a hook can CHECK.
 
 ## Structure
 
@@ -56,8 +85,8 @@ Exactly FOUR parts, in this order.
 Status: OPEN | PARTIAL | ABANDONED | COMPLETE
 
 **Handed to this session (read receipt):**
-- <verbatim row from the prompt's orchestration block>
-- ...
+- Rows: <comma-separated row E-IDs from the prompt's orchestration block>
+- Prompt-SHA256: <sha256 of the dispatched prompt file, lowercase hex>
 
 ## Delta
 [rows to add / change / retire, written in the state file's exact table format]

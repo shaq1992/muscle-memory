@@ -225,15 +225,20 @@ Schemas: `harness/templates/state_schema.md` (state) and
    mode you are in. Init is a grilling capped at FIVE questions covering the objective,
    its acceptance criteria, known invariants and gates, and the first committed session.
 2. **You say "dispatch"** -- the orchestrator never dispatches on its own initiative.
-   It writes a session prompt to
-   `docs/prompts/DDMMYY/<plan_name>_session_<NN>_prompt.md` carrying a fixed
-   `## Orchestration` block, records the expectation in the state file's `## Dispatched`
-   BEFORE the session runs, and reports the path only -- never the prompt body.
-   One tree-holding session at a time: while a session is outstanding, a second dispatch
-   is refused by name rather than queued.
+   It authors the task body, selects the state rows the session must obey, and the
+   dispatch script (`harness/scripts/assemble_dispatch.py`) writes the session prompt
+   to `docs/prompts/DDMMYY/<plan_name>_session_<NN>_prompt.md` -- carrying a fixed
+   `## Orchestration` block with the rows copied verbatim -- plus a dispatch manifest
+   at `docs/orchestration/<plan_name>/dispatches/<NN>.json` (row IDs + the prompt
+   file's SHA-256). The orchestrator records the expectation in the state file's
+   `## Dispatched` BEFORE the session runs, and reports the path only -- never the
+   prompt body. One tree-holding session at a time: while a session is outstanding, a
+   second dispatch is refused by name rather than queued.
 3. **You paste that prompt into a fresh session.** `/grill_and_implement` detects the
    `## Orchestration` block and runs as an orchestrated session: it writes a handback
-   STUB at `docs/orchestration/<plan_name>/handbacks/<NN>.md` in minute one, works on
+   STUB at `docs/orchestration/<plan_name>/handbacks/<NN>.md` in minute one -- whose
+   read receipt (row-ID list + prompt hash) is verified against the dispatch manifest
+   by the closing hook -- works on
    `<plan_name>-session-<NN>` cut from `integration/<plan_name>`, merges back into
    integration, and opens NO PR of its own.
 4. **You tell the orchestrator the session came back.** Ingest is mechanical: the
