@@ -127,9 +127,9 @@ file's `## Established` and `## Open` tables.
 
 They are written PRE-FORMATTED, in the state file's own table shape, with the
 same columns and the same closed vocabularies. Mark each row's intent
-explicitly -- add, change, or retire -- and for a retire or change, name the
-existing row by its ID (quote enough of its text as well where that helps a
-human reader, or where the plan's state file predates the v2 ID migration).
+explicitly -- add, change, or retire -- with the marker-block grammar below;
+a change or retire names the existing row by its E-ID (quote enough of its
+text as well where that helps a human reader).
 
 **The ID cell on an `add` row is written as `-`.** The `## Established` ID
 counter lives in the state file's `## Orchestrator log` and belongs to the
@@ -145,6 +145,36 @@ drift. It is also what keeps ingestion nearly free in the orchestrator's
 context, which is what lets an orchestrated plan run for months.
 
 Write `none` if the session established nothing.
+
+**The marker-block grammar (schema v2 -- machine-ingested).** The section is
+applied mechanically by `harness/scripts/ingest_handback.py` (the
+orchestrator's pen; see Step 9 of `commands/orchestrator.md`), so intent is
+marked in this exact shape:
+
+- A line whose FIRST WORD is `ADD`, `CHANGE` or `RETIRE` (case-insensitive)
+  opens a block; everything after the first word is free annotation. A block's
+  rows are the table lines under it, up to the next marker line.
+- ADD rows carry the literal `-` placeholder in the ID cell (`| - | ... |`).
+  The orchestrator's counter stamps the real ID at ingest; a session never
+  invents its own.
+- CHANGE rows carry the existing row's E-ID and are FULL replacement rows --
+  the whole row as it should now read, same five cells, same ID.
+- RETIRE names its E-IDs on the marker line BEFORE the colon --
+  `RETIRE (E012, E015): <reason>` -- and takes no table rows. IDs mentioned
+  after the colon (in the reason) are never read. Retirement is HARD-DELETE:
+  the row line is removed from state, the ID is never reused, and this
+  handback is the durable trail of what the retired row said.
+- `## Open` proposals go under a marker line starting exactly
+  `OPEN (orchestrator-manual):`, still pre-formatted in the Open table's
+  shape. The script counts these rows in its summary and NEVER applies them
+  -- `## Open` is orchestrator-manual, always.
+- Anything else in the section -- an unmarked table row, a prose paragraph, a
+  row the script cannot apply unambiguously -- FAILS the ingest closed, with
+  the state file untouched.
+
+Handbacks written before this grammar (pre-v2, quoting target rows by text
+rather than E-ID) remain valid historical records: they were ingested by hand
+and are never re-fed to the script.
 
 ### `## For the next session`
 

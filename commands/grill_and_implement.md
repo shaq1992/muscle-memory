@@ -254,13 +254,14 @@ No phase-closing marker, no learnings file, no ledger entry, no document reconci
 **ORCHESTRATED ONLY:** finalize the handback INSTEAD. Advance the stub in place to its
 terminal status -- `PARTIAL`, `ABANDONED` or `COMPLETE` -- and fill the three sections per
 `harness/templates/handback_schema.md`: `## Delta` (rows pre-formatted in the state file's
-table shape, so the orchestrator transcribes rather than authors), `## For the next
+table shape under that schema's marker-block grammar, so the orchestrator's ingest script
+applies them verbatim rather than anyone re-authoring), `## For the next
 session` (advisory judgement only), and `## Structural observations` (same closed
 vocabulary as above, or `none`).
 
-Do NOT append to `docs/observations.md` yourself in this mode -- the orchestrator copies
-those lines across when it ingests the handback, and appending here would double every
-entry.
+Do NOT append to `docs/observations.md` yourself in this mode -- the orchestrator's
+ingest copies those lines across when it ingests the handback, and appending here would
+double every entry.
 
 The handback REPLACES the canonical end-of-phase apparatus entirely: NO phase-closing
 marker, NO per-phase learnings file, NO ledger merge and no `Last merged` stamp. It is the

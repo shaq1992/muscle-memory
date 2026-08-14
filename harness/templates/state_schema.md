@@ -40,7 +40,8 @@ One writer is what makes it structurally hard for two live documents to
 disagree. A second writer reintroduces exactly the drift this design removes.
 
 A harness script invoked on the state file -- the v2 migration
-(`harness/scripts/migrate_state_v2.py`), and any later script the schema
+(`harness/scripts/migrate_state_v2.py`), the handback ingest
+(`harness/scripts/ingest_handback.py`), and any later script the schema
 names -- acts as its INVOKER's pen, not as a second writer. The invoker
 remains accountable for the write; the script only makes it mechanical.
 
@@ -113,6 +114,9 @@ table itself. An ID names the row for every downstream mechanism (dispatch
 manifests, read receipts, handback deltas, garbage collection), so changing or
 recycling one silently re-points every reference to it. New rows are stamped
 with the counter's value and the counter is advanced in the same write.
+Retiring a row is a HARD DELETE performed at ingest: the row line is removed,
+no tombstone stays in the table, and the retiring handback is the durable
+trail of what the row said.
 
 **Row discipline (schema v2 law).** A row states the FACT in roughly 2-3
 sentences. Mechanical inventories -- file lists, function names, test counts
