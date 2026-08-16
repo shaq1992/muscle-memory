@@ -38,7 +38,8 @@ self-improver flow (or upstream releases):
     INSTALL.md             -- recipient install guide (clone or zip, then /on_board)
     harness_glossary.md    -- vocabulary owned by the command system
     procedures/            -- git_strategy, closing_sequence, monitoring,
-                              verification_cases, self_improvement (portable law)
+                              verification_cases, self_improvement, precedence,
+                              comms (portable law)
     templates/             -- prd_schema, plan_schema, claude_md_skeleton,
                               state_schema, handback_schema,
                               preferences_template.md
@@ -96,8 +97,8 @@ permission-gated install offer and a one-time loud warning if declined, since th
 deterministic guardrails need it), detects the tier (`.claude/.git` present = clone,
 absent = zip), invokes `/bootstrap_to_custom_commands` to generate the per-project
 scaffolding (preferences.md from the template, root CLAUDE.md from the skeleton,
-docs/ + docs/quick/ + context/, .gitignore entries, settings.json with the detected
-interpreter), elicits preferences values, offers an opt-in never-silent CLAUDE.md
+docs/ + docs/quick/ + docs/comms/ + context/, .gitignore entries, settings.json with
+the detected interpreter), elicits preferences values, offers an opt-in never-silent CLAUDE.md
 assist, gives a short tour, and ends with a self-check that runs the unittest suite
 and reports "harness vX.Y installed".
 
