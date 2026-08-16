@@ -29,7 +29,8 @@ self-improver flow (or upstream releases):
 ```
 .claude/
   commands/       -- invocable commands ONLY (everything here shows in the skills listing)
-  agents/         -- workflow agents (self-improver, investigator)
+  agents/         -- workflow agents (self-improver, investigator, experimenter,
+                     garbage_collector)
   hooks/          -- deterministic hooks: git_guardrails.py, enforce_phase_closing.py,
                      enforce_handback.py, enforce_orchestrator_isolation.py
   harness/        -- read-only-in-daily-use machinery
@@ -37,12 +38,15 @@ self-improver flow (or upstream releases):
     INSTALL.md             -- recipient install guide (clone or zip, then /on_board)
     harness_glossary.md    -- vocabulary owned by the command system
     procedures/            -- git_strategy, closing_sequence, monitoring,
-                              verification_cases, self_improvement (portable law)
+                              verification_cases, self_improvement, precedence,
+                              comms (portable law)
     templates/             -- prd_schema, plan_schema, claude_md_skeleton,
                               state_schema, handback_schema,
                               preferences_template.md
-    scripts/               -- validate_prompt.py, make_portable_zip.sh
-    tests/                 -- stdlib-unittest suite for the hooks
+    scripts/               -- validate_prompt.py, assemble_dispatch.py,
+                              ingest_handback.py, migrate_state_v2.py,
+                              make_portable_zip.sh
+    tests/                 -- stdlib-unittest suite for the hooks and scripts
                               (python3 -m unittest discover .claude/harness/tests)
   README.md       -- harness repo landing page
   VERSION         -- one-line harness version (see Versioning)
@@ -65,7 +69,8 @@ self-improver jurisdiction:
 CLAUDE.md         -- per-turn protective skeleton (project root; generated from the
                      skeleton template, then filled by the user)
 docs/             -- prds/, multi_phase_plans/, prompts/, learnings/, quick/,
-                     orchestration/ outputs, plus the append-only observations.md
+                     comms/, jira_and_standup/, orchestration/ outputs, plus the
+                     append-only observations.md
 context/          -- durable local-only project knowledge: architecture.md,
                      decisions.md, glossary.md
 ```
@@ -95,8 +100,8 @@ permission-gated install offer and a one-time loud warning if declined, since th
 deterministic guardrails need it), detects the tier (`.claude/.git` present = clone,
 absent = zip), invokes `/bootstrap_to_custom_commands` to generate the per-project
 scaffolding (preferences.md from the template, root CLAUDE.md from the skeleton,
-docs/ + docs/quick/ + context/, .gitignore entries, settings.json with the detected
-interpreter), elicits preferences values, offers an opt-in never-silent CLAUDE.md
+docs/ + docs/quick/ + docs/comms/ + context/, .gitignore entries, settings.json with
+the detected interpreter), elicits preferences values, offers an opt-in never-silent CLAUDE.md
 assist, gives a short tour, and ends with a self-check that runs the unittest suite
 and reports "harness vX.Y installed".
 
@@ -195,7 +200,8 @@ plan, which is the only path that produces a stakeholder-readable spec.
 
 The lightweight sibling for tasks too small for a full plan: a mixed-style grilling
 hard-capped at 8 questions (it recommends a full /grilling_session if that ceiling
-is insufficient), a short brief written to `docs/quick/<slug>_brief.md`, a go/no-go
+is insufficient), a short brief written to `docs/quick/<slug>_brief.md` (carrying a
+`## Behavioral tests` section when the work changes behavior), a go/no-go
 gate, then in-session implementation on a `quick/<slug>` branch cut from the default
 branch, push + `gh pr create` -- you merge the PR. The brief doubles as the PR body.
 No PRD, no plan, no ledger, no phase apparatus; the no-Claude-path-to-protected-
@@ -225,21 +231,35 @@ Schemas: `harness/templates/state_schema.md` (state) and
    mode you are in. Init is a grilling capped at FIVE questions covering the objective,
    its acceptance criteria, known invariants and gates, and the first committed session.
 2. **You say "dispatch"** -- the orchestrator never dispatches on its own initiative.
-   It writes a session prompt to
-   `docs/prompts/DDMMYY/<plan_name>_session_<NN>_prompt.md` carrying a fixed
-   `## Orchestration` block, records the expectation in the state file's `## Dispatched`
-   BEFORE the session runs, and reports the path only -- never the prompt body.
-   One tree-holding session at a time: while a session is outstanding, a second dispatch
-   is refused by name rather than queued.
+   It authors the task body (stamped with a one-line TDD posture, warranted or
+   optional, per your preferences.md task-type rule), selects the state rows the
+   session must obey, and the
+   dispatch script (`harness/scripts/assemble_dispatch.py`) writes the session prompt
+   to `docs/prompts/DDMMYY/<plan_name>_session_<NN>_prompt.md` -- carrying a fixed
+   `## Orchestration` block with the rows copied verbatim -- plus a dispatch manifest
+   at `docs/orchestration/<plan_name>/dispatches/<NN>.json` (row IDs + the prompt
+   file's SHA-256). The orchestrator records the expectation in the state file's
+   `## Dispatched` BEFORE the session runs, and reports the path only -- never the
+   prompt body. One tree-holding session at a time: while a session is outstanding, a
+   second dispatch is refused by name rather than queued.
 3. **You paste that prompt into a fresh session.** `/grill_and_implement` detects the
    `## Orchestration` block and runs as an orchestrated session: it writes a handback
-   STUB at `docs/orchestration/<plan_name>/handbacks/<NN>.md` in minute one, works on
+   STUB at `docs/orchestration/<plan_name>/handbacks/<NN>.md` in minute one -- whose
+   read receipt (row-ID list + prompt hash) is verified against the dispatch manifest
+   by the closing hook -- works on
    `<plan_name>-session-<NN>` cut from `integration/<plan_name>`, merges back into
    integration, and opens NO PR of its own.
 4. **You tell the orchestrator the session came back.** Ingest is mechanical: the
    handback's `## Delta` rows arrive pre-formatted in the state file's own table shape,
-   so the orchestrator transcribes rather than re-authors. That is what keeps an ingest
-   nearly free in context, which is what lets a plan run for months.
+   and the ingest script (`harness/scripts/ingest_handback.py`, the orchestrator's pen)
+   applies them verbatim -- nobody re-authors a row, and the orchestrator reads only the
+   script's short summary. That is what keeps an ingest nearly free in context, which is
+   what lets a plan run for months. The summary's last line reports `## Established`
+   against the GC threshold (80 rows OR 45 KB); when it trips, the orchestrator offers
+   at most ONE line suggesting a garbage-collection pass. GC never auto-runs: on your
+   word the propose-only `garbage_collector` sub-agent returns retire / condense /
+   promote batches, the orchestrator snapshots state to a dated archive FIRST, and you
+   gate every batch -- promotion of a row into CLAUDE.md most explicitly of all.
 5. **You declare the plan done.** Only then does the plan-end PR flow fire -- push
    integration, `gh pr create`, and you merge. Nothing else in this lane ever reaches
    the protected branch.
@@ -257,7 +277,13 @@ it and `enforce_phase_closing.py` are mutually exclusive by construction, readin
 different marker files. `.claude/hooks/enforce_orchestrator_isolation.py` (PreToolUse on
 Edit/Write/NotebookEdit) keeps an orchestrator session out of the implementation work --
 an anti-drift guardrail, not a sandbox: a Bash heredoc bypasses it entirely, and it is
-documented that way on purpose.
+documented that way on purpose. Orchestrator markers are PER-PLAN
+(`.claude/orchestrator_<plan_name>_session.json`), so orchestrators on different plans
+run concurrently; a second orchestrator on the SAME plan is refused with the marker
+path named -- deleting a dead orchestrator's marker is always your call, never a
+heuristic's. The hook scans all per-plan markers, matches on session_id, and is
+FAIL-CLOSED on a corrupt marker file: guarded writes are denied, for every session,
+until you delete the named file.
 
 **Structural observations.** Sessions report defects in the WORKFLOW MACHINERY (not in
 your project's logic) under a closed tag vocabulary; they accumulate in one append-only
@@ -271,7 +297,12 @@ happens out of process.
 **Delegation.** Long reads and corpus searches go to the `investigator` sub-agent, whose
 isolation law (read-only outside the scratchpad, named do-not-touch paths, a hard output
 budget, never the state file) lives in `agents/investigator.md` so it binds whether or
-not the caller restated it.
+not the caller restated it. Research questions that reading alone cannot answer -- a
+probe that must be written and RUN, or evidence fetched from the web -- go to its
+sibling, the `experimenter`, which duplicates that discipline in
+`agents/experimenter.md` and adds a write-and-run lane confined to the session
+scratchpad (throwaway venv allowed inside it; no servers, no system-state changes).
+Caller-side routing lives in `commands/orchestrator.md`'s "Delegating to sub-agents".
 
 ## Git strategy (the PR law)
 

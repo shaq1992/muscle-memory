@@ -54,10 +54,26 @@ The state file lives at the path given by
 There is no `init` subcommand and no `resume` subcommand. The file on disk is
 the only signal, so the user never has to remember which mode they are in.
 
-Then write the orchestrator session marker, at init and at resume alike. Get the
-session id by running `echo $CLAUDE_CODE_SESSION_ID` (Bash tool) -- do not guess
-or invent a value -- and write `.claude/orchestrator_session.json` with exactly
-these keys:
+Then write the orchestrator session marker, at init and at resume alike. The
+marker is PER-PLAN: its filename carries the plan slug, so concurrent
+orchestrators on DIFFERENT plans each hold their own marker and neither can
+overwrite -- and thereby silently disarm -- the other's guardrail.
+
+**Same-plan refusal first.** Before writing, read
+`.claude/orchestrator_<plan_name>_session.json` if it exists. If its
+`session_id` is not this session's, REFUSE to orchestrate this plan: say that
+another orchestrator session holds it, and name the marker path so the user
+can delete the file if that orchestrator is dead. The refusal is the WHOLE
+mechanism -- there is no staleness heuristic and no automatic cleanup, by
+decision: only the user can tell a dead orchestrator from one that is merely
+quiet, so eviction is only ever the user's deletion of the named file.
+Concurrent orchestrators on DIFFERENT plans are the supported case; what
+their dispatched sessions may hold is still governed by the tree broker
+(Step 8).
+
+Otherwise get the session id by running `echo $CLAUDE_CODE_SESSION_ID` (Bash
+tool) -- do not guess or invent a value -- and write
+`.claude/orchestrator_<plan_name>_session.json` with exactly these keys:
 
 ```json
 {
@@ -69,7 +85,19 @@ these keys:
 
 Write the marker unconditionally, even if unsure whether the enforcing hook is
 registered -- the marker is inert without it. Remove the marker when this
-session's orchestration work is done.
+session's orchestration work is done. The enforcing hook
+(`hooks/enforce_orchestrator_isolation.py`) scans ALL
+`orchestrator_*_session.json` markers and matches on session_id, and it is
+FAIL-CLOSED on a corrupt marker file: while one exists, every guarded write is
+denied with the corrupt path named, and deleting that file -- the user's call
+-- is the remedy.
+
+**Cutover note.** Per-plan markers became the law at the v6 plan-end merge;
+until that merge, orchestrators wrote the single-slot
+`.claude/orchestrator_session.json`. That legacy filename does not match the
+hook's scan pattern and is INERT. On the first resume that finds one left over
+from before the cutover, delete it as housekeeping and record the deletion in
+`## Orchestrator log`.
 
 ## Step 3 -- INIT (no state file exists)
 
@@ -101,6 +129,8 @@ replying:
 - `## Next` carries the one committed session, fully specified.
 - `## Maybe` may be empty, and usually should be at init.
 - `## Dispatched` is empty until the first dispatch.
+- `## Orchestrator log` seeds its two required lines: `- Incarnations: 1` and
+  `- Next row ID: E001`.
 
 Initialising the plan does not create any branch. The integration branch is cut
 by the plan's first work unit under the per-work-unit flow in
@@ -110,7 +140,10 @@ are the plan-end push and pull request in Step 12.
 ## Step 4 -- RESUME (a state file exists)
 
 Read the state file and resume from IT ALONE. Nothing else is recovered
-context.
+context. Rebirth is state-file-only: there is no successor-prompt artifact,
+and hand-written orchestrator resume prompts are a retired practice. As the
+first state edit of the resume, bump the incarnation count in
+`## Orchestrator log`.
 
 - Any additional text in the invocation is NEW INPUT -- a new instruction, a new
   constraint, a new correction. It is never treated as context handed forward
@@ -185,10 +218,35 @@ Step 8 clears.
    ```
 
    The filename convention `<plan_name>_session_<NN>_prompt.md` is unchanged.
-3. **Write the prompt**, carrying a fixed `## Orchestration` block. Its presence
-   is the ONLY signal by which a receiving command knows it is orchestrated, so
-   the heading is spelled exactly this way and the block is never renamed,
-   nested, or made conditional:
+3. **Assemble the prompt with the dispatch script.** The orchestrator authors
+   ONLY the task body (to a scratch file) and selects the row E-IDs this
+   session must obey; `harness/scripts/assemble_dispatch.py` writes the WHOLE
+   prompt file and the dispatch manifest in the same run:
+
+   ```
+   python3 .claude/harness/scripts/assemble_dispatch.py \
+     --state docs/orchestration/<plan_name>_state.md \
+     --body <task_body_file> --plan <plan_name> --session <NN> \
+     --branch <plan_name>-session-<NN> --rows E006,E007,... \
+     --out "docs/prompts/$(date +%d%m%y)/<plan_name>_session_<NN>_prompt.md"
+   ```
+
+   The script extracts the named rows VERBATIM from the state file
+   (fail-closed on a missing E-ID), appends the fixed `## Orchestration`
+   block below, and writes the manifest to
+   `docs/orchestration/<plan_name>/dispatches/<NN>.json` -- session number,
+   row IDs, and the SHA-256 of the prompt file's exact bytes, so the
+   manifest matches the prompt by construction. That hash is what the
+   session's read receipt is verified against
+   (`harness/templates/handback_schema.md`); a prompt hand-edited after
+   assembly is a different dispatch and fails verification by design, so on
+   any change to the body, re-run the assembler rather than editing the
+   prompt. It is deterministic-validation law: surface the script's output
+   verbatim, and never dispatch on a FAIL.
+
+   The block's presence is the ONLY signal by which a receiving command
+   knows it is orchestrated, so the heading is spelled exactly this way and
+   the block is never renamed, nested, or made conditional:
 
    ```
    ## Orchestration
@@ -218,12 +276,22 @@ Step 8 clears.
    The rows are the relevant do-not-re-validate entries, pinned invariants and
    gates, FILTERED to what this session actually touches. Filtering is the
    point: a session handed the whole table reads none of it.
+
+   **The authored task body carries exactly ONE TDD-posture line** --
+   `TDD posture: WARRANTED` or `TDD posture: OPTIONAL` -- decided by task type
+   per the tests-as-deliverables rule in `.claude/preferences.md` (that rule is
+   project opinion and lives there alone: reference it, never restate it). The
+   stamp sets the posture ONLY; the receiving implementer derives the
+   behavioral tests itself during grilling, into the quick brief's
+   `## Behavioral tests` section (`commands/grill_and_implement.md` Step 2).
 4. **Verbatim rows only.** Single-source is about AUTHORSHIP, not physical
    uniqueness of bytes. A row copied verbatim and unedited from state, with
    state named as its source, has ONE author and cannot drift into disagreement;
    a paraphrase has two, and two authors of one fact is how the copies come
    apart. So the prompt may carry verbatim rows and nothing else -- no
-   paraphrase, no summary, no tightened wording.
+   paraphrase, no summary, no tightened wording. The assembler enforces this
+   by construction: it copies each row line byte-for-byte from state, so the
+   orchestrator's part is SELECTING IDs, never transcribing text.
 5. **A fact in a prompt and absent from state is a BUG.** If, while writing the
    prompt, something needs saying that exists nowhere in state, stop writing the
    prompt: put it in state first, as a row, then copy that row into the prompt.
@@ -275,44 +343,81 @@ positive evidence the session died, and no file at all means the session was
 never run.
 
 **What MECHANICAL means.** It describes HOW the rows are applied, not what sets
-the ingest off. The orchestrator TRANSCRIBES; it does not interpret, summarise or
-re-author. That is a property of the handback format -- the rows arrive
-pre-formatted in the state file's own table shape, so there is nothing left to
-author -- and it is what keeps an ingest nearly free in orchestrator context,
-which is what lets a plan run for months.
+the ingest off. The mechanical legs are EXECUTED by
+`harness/scripts/ingest_handback.py` -- the orchestrator's pen under the
+one-writer rule, invoked only by the orchestrator -- and the orchestrator reads
+the script's ~10-line summary, never re-parsing what the script already parsed.
+Nothing is interpreted, summarised or re-authored on the way through: the rows
+arrive pre-formatted in the state file's own table shape (the session that did
+the work is the author) and the script applies them verbatim. That is what
+keeps an ingest nearly free in orchestrator context, which is what lets a plan
+run for months.
 
-**Never read back the read receipt.** When ingesting, read ONLY the `Status:`
-line and the three content sections (`## Delta`, `## For the next session`,
-`## Structural observations`), slicing to them by their fixed headings. NEVER
-read the `**Handed to this session (read receipt):**` echo block -- it is a
-verbatim reproduction of the rows the orchestrator itself wrote into the
-dispatch prompt, so it carries zero new information; its sole purpose is a
-minute-one timing check owned by the closing hook, not the ingest. Reading it
-back only burns orchestrator context on text already on disk.
+**Never read back the read receipt.** When ingesting, read ONLY the script's
+summary and the `## For the next session` section (sliced to by its fixed
+heading) -- the script consumes `Status:`, `## Delta` and `## Structural
+observations` so the orchestrator does not have to. NEVER
+read the `**Handed to this session (read receipt):**` block -- it is a row-ID
+list plus the dispatched prompt's hash, derivable entirely from the dispatch
+the orchestrator itself issued, so it carries zero new information. Its
+verification against the dispatch manifest is the CLOSING HOOK's job
+(`hooks/enforce_handback.py`, minute one), never the ingest's; while the live
+hook predates that check, run it manually instead --
+`python3 hooks/enforce_handback.py --check-receipt <handback_path>` -- and
+read only its OK/FAIL verdict. Reading the receipt back only burns
+orchestrator context on text already on disk.
 
-The whole of an ingest is these five actions:
+The whole of an ingest is these five actions. Actions 1, 3 and 4 are the
+SCRIPT's -- run it once and read the summary:
 
-1. **`## Delta` rows go into state VERBATIM.** Append or apply them to
-   `## Established` and `## Open` exactly as written, honouring each row's
-   stated add / change / retire intent. Do not re-word, tighten, merge or
-   re-classify a row. The session that did the work is the author; the
-   orchestrator is the scribe. If a delta row conflicts with an existing row,
-   apply the no-contradiction law from
-   @.claude/harness/templates/state_schema.md rather than inventing a
-   resolution.
+```
+python3 .claude/harness/scripts/ingest_handback.py \
+  --state docs/orchestration/<plan_name>_state.md \
+  docs/orchestration/<plan_name>/handbacks/<NN>.md
+```
+
+`--check` first is a free dry-run: same validation, same summary, nothing
+written. The script is FAIL-CLOSED: on a malformed handback, or a Delta row it
+cannot apply unambiguously, it exits 1 with the state file untouched --
+surface its FAIL lines verbatim and resolve with the user, never by quietly
+hand-editing the handback into an ingestable shape.
+
+1. **`## Delta` rows go into state VERBATIM -- applied by the script.** It
+   honours each marker block's stated add / change / retire intent against
+   `## Established` ONLY (the block grammar is owned by
+   @.claude/harness/templates/handback_schema.md); nothing is re-worded,
+   tightened, merged or re-classified on the way through. On an `add` row the
+   script replaces the `-` placeholder in the ID cell with the `Next row ID`
+   value from `## Orchestrator log` and advances that counter in the same
+   write; a `change` replaces the identified row and keeps its ID; a `retire`
+   HARD-DELETES the row line -- the ID is never reused, the summary names the
+   retired IDs, and the retiring handback is the durable trail. Rows under an
+   `OPEN (orchestrator-manual):` marker are NOT applied: the script only
+   counts them in the summary, and the orchestrator applies them to `## Open`
+   by hand -- `## Open` is orchestrator-manual, always. The script also runs
+   the STRUCTURAL side of the no-contradiction check: an incoming statement
+   duplicating an existing row is FLAGGED in the summary, never resolved.
+   Judging SEMANTIC contradiction stays the orchestrator's: on a flagged pair
+   or a clash the orchestrator notices in the applied rows, apply the
+   no-contradiction law from @.claude/harness/templates/state_schema.md
+   rather than inventing a resolution.
 2. **`## For the next session` is ADVISORY.** It informs the orchestrator's
    judgement and nothing more. Where it conflicts with state, STATE WINS. A line
    from it enters the file only as the orchestrator's own decision, under
-   write-through trigger (d) -- never by transcription.
-3. **Append the structural observations** to `docs/observations.md`, verbatim,
-   one line per observation in the fixed shape defined in the handback schema.
-   Append only; never edit, reorder or delete an existing line.
-4. **Update `## Dispatched`.** Clear the row on a `COMPLETE` handback; update its
-   status for `PARTIAL` or `ABANDONED`; leave it standing, visibly outstanding,
-   for a handback still at `OPEN`. A handback's `Status` is the SESSION-level
-   vocabulary of @.claude/harness/templates/handback_schema.md and belongs only
-   in that row -- NEVER copy it into the state file's header `Status:` line,
-   whose PLAN-level vocabulary is separate even though both fields are named
+   write-through trigger (d) -- never by transcription. This section is the one
+   part of the handback the orchestrator still reads itself; the script
+   deliberately never parses it.
+3. **Structural observations are appended by the script** to
+   `docs/observations.md`, verbatim, one line per observation in the fixed
+   dated shape defined in the handback schema. Append only; never edit, reorder
+   or delete an existing line.
+4. **`## Dispatched` is updated by the script.** It clears the row on a
+   `COMPLETE` handback; updates its status for `PARTIAL` or `ABANDONED`; leaves
+   it standing, visibly outstanding, for a handback still at `OPEN`. A
+   handback's `Status` is the SESSION-level vocabulary of
+   @.claude/harness/templates/handback_schema.md and belongs only in that row
+   -- NEVER copy it into the state file's header `Status:` line, whose
+   PLAN-level vocabulary is separate even though both fields are named
    `Status`.
 5. **Refill or empty `## Next`.** Once the ingested session's scope is finished,
    the committed horizon is STALE -- it now describes work that is already done.
@@ -322,6 +427,12 @@ The whole of an ingest is these five actions:
    next, and would re-derive a session that has already returned. Refilling
    `## Next` is not dispatching, so it does not breach Step 6 -- but a horizon
    the user has not chosen is a proposal, and must be written as one.
+
+The summary's last line reports `## Established`'s row count and byte size
+against the GC threshold (80 rows OR 45 KB -- either bound trips). An OVER
+report is the trigger EVIDENCE for suggesting a garbage-collection pass
+(Step 10a); GC never auto-runs. The summary also WARNS on incoming rows over ~600 bytes per
+the row-discipline law -- a prompt for judgement, never a block.
 
 All five happen before replying (write-through trigger (a)).
 
@@ -342,6 +453,46 @@ labour is deliberate: sessions report, the orchestrator judges by mechanical
 count, execution happens out of process. The orchestrator's privileged position
 is POSSESSION of the evidence, not deliberation about it -- which is exactly why
 the firewall costs nothing.
+
+## Step 10a -- GARBAGE COLLECTION (user-gated; never auto-runs)
+
+The trigger is EVIDENCE, never a schedule: the ingest summary's last line
+reports `## Established` against the GC threshold (Step 9), and on an OVER
+report the orchestrator emits at most ONE line suggesting a GC pass -- the
+same restraint as Step 10's notice. GC itself runs only on the user's word.
+(Numbered 10a so the step numbers ratified elsewhere -- Step 11 improve,
+Step 12 plan end -- stay stable.)
+
+On that word:
+
+1. **Derive the archive path fresh** with Bash -- never a date from memory:
+   `docs/orchestration/<plan_name>_state_archive_$(date +%d%m%y).md`.
+2. **Invoke the garbage_collector sub-agent** (`agents/garbage_collector.md`),
+   handing it the plan name, the state file path, the archive path just
+   derived, and the dated archives and retained handbacks to read. The agent
+   is PROPOSE-ONLY: it returns RETIRE / CONDENSE / PROMOTE batches keyed on
+   E-IDs, pre-formatted in the state table shape with their
+   "replaces <IDs>; archive: <path>" markers, and writes nothing outside its
+   scratchpad. Its judgement rules live in its own file, per the doctrine
+   that each rule lives with the actor who can violate it.
+3. **Snapshot BEFORE applying.** Copy the state file VERBATIM to the archive
+   path. The archive is the recoverable copy of every row a batch touches; no
+   batch is applied before the snapshot exists.
+4. **Gate EACH batch with the user** -- batch by batch, never one bulk okay.
+   A PROMOTE batch is doubly explicit: promotion of a row to CLAUDE.md is a
+   user-gated, surgical move, never bulk, and on apply the promoted row is
+   RETIRED from `## Established` in the same batch so CLAUDE.md becomes the
+   fact's single home. (Accepted cost, decided at session 04: the dispatch
+   assembler can no longer hand that row by E-ID; dispatched sessions see it
+   through CLAUDE.md instead.)
+5. **Apply approved batches as row-level edits** -- the orchestrator's own pen,
+   never `ingest_handback.py`, whose input is a handback. A condensed row's ID
+   is stamped from the `Next row ID` counter and the counter advanced in the
+   same write; replaced and retired rows are HARD-DELETED -- IDs never reused,
+   the archive is the durable trail. A batch the user declines is dropped
+   without residue.
+6. **Record the trim** in `## Orchestrator log`: date, batches applied, archive
+   path (write-through trigger (d)).
 
 ## Step 11 -- The `improve` subcommand
 
@@ -403,16 +554,22 @@ terminal status so a later resume does not re-dispatch against finished work.
 ## Delegating to sub-agents (caller-side rules)
 
 These are the CALLER's obligations. The isolation law that binds the sub-agent
-itself lives in the sub-agent's own definition (`.claude/agents/investigator.md`)
-so that it applies whether or not the caller remembered to state it --
-hand-writing isolation clauses per call is the failure that design replaces.
-There is no separate delegation procedure file; each rule lives with the actor
-who can violate it.
+itself lives in the sub-agent's own definition (`.claude/agents/investigator.md`,
+`.claude/agents/experimenter.md`) so that it applies whether or not the caller
+remembered to state it -- hand-writing isolation clauses per call is the failure
+that design replaces. There is no separate delegation procedure file; each rule
+lives with the actor who can violate it.
 
 - **What to delegate.** Work whose OUTPUT is small but whose INPUT is large:
   searching a corpus, reading long files, reproducing a defect, surveying
   options. Anything that would otherwise pull thousands of tokens of raw
   material into the orchestrator, where every later turn pays for it.
+- **Which sibling.** A question answerable by READING alone -- searching,
+  excerpting, reproducing from what already exists -- goes to the
+  `investigator`. A question that needs code WRITTEN AND RUN (in the session
+  scratchpad only) or WEB evidence goes to the `experimenter`. When in doubt,
+  start with the investigator: it is the cheaper, narrower tool, and its
+  empty-handed report is the evidence that the experimenter is warranted.
 - **What NOT to delegate.** Decisions, dispatch, and any write to the state
   file. The orchestrator's job is to decide and to record; a sub-agent's job is
   to find out.

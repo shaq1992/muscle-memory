@@ -34,19 +34,48 @@ a session that was never dispatched. See "The three legible terminal states".
 
 ## The read receipt
 
-The stub echoes back, verbatim, the rows the session was handed in its prompt's
-orchestration block: the do-not-re-validate entries, the pinned invariants and
-the gates.
+The stub carries, under the header `**Handed to this session (read
+receipt):**`, exactly TWO lines derived from the dispatched prompt:
 
-That echo is a READ RECEIPT. Its value is timing, not content: it catches a
-session that never registered its isolation clauses IN MINUTE ONE, while the
-session can still be corrected, rather than in a post-mortem after the clause
-was already breached. A session that cannot echo its clauses has not read them. Because the echo's value is timing and not content, the orchestrator's ingest (Step 9 of `commands/orchestrator.md`, the "Never read back the read receipt" law) deliberately does NOT read this block back -- any change that repurposes the echo to carry content must update both files in lockstep.
+```
+- Rows: E006, E007, E043
+- Prompt-SHA256: <64 lowercase hex digits>
+```
 
-The echo is copied VERBATIM. A paraphrased echo proves nothing -- it is
-evidence the session read the prompt closely enough to reword it, which is not
-the property being tested, and a reworded clause is a second author for a fact
-that must have exactly one.
+- `- Rows:` is the comma-separated list of E-IDs from the FIRST CELL of each
+  row in the prompt's "Rows this session must obey" block.
+- `- Prompt-SHA256:` is the SHA-256 digest over the EXACT BYTES of the
+  dispatched prompt file -- the file the session was invoked with -- as one
+  `sha256sum <prompt file>` call produces it. That same digest was recorded
+  at dispatch time in the dispatch manifest
+  (`docs/orchestration/<plan_name>/dispatches/<NN>.json`, written by
+  `harness/scripts/assemble_dispatch.py` in the same run that wrote the
+  prompt, so manifest and prompt match by construction).
+
+This is a READ RECEIPT. Its value is timing: it catches a session that never
+registered its isolation clauses IN MINUTE ONE, while the session can still
+be corrected, rather than in a post-mortem after the clause was already
+breached. `hooks/enforce_handback.py` VERIFIES the receipt against the
+dispatch manifest -- row-ID set equality plus case-insensitive hash equality
+-- on every Stop evaluation except an ABANDONED close, question pauses
+included, and also offers the same verification manually as
+`--check-receipt <handback> [--manifest <path>]`. When NO manifest exists at
+the conventional path, the hook skips verification (the manifest is the
+orchestrator's artifact; a session cannot legitimately create it), while the
+manual mode fails loudly -- its caller is the orchestrator, the manifest's
+owner.
+
+Because the receipt carries no content of its own -- it is derivable
+entirely from the dispatched prompt -- the orchestrator's ingest (Step 9 of
+`commands/orchestrator.md`, the "Never read back the read receipt" law)
+deliberately does NOT read it back; verification is the hook's job, never
+the ingest's. Any change that repurposes the receipt to carry content must
+update both files in lockstep.
+
+The retired v5 shape -- a verbatim echo of every handed row, ~11 KB per
+handback -- proved only that the session could copy text and was never
+actually verified. The ID-plus-hash receipt is both cheaper and the first
+shape a hook can CHECK.
 
 ## Structure
 
@@ -56,8 +85,8 @@ Exactly FOUR parts, in this order.
 Status: OPEN | PARTIAL | ABANDONED | COMPLETE
 
 **Handed to this session (read receipt):**
-- <verbatim row from the prompt's orchestration block>
-- ...
+- Rows: <comma-separated row E-IDs from the prompt's orchestration block>
+- Prompt-SHA256: <sha256 of the dispatched prompt file, lowercase hex>
 
 ## Delta
 [rows to add / change / retire, written in the state file's exact table format]
@@ -98,8 +127,14 @@ file's `## Established` and `## Open` tables.
 
 They are written PRE-FORMATTED, in the state file's own table shape, with the
 same columns and the same closed vocabularies. Mark each row's intent
-explicitly -- add, change, or retire -- and for a retire or change, quote
-enough of the existing row to identify it unambiguously.
+explicitly -- add, change, or retire -- with the marker-block grammar below;
+a change or retire names the existing row by its E-ID (quote enough of its
+text as well where that helps a human reader).
+
+**The ID cell on an `add` row is written as `-`.** The `## Established` ID
+counter lives in the state file's `## Orchestrator log` and belongs to the
+orchestrator alone; a session inventing a concrete ID would be guessing
+another plan-writer's counter. The orchestrator stamps the real ID at ingest.
 
 Pre-formatting is what makes ingestion MECHANICAL rather than interpretive. The
 orchestrator appends rows it does not have to author, so each fact is written
@@ -110,6 +145,36 @@ drift. It is also what keeps ingestion nearly free in the orchestrator's
 context, which is what lets an orchestrated plan run for months.
 
 Write `none` if the session established nothing.
+
+**The marker-block grammar (schema v2 -- machine-ingested).** The section is
+applied mechanically by `harness/scripts/ingest_handback.py` (the
+orchestrator's pen; see Step 9 of `commands/orchestrator.md`), so intent is
+marked in this exact shape:
+
+- A line whose FIRST WORD is `ADD`, `CHANGE` or `RETIRE` (case-insensitive)
+  opens a block; everything after the first word is free annotation. A block's
+  rows are the table lines under it, up to the next marker line.
+- ADD rows carry the literal `-` placeholder in the ID cell (`| - | ... |`).
+  The orchestrator's counter stamps the real ID at ingest; a session never
+  invents its own.
+- CHANGE rows carry the existing row's E-ID and are FULL replacement rows --
+  the whole row as it should now read, same five cells, same ID.
+- RETIRE names its E-IDs on the marker line BEFORE the colon --
+  `RETIRE (E012, E015): <reason>` -- and takes no table rows. IDs mentioned
+  after the colon (in the reason) are never read. Retirement is HARD-DELETE:
+  the row line is removed from state, the ID is never reused, and this
+  handback is the durable trail of what the retired row said.
+- `## Open` proposals go under a marker line starting exactly
+  `OPEN (orchestrator-manual):`, still pre-formatted in the Open table's
+  shape. The script counts these rows in its summary and NEVER applies them
+  -- `## Open` is orchestrator-manual, always.
+- Anything else in the section -- an unmarked table row, a prose paragraph, a
+  row the script cannot apply unambiguously -- FAILS the ingest closed, with
+  the state file untouched.
+
+Handbacks written before this grammar (pre-v2, quoting target rows by text
+rather than E-ID) remain valid historical records: they were ingested by hand
+and are never re-fed to the script.
 
 ### `## For the next session`
 
@@ -127,8 +192,10 @@ exists rather than pushing everything through `## Delta`.
 Defects in the WORKFLOW MACHINERY that this session ran under -- never defects
 in the project's domain logic, and never plan-specific notes.
 
-Closed vocabulary. Each observation is one line: the tag, then a short
-free-text description.
+Closed vocabulary. Each observation is one line in the exact machine shape
+`- <tag> | <description>` -- dash, tag, pipe, short free-text description.
+`harness/scripts/ingest_handback.py` fails closed on any other line shape;
+edit the two in lockstep.
 
 | Tag | Means |
 |---|---|

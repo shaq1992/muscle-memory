@@ -10,10 +10,13 @@
 # Session markers written at runtime by the closing sequence, the orchestrator
 # and the commands they dispatch. Every one is keyed to a live session_id and is
 # meaningless to anyone else, so none is ever committed. The glob covers the
-# `<thing>_session.json` naming every marker follows, so a marker added later is
-# ignored without editing this file; phase_closing.json predates that convention
-# and is listed on its own.
+# `<thing>_session.json` naming every marker follows -- including the PER-PLAN
+# orchestrator markers `orchestrator_<plan_name>_session.json` -- so a marker
+# added later is ignored without editing this file; phase_closing.json (predates
+# the convention) and handback_pause.json (question-pause marker, named outside
+# it) are listed on their own.
 /phase_closing.json
+/handback_pause.json
 /*_session.json
 
 # Transient state

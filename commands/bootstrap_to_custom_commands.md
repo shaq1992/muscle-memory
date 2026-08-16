@@ -81,6 +81,7 @@ needs no rewiring.
 Create (idempotent) at the project root:
 ```
 mkdir -p docs/prds docs/multi_phase_plans docs/learnings docs/prompts docs/quick
+mkdir -p docs/comms/incoming docs/comms/outgoing
 mkdir -p context
 ```
 Report which were created and which already existed. Do NOT seed context/ files -- the
@@ -117,15 +118,18 @@ BOTH `python3` occurrences in each hook command below (the `command -v` guard an
     "hooks": {
       "PreToolUse": [
         { "matcher": "Bash",
-          "hooks": [ { "type": "command", "command": "D=\"${CLAUDE_PROJECT_DIR:-.}\"; command -v python3 >/dev/null 2>&1 && exec python3 \"$D/.claude/hooks/git_guardrails.py\" || exit 0" } ] }
+          "hooks": [ { "type": "command", "command": "D=\"${CLAUDE_PROJECT_DIR:-.}\"; command -v python3 >/dev/null 2>&1 && exec python3 \"$D/.claude/hooks/git_guardrails.py\" || exit 0" } ] },
+        { "matcher": "Edit|Write|NotebookEdit",
+          "hooks": [ { "type": "command", "command": "D=\"${CLAUDE_PROJECT_DIR:-.}\"; command -v python3 >/dev/null 2>&1 && exec python3 \"$D/.claude/hooks/enforce_orchestrator_isolation.py\" || exit 0" } ] }
       ],
       "Stop": [
-        { "hooks": [ { "type": "command", "command": "D=\"${CLAUDE_PROJECT_DIR:-.}\"; command -v python3 >/dev/null 2>&1 && exec python3 \"$D/.claude/hooks/enforce_phase_closing.py\" || exit 0" } ] }
+        { "hooks": [ { "type": "command", "command": "D=\"${CLAUDE_PROJECT_DIR:-.}\"; command -v python3 >/dev/null 2>&1 && exec python3 \"$D/.claude/hooks/enforce_phase_closing.py\" || exit 0" } ] },
+        { "hooks": [ { "type": "command", "command": "D=\"${CLAUDE_PROJECT_DIR:-.}\"; command -v python3 >/dev/null 2>&1 && exec python3 \"$D/.claude/hooks/enforce_handback.py\" || exit 0" } ] }
       ]
     }
   }
   ```
-- If it DOES exist, parse it as JSON and MERGE idempotently: add the two hook
+- If it DOES exist, parse it as JSON and MERGE idempotently: add the four hook
   registrations only if an equivalent entry is not already present; add each
   `permissions.deny` rule only if absent. Preserve every other existing key (`allow`,
   `skillOverrides`, etc.) untouched. Do not rewrite an existing hook command's

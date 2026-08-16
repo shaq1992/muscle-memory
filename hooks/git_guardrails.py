@@ -135,9 +135,46 @@ def _repo_root(directory):
         path = parent
 
 
+def _linked_worktree_main_root(root):
+    """Resolve a linked worktree's MAIN repo root; None if root is not one.
+
+    In a linked worktree the root's .git entry is a FILE containing
+    "gitdir: <main>/.git/worktrees/<name>"; the main repo root is the
+    directory holding that .git directory.
+    """
+    git_entry = os.path.join(root, ".git")
+    if not os.path.isfile(git_entry):
+        return None
+    try:
+        with open(git_entry, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+    except OSError:
+        return None
+    m = re.match(r"gitdir:\s*(\S.*)$", content)
+    if not m:
+        return None
+    gitdir = m.group(1).strip()
+    if not os.path.isabs(gitdir):
+        gitdir = os.path.normpath(os.path.join(root, gitdir))
+    parts = gitdir.split(os.sep)
+    if ".git" not in parts:
+        return None
+    idx = len(parts) - 1 - parts[::-1].index(".git")
+    main_root = os.sep.join(parts[:idx])
+    return main_root or os.sep
+
+
 def _is_harness_repo(directory):
+    """True when directory belongs to the harness repo -- via its primary
+    checkout at .claude/ OR via any linked worktree of that repo (attribution
+    follows the worktree's gitdir pointer, not the worktree's location)."""
     root = _repo_root(directory)
-    return root is not None and os.path.basename(root) == HARNESS_DIR_NAME
+    if root is None:
+        return False
+    if os.path.basename(root) == HARNESS_DIR_NAME:
+        return True
+    main_root = _linked_worktree_main_root(root)
+    return main_root is not None and os.path.basename(main_root) == HARNESS_DIR_NAME
 
 
 def _current_branch(cwd):

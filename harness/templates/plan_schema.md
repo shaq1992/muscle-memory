@@ -98,6 +98,9 @@ user during the session's stop-sequence choreography.
   policy.
 - The implementation prompt copies the block VERBATIM into the generated prompt.
 
+The quick lane ports this law: `commands/grill_and_implement.md` Step 2 carries
+it in the quick brief's `## Behavioral tests` section -- edit them in lockstep.
+
 ## Tracer-bullet slicing rule
 
 Where feasible, Phase 1 is the thinnest end-to-end slice through every layer the

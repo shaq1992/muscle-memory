@@ -68,8 +68,11 @@ indistinguishable from a session that was never dispatched.
 1. **Write the stub** at the path in the block's `Handback:` field -- the schema, the
    `Status:` vocabulary and the read receipt are defined in
    `harness/templates/handback_schema.md`; follow it and do not restate it. The stub
-   carries `Status: OPEN` and echoes back, VERBATIM, the rows the block listed under
-   "Rows this session must obey". A paraphrased echo is not a read receipt.
+   carries `Status: OPEN` and the two-line read receipt: `- Rows:` with the E-IDs from
+   the FIRST CELL of each row the block listed under "Rows this session must obey"
+   (comma-separated), and `- Prompt-SHA256:` with the output of `sha256sum` run on the
+   PROMPT FILE this session was invoked with -- compute it, never guess it; the closing
+   hook verifies both against the dispatch manifest.
 2. **Write the handback marker** at `.claude/handback_session.json`, with exactly these
    keys:
 
@@ -156,6 +159,19 @@ ceiling from the fact that a prompt exists.
 carry enough to do the work, that is a `prompt-underspecified` structural observation --
 report it in the handback (Step 5) rather than absorbing it silently.
 
+**Derive the behavioral tests during grilling.** For work that expects a behavior change,
+the IMPLEMENTER derives the test cases itself as the grilling pins the task down, and
+records them in the brief's `## Behavioral tests` section (Step 2). The TDD posture
+governing them -- WARRANTED (red-first) or OPTIONAL -- comes from the
+tests-as-deliverables task-type rule in `.claude/preferences.md`, self-applied here.
+There is NO user-ratification ceremony for the tests: the go/no-go gate (Step 3) already
+surfaces the brief, which gives them visibility for free.
+
+**ORCHESTRATED ONLY.** The posture is not self-derived: the dispatched task body carries
+a one-line stamp -- `TDD posture: WARRANTED` or `TDD posture: OPTIONAL` -- written by the
+orchestrator (`commands/orchestrator.md` Step 7) from that same preferences.md rule.
+Obey the stamp.
+
 ## Step 2 -- Write the brief
 
 Write `docs/quick/<slug>_brief.md` (create `docs/quick/` if absent), SHORT by design:
@@ -170,9 +186,26 @@ Write `docs/quick/<slug>_brief.md` (create `docs/quick/` if absent), SHORT by de
 [One bullet per grilling decision, with the user's elaborations captured verbatim
 where they went beyond picking an option]
 
+## Behavioral tests
+[Concrete, named test cases derived during grilling -- see the law below. Omit
+this heading entirely for work with no behavior change.]
+
 ## Implementation outline
 [Numbered steps: files to touch, changes per file, how it will be verified]
 ```
+
+The `## Behavioral tests` section follows the behavioral-tests law of
+`harness/templates/plan_schema.md`, ported verbatim:
+**Every case states the FAILURE it prevents, not only its assertion.** Write what
+breaks in the absence of the behavior -- the bad input that gets through, the wrong
+path that gets taken, the silent success that should have been a block -- and only
+then what the test asserts. No tests beyond this
+contract may be added without flagging them explicitly. Presence mirrors the source law:
+the section is mandatory whenever the work expects a behavior change -- always when the
+posture is WARRANTED -- and the heading is omitted entirely for doc-only /
+no-behavior-change work. Under a WARRANTED posture the cases are written FIRST, run RED,
+then implemented to green (Step 4). The tests are never separately ratified -- the
+go/no-go gate is their visibility mechanism.
 
 The brief is the ONLY document this command produces, and it doubles as the PR body
 (Step 4) -- write it to stand alone for a PR reviewer.
@@ -251,13 +284,14 @@ No phase-closing marker, no learnings file, no ledger entry, no document reconci
 **ORCHESTRATED ONLY:** finalize the handback INSTEAD. Advance the stub in place to its
 terminal status -- `PARTIAL`, `ABANDONED` or `COMPLETE` -- and fill the three sections per
 `harness/templates/handback_schema.md`: `## Delta` (rows pre-formatted in the state file's
-table shape, so the orchestrator transcribes rather than authors), `## For the next
+table shape under that schema's marker-block grammar, so the orchestrator's ingest script
+applies them verbatim rather than anyone re-authoring), `## For the next
 session` (advisory judgement only), and `## Structural observations` (same closed
 vocabulary as above, or `none`).
 
-Do NOT append to `docs/observations.md` yourself in this mode -- the orchestrator copies
-those lines across when it ingests the handback, and appending here would double every
-entry.
+Do NOT append to `docs/observations.md` yourself in this mode -- the orchestrator's
+ingest copies those lines across when it ingests the handback, and appending here would
+double every entry.
 
 The handback REPLACES the canonical end-of-phase apparatus entirely: NO phase-closing
 marker, NO per-phase learnings file, NO ledger merge and no `Last merged` stamp. It is the

@@ -39,6 +39,12 @@ Exactly ONE writer: the orchestrator.
 One writer is what makes it structurally hard for two live documents to
 disagree. A second writer reintroduces exactly the drift this design removes.
 
+A harness script invoked on the state file -- the v2 migration
+(`harness/scripts/migrate_state_v2.py`), the handback ingest
+(`harness/scripts/ingest_handback.py`), and any later script the schema
+names -- acts as its INVOKER's pen, not as a second writer. The invoker
+remains accountable for the write; the script only makes it mechanical.
+
 ## What the state file subsumes
 
 For an orchestrated plan, the state file REPLACES, in full:
@@ -56,8 +62,8 @@ schema changes how a canonical plan closes.
 
 ## Structure
 
-The file has exactly SIX sections, in this fixed order. No section is optional
-and none may be reordered -- a resuming session reads positionally.
+The file has exactly SEVEN sections, in this fixed order. No section is
+optional and none may be reordered -- a resuming session reads positionally.
 
 ```
 # Orchestration State: <plan_name>
@@ -70,7 +76,14 @@ Status: ACTIVE | COMPLETE | ABANDONED
 ## Next
 ## Maybe
 ## Dispatched
+## Orchestrator log
 ```
+
+(`## Orchestrator log` was added in schema v2 and deliberately sits LAST, so
+the six v1 sections keep their positions. A state file created before v2 is
+brought to this structure by `harness/scripts/migrate_state_v2.py` -- the only
+sanctioned pen for that migration; it stamps the ID column below and appends
+the log section, changing nothing else.)
 
 The header `Status:` line is the PLAN-level status of the state file, distinct
 from the SESSION-level `Status:` line defined in
@@ -90,7 +103,28 @@ found.
 
 ONE table. These columns, in this order:
 
-| Statement | Provenance | Disposition | Revisit trigger |
+| ID | Statement | Provenance | Disposition | Revisit trigger |
+
+**The ID column (schema v2).** Every row carries a short immutable ID:
+`E` plus three zero-padded digits (`E001`..`E999`), assigned in table order
+from the `Next row ID` counter in `## Orchestrator log`. IDs are MONOTONIC and
+NEVER REUSED -- not after a row is retired, not after a trim, not ever; the
+counter lives in the log section precisely so that it survives any trim of the
+table itself. An ID names the row for every downstream mechanism (dispatch
+manifests, read receipts, handback deltas, garbage collection), so changing or
+recycling one silently re-points every reference to it. New rows are stamped
+with the counter's value and the counter is advanced in the same write.
+Retiring a row is a HARD DELETE performed at ingest: the row line is removed,
+no tombstone stays in the table, and the retiring handback is the durable
+trail of what the row said.
+
+**Row discipline (schema v2 law).** A row states the FACT in roughly 2-3
+sentences. Mechanical inventories -- file lists, function names, test counts
+-- live in the retained brief or handback, and the row CITES that path
+instead of inlining them. The ingest script WARNS on rows over ~600 bytes; it
+never hard-blocks, because some dense rows earn their length (a billing-rule
+row carrying measured constants is the canonical example). The warn threshold
+is a prompt for judgement, not a limit.
 
 This single table replaces six lists that would otherwise be maintained
 separately -- pinned invariants, the do-not-re-validate green list, traps
@@ -153,14 +187,14 @@ Write a condition, not a date: "if the vendor changes the rate limit", not
 
 **Worked examples.** One row per disposition, showing the intended shape:
 
-| Statement | Provenance | Disposition | Revisit trigger |
-|---|---|---|---|
-| The nightly export completes in 6-8 minutes on the current dataset. | `measured` | `fact` | If the dataset grows past ~2x its current size. |
-| Every write path stays idempotent; a replayed message must never double-apply. | `inferred` | `invariant` | - |
-| Batch size fixed at 500; larger batches were rejected for tail-latency reasons. | `measured` | `settled` | If the tail-latency budget is renegotiated. |
-| Do not call the search endpoint inside the per-item loop -- it silently truncates at 100 and the earlier attempt lost rows without erroring. | `measured` | `avoid` | If the vendor publishes pagination on that endpoint. |
-| The upstream feed has no delete events, so removals are invisible; reconcile on the weekly full snapshot instead of fixing this. | `reported` | `carry` | - |
-| Any schema change to the shared events table requires the platform team's sign-off before it is written. | - | `gate` | If ownership of that table moves. |
+| ID | Statement | Provenance | Disposition | Revisit trigger |
+|---|---|---|---|---|
+| E001 | The nightly export completes in 6-8 minutes on the current dataset. | `measured` | `fact` | If the dataset grows past ~2x its current size. |
+| E002 | Every write path stays idempotent; a replayed message must never double-apply. | `inferred` | `invariant` | - |
+| E003 | Batch size fixed at 500; larger batches were rejected for tail-latency reasons. | `measured` | `settled` | If the tail-latency budget is renegotiated. |
+| E004 | Do not call the search endpoint inside the per-item loop -- it silently truncates at 100 and the earlier attempt lost rows without erroring. | `measured` | `avoid` | If the vendor publishes pagination on that endpoint. |
+| E005 | The upstream feed has no delete events, so removals are invisible; reconcile on the weekly full snapshot instead of fixing this. | `reported` | `carry` | - |
+| E006 | Any schema change to the shared events table requires the platform team's sign-off before it is written. | - | `gate` | If ownership of that table moves. |
 
 **No-contradiction law.** `## Established` may NEVER hold two rows that
 contradict each other on the same subject. This law is carried over unchanged
@@ -172,7 +206,7 @@ When two rows clash:
 1. The weaker provenance loses, without a conversation. The precedence order is
    `measured` > `inferred` > `reported` > `assumed`. Delete the losing row and
    keep the winner; do not keep both and do not annotate the loser as
-   superseded.
+   superseded. The deleted row's ID retires with it and is never reissued.
 2. Where the clash is AMBIGUOUS -- the rows conflict and it is not certain the
    new row FULLY replaces the old one -- STOP and ask the user. Never silently
    resolve it. The table may not keep both rows, and it may not silently lose a
@@ -242,6 +276,34 @@ invisible forever.
 Session numbers are monotonic and never reused, across the whole life of the
 plan -- including for sessions that were abandoned or never run. Reusing a
 number collides two sessions onto one handback path.
+
+### `## Orchestrator log`
+
+The orchestrator's own housekeeping record -- the content that would otherwise
+leak into `## Dispatched` prose or hand-written resume prompts, both of which
+are retired as practices. Rebirth is STATE-FILE-ONLY: resuming a plan on a
+fresh context window is literally `/orchestrator <plan_name>` and nothing
+else; there is no successor-prompt artifact.
+
+A bulleted list. Two lines are REQUIRED and machine-read, in these exact
+forms:
+
+- `- Incarnations: <N>` -- how many orchestrator sessions have driven this
+  plan. Seeded at 1; bumped by the orchestrator at each resume.
+- `- Next row ID: E<NNN>` -- the `## Established` ID counter. This is the
+  counter's ONE home; it lives here, not in the table, so that no trim of the
+  table can lose it and cause an ID to be reissued.
+
+The remaining lines are free-form dated notes, one per event, newest last:
+
+- trims performed, each naming the archive path the trimmed rows went to
+  ("replaces" markers live on the condensed rows themselves);
+- housekeeping worth a cold resume knowing (marker resets, migrations,
+  counter corrections).
+
+The section is append-and-update only: notes are appended, the two required
+lines are updated in place, and nothing here is ever trimmed -- it is the
+record trims themselves are recorded in.
 
 ## Terminal status
 
