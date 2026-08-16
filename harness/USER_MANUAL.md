@@ -29,7 +29,8 @@ self-improver flow (or upstream releases):
 ```
 .claude/
   commands/       -- invocable commands ONLY (everything here shows in the skills listing)
-  agents/         -- workflow agents (self-improver, investigator)
+  agents/         -- workflow agents (self-improver, investigator, experimenter,
+                     garbage_collector)
   hooks/          -- deterministic hooks: git_guardrails.py, enforce_phase_closing.py,
                      enforce_handback.py, enforce_orchestrator_isolation.py
   harness/        -- read-only-in-daily-use machinery
@@ -292,7 +293,12 @@ happens out of process.
 **Delegation.** Long reads and corpus searches go to the `investigator` sub-agent, whose
 isolation law (read-only outside the scratchpad, named do-not-touch paths, a hard output
 budget, never the state file) lives in `agents/investigator.md` so it binds whether or
-not the caller restated it.
+not the caller restated it. Research questions that reading alone cannot answer -- a
+probe that must be written and RUN, or evidence fetched from the web -- go to its
+sibling, the `experimenter`, which duplicates that discipline in
+`agents/experimenter.md` and adds a write-and-run lane confined to the session
+scratchpad (throwaway venv allowed inside it; no servers, no system-state changes).
+Caller-side routing lives in `commands/orchestrator.md`'s "Delegating to sub-agents".
 
 ## Git strategy (the PR law)
 
