@@ -276,6 +276,14 @@ Step 8 clears.
    The rows are the relevant do-not-re-validate entries, pinned invariants and
    gates, FILTERED to what this session actually touches. Filtering is the
    point: a session handed the whole table reads none of it.
+
+   **The authored task body carries exactly ONE TDD-posture line** --
+   `TDD posture: WARRANTED` or `TDD posture: OPTIONAL` -- decided by task type
+   per the tests-as-deliverables rule in `.claude/preferences.md` (that rule is
+   project opinion and lives there alone: reference it, never restate it). The
+   stamp sets the posture ONLY; the receiving implementer derives the
+   behavioral tests itself during grilling, into the quick brief's
+   `## Behavioral tests` section (`commands/grill_and_implement.md` Step 2).
 4. **Verbatim rows only.** Single-source is about AUTHORSHIP, not physical
    uniqueness of bytes. A row copied verbatim and unedited from state, with
    state named as its source, has ONE author and cannot drift into disagreement;

@@ -195,7 +195,8 @@ plan, which is the only path that produces a stakeholder-readable spec.
 
 The lightweight sibling for tasks too small for a full plan: a mixed-style grilling
 hard-capped at 8 questions (it recommends a full /grilling_session if that ceiling
-is insufficient), a short brief written to `docs/quick/<slug>_brief.md`, a go/no-go
+is insufficient), a short brief written to `docs/quick/<slug>_brief.md` (carrying a
+`## Behavioral tests` section when the work changes behavior), a go/no-go
 gate, then in-session implementation on a `quick/<slug>` branch cut from the default
 branch, push + `gh pr create` -- you merge the PR. The brief doubles as the PR body.
 No PRD, no plan, no ledger, no phase apparatus; the no-Claude-path-to-protected-
@@ -225,7 +226,9 @@ Schemas: `harness/templates/state_schema.md` (state) and
    mode you are in. Init is a grilling capped at FIVE questions covering the objective,
    its acceptance criteria, known invariants and gates, and the first committed session.
 2. **You say "dispatch"** -- the orchestrator never dispatches on its own initiative.
-   It authors the task body, selects the state rows the session must obey, and the
+   It authors the task body (stamped with a one-line TDD posture, warranted or
+   optional, per your preferences.md task-type rule), selects the state rows the
+   session must obey, and the
    dispatch script (`harness/scripts/assemble_dispatch.py`) writes the session prompt
    to `docs/prompts/DDMMYY/<plan_name>_session_<NN>_prompt.md` -- carrying a fixed
    `## Orchestration` block with the rows copied verbatim -- plus a dispatch manifest
