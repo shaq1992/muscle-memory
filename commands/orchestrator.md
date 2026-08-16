@@ -54,10 +54,26 @@ The state file lives at the path given by
 There is no `init` subcommand and no `resume` subcommand. The file on disk is
 the only signal, so the user never has to remember which mode they are in.
 
-Then write the orchestrator session marker, at init and at resume alike. Get the
-session id by running `echo $CLAUDE_CODE_SESSION_ID` (Bash tool) -- do not guess
-or invent a value -- and write `.claude/orchestrator_session.json` with exactly
-these keys:
+Then write the orchestrator session marker, at init and at resume alike. The
+marker is PER-PLAN: its filename carries the plan slug, so concurrent
+orchestrators on DIFFERENT plans each hold their own marker and neither can
+overwrite -- and thereby silently disarm -- the other's guardrail.
+
+**Same-plan refusal first.** Before writing, read
+`.claude/orchestrator_<plan_name>_session.json` if it exists. If its
+`session_id` is not this session's, REFUSE to orchestrate this plan: say that
+another orchestrator session holds it, and name the marker path so the user
+can delete the file if that orchestrator is dead. The refusal is the WHOLE
+mechanism -- there is no staleness heuristic and no automatic cleanup, by
+decision: only the user can tell a dead orchestrator from one that is merely
+quiet, so eviction is only ever the user's deletion of the named file.
+Concurrent orchestrators on DIFFERENT plans are the supported case; what
+their dispatched sessions may hold is still governed by the tree broker
+(Step 8).
+
+Otherwise get the session id by running `echo $CLAUDE_CODE_SESSION_ID` (Bash
+tool) -- do not guess or invent a value -- and write
+`.claude/orchestrator_<plan_name>_session.json` with exactly these keys:
 
 ```json
 {
@@ -69,7 +85,19 @@ these keys:
 
 Write the marker unconditionally, even if unsure whether the enforcing hook is
 registered -- the marker is inert without it. Remove the marker when this
-session's orchestration work is done.
+session's orchestration work is done. The enforcing hook
+(`hooks/enforce_orchestrator_isolation.py`) scans ALL
+`orchestrator_*_session.json` markers and matches on session_id, and it is
+FAIL-CLOSED on a corrupt marker file: while one exists, every guarded write is
+denied with the corrupt path named, and deleting that file -- the user's call
+-- is the remedy.
+
+**Cutover note.** Per-plan markers became the law at the v6 plan-end merge;
+until that merge, orchestrators wrote the single-slot
+`.claude/orchestrator_session.json`. That legacy filename does not match the
+hook's scan pattern and is INERT. On the first resume that finds one left over
+from before the cutover, delete it as housekeeping and record the deletion in
+`## Orchestrator log`.
 
 ## Step 3 -- INIT (no state file exists)
 
@@ -394,8 +422,8 @@ hand-editing the handback into an ingestable shape.
 
 The summary's last line reports `## Established`'s row count and byte size
 against the GC threshold (80 rows OR 45 KB -- either bound trips). An OVER
-report is the D6 trigger EVIDENCE for suggesting a garbage-collection pass; GC
-never auto-runs. The summary also WARNS on incoming rows over ~600 bytes per
+report is the trigger EVIDENCE for suggesting a garbage-collection pass
+(Step 10a); GC never auto-runs. The summary also WARNS on incoming rows over ~600 bytes per
 the row-discipline law -- a prompt for judgement, never a block.
 
 All five happen before replying (write-through trigger (a)).
@@ -417,6 +445,46 @@ labour is deliberate: sessions report, the orchestrator judges by mechanical
 count, execution happens out of process. The orchestrator's privileged position
 is POSSESSION of the evidence, not deliberation about it -- which is exactly why
 the firewall costs nothing.
+
+## Step 10a -- GARBAGE COLLECTION (user-gated; never auto-runs)
+
+The trigger is EVIDENCE, never a schedule: the ingest summary's last line
+reports `## Established` against the GC threshold (Step 9), and on an OVER
+report the orchestrator emits at most ONE line suggesting a GC pass -- the
+same restraint as Step 10's notice. GC itself runs only on the user's word.
+(Numbered 10a so the step numbers ratified elsewhere -- Step 11 improve,
+Step 12 plan end -- stay stable.)
+
+On that word:
+
+1. **Derive the archive path fresh** with Bash -- never a date from memory:
+   `docs/orchestration/<plan_name>_state_archive_$(date +%d%m%y).md`.
+2. **Invoke the garbage_collector sub-agent** (`agents/garbage_collector.md`),
+   handing it the plan name, the state file path, the archive path just
+   derived, and the dated archives and retained handbacks to read. The agent
+   is PROPOSE-ONLY: it returns RETIRE / CONDENSE / PROMOTE batches keyed on
+   E-IDs, pre-formatted in the state table shape with their
+   "replaces <IDs>; archive: <path>" markers, and writes nothing outside its
+   scratchpad. Its judgement rules live in its own file, per the doctrine
+   that each rule lives with the actor who can violate it.
+3. **Snapshot BEFORE applying.** Copy the state file VERBATIM to the archive
+   path. The archive is the recoverable copy of every row a batch touches; no
+   batch is applied before the snapshot exists.
+4. **Gate EACH batch with the user** -- batch by batch, never one bulk okay.
+   A PROMOTE batch is doubly explicit: promotion of a row to CLAUDE.md is a
+   user-gated, surgical move, never bulk, and on apply the promoted row is
+   RETIRED from `## Established` in the same batch so CLAUDE.md becomes the
+   fact's single home. (Accepted cost, decided at session 04: the dispatch
+   assembler can no longer hand that row by E-ID; dispatched sessions see it
+   through CLAUDE.md instead.)
+5. **Apply approved batches as row-level edits** -- the orchestrator's own pen,
+   never `ingest_handback.py`, whose input is a handback. A condensed row's ID
+   is stamped from the `Next row ID` counter and the counter advanced in the
+   same write; replaced and retired rows are HARD-DELETED -- IDs never reused,
+   the archive is the durable trail. A batch the user declines is dropped
+   without residue.
+6. **Record the trim** in `## Orchestrator log`: date, batches applied, archive
+   path (write-through trigger (d)).
 
 ## Step 11 -- The `improve` subcommand
 

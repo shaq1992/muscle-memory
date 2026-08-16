@@ -246,7 +246,12 @@ Schemas: `harness/templates/state_schema.md` (state) and
    and the ingest script (`harness/scripts/ingest_handback.py`, the orchestrator's pen)
    applies them verbatim -- nobody re-authors a row, and the orchestrator reads only the
    script's short summary. That is what keeps an ingest nearly free in context, which is
-   what lets a plan run for months.
+   what lets a plan run for months. The summary's last line reports `## Established`
+   against the GC threshold (80 rows OR 45 KB); when it trips, the orchestrator offers
+   at most ONE line suggesting a garbage-collection pass. GC never auto-runs: on your
+   word the propose-only `garbage_collector` sub-agent returns retire / condense /
+   promote batches, the orchestrator snapshots state to a dated archive FIRST, and you
+   gate every batch -- promotion of a row into CLAUDE.md most explicitly of all.
 5. **You declare the plan done.** Only then does the plan-end PR flow fire -- push
    integration, `gh pr create`, and you merge. Nothing else in this lane ever reaches
    the protected branch.
@@ -264,7 +269,13 @@ it and `enforce_phase_closing.py` are mutually exclusive by construction, readin
 different marker files. `.claude/hooks/enforce_orchestrator_isolation.py` (PreToolUse on
 Edit/Write/NotebookEdit) keeps an orchestrator session out of the implementation work --
 an anti-drift guardrail, not a sandbox: a Bash heredoc bypasses it entirely, and it is
-documented that way on purpose.
+documented that way on purpose. Orchestrator markers are PER-PLAN
+(`.claude/orchestrator_<plan_name>_session.json`), so orchestrators on different plans
+run concurrently; a second orchestrator on the SAME plan is refused with the marker
+path named -- deleting a dead orchestrator's marker is always your call, never a
+heuristic's. The hook scans all per-plan markers, matches on session_id, and is
+FAIL-CLOSED on a corrupt marker file: guarded writes are denied, for every session,
+until you delete the named file.
 
 **Structural observations.** Sessions report defects in the WORKFLOW MACHINERY (not in
 your project's logic) under a closed tag vocabulary; they accumulate in one append-only
