@@ -18,7 +18,8 @@ words gets no entry.
   inlining the procedure body.
 - **procedure file** -- A portable law file under `.claude/harness/procedures/`
   (git_strategy, closing_sequence, monitoring, verification_cases,
-  self_improvement). Commands @-reference these rather than restate them, so a
+  self_improvement, precedence, comms). Commands @-reference these rather than
+  restate them, so a
   fix lands once and every consumer executes current law.
 - **preferences file** -- The single project-specific opinion surface at
   `.claude/preferences.md`: a machine-parseable key block supplying parameters

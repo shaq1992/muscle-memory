@@ -43,8 +43,10 @@ self-improver flow (or upstream releases):
     templates/             -- prd_schema, plan_schema, claude_md_skeleton,
                               state_schema, handback_schema,
                               preferences_template.md
-    scripts/               -- validate_prompt.py, make_portable_zip.sh
-    tests/                 -- stdlib-unittest suite for the hooks
+    scripts/               -- validate_prompt.py, assemble_dispatch.py,
+                              ingest_handback.py, migrate_state_v2.py,
+                              make_portable_zip.sh
+    tests/                 -- stdlib-unittest suite for the hooks and scripts
                               (python3 -m unittest discover .claude/harness/tests)
   README.md       -- harness repo landing page
   VERSION         -- one-line harness version (see Versioning)
@@ -67,7 +69,8 @@ self-improver jurisdiction:
 CLAUDE.md         -- per-turn protective skeleton (project root; generated from the
                      skeleton template, then filled by the user)
 docs/             -- prds/, multi_phase_plans/, prompts/, learnings/, quick/,
-                     orchestration/ outputs, plus the append-only observations.md
+                     comms/, jira_and_standup/, orchestration/ outputs, plus the
+                     append-only observations.md
 context/          -- durable local-only project knowledge: architecture.md,
                      decisions.md, glossary.md
 ```
