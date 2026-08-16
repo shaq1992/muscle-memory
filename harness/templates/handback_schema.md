@@ -192,8 +192,10 @@ exists rather than pushing everything through `## Delta`.
 Defects in the WORKFLOW MACHINERY that this session ran under -- never defects
 in the project's domain logic, and never plan-specific notes.
 
-Closed vocabulary. Each observation is one line: the tag, then a short
-free-text description.
+Closed vocabulary. Each observation is one line in the exact machine shape
+`- <tag> | <description>` -- dash, tag, pipe, short free-text description.
+`harness/scripts/ingest_handback.py` fails closed on any other line shape;
+edit the two in lockstep.
 
 | Tag | Means |
 |---|---|
