@@ -12,13 +12,18 @@ Two jobs, plus a push-remote guard:
        - git merge while on the protected branch;
        - any git push whose destination is the protected branch (explicit
          refspec incl. the "origin main:main" form, bare push from the
-         protected branch, --all / --branches / --mirror, --delete of it);
+         protected branch, --all / --branches / --mirror, --delete of it)
+         -- PROJECT repo only: pushes attributed to the harness repo are
+         governed solely by the push-remote allowlist below, so the
+         self-improver can push improvement commits on harness main;
        - gh pr merge (PR merges are user-only under the PR law; the user
          runs them as !-prefixed commands).
   3. Push-remote allowlist (fail-closed): a git push attributed to the
      HARNESS repo (the nested repo at .claude/) is allowed only when the
      resolved remote URL matches the harness_push_remote parameter. Key
-     absent = ALL harness pushes denied, naming the missing key.
+     absent = ALL harness pushes denied, naming the missing key. This is
+     the ONLY gate on harness pushes (any branch, incl. main); recipients
+     never set the key, so their harness pushes stay blocked.
 
 Repo-context attribution: each command segment's effective directory is
 tracked across `cd` segments and `git -C` flags; a segment operates on the
@@ -462,7 +467,12 @@ def main():
 
         if sub == "push":
             remote, refspecs, is_delete, pushes_all = _push_parts(args)
-            if _push_targets_protected(
+            # The protected-branch push block applies to the PROJECT repo
+            # only. Harness-repo pushes (any branch, incl. main) are gated
+            # solely by the fail-closed push-remote allowlist below, so the
+            # self-improver can sync improvement commits on harness main.
+            is_harness_push = _is_harness_repo(git_dir)
+            if not is_harness_push and _push_targets_protected(
                 refspecs, is_delete, pushes_all, protected, branch_by_dir[dir_key]
             ):
                 _deny(
@@ -473,7 +483,7 @@ def main():
                 )
                 return
 
-            if _is_harness_repo(git_dir):
+            if is_harness_push:
                 pattern = params.get(PUSH_REMOTE_KEY)
                 if not pattern:
                     _deny(

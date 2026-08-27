@@ -73,7 +73,8 @@ class TestBlocksMergeOnProtectedBranch(GuardrailEnv):
 
 
 # ---------------------------------------------------------------------------
-# 4. Protected branch: any push targeting it is flat-blocked
+# 4. Protected branch: any PROJECT-repo push targeting it is flat-blocked
+#    (harness-repo pushes are governed solely by the allowlist -- class 6b)
 # ---------------------------------------------------------------------------
 class TestBlocksPushTargetingProtected(GuardrailEnv):
     def test_blocks_push_targeting_protected(self):
@@ -86,6 +87,11 @@ class TestBlocksPushTargetingProtected(GuardrailEnv):
         ]:
             with self.subTest(command=command):
                 self.assert_denied(command)
+
+    def test_project_main_push_blocked_even_with_harness_key(self):
+        # the harness allowlist key never loosens the PROJECT-repo law
+        self.set_harness_push_remote(MATCHING_REMOTE_PATTERN)
+        self.assert_denied("git push origin main")
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +136,38 @@ class TestPushRemoteAllowlist(GuardrailEnv):
             cwd=self.harness,
             reason_contains="harness_push_remote",
         )
+
+
+# ---------------------------------------------------------------------------
+# 6b. Harness main: the allowlist is the ONLY gate (self-improver sync path).
+#     The protected-branch push block is project-repo law and must not fire
+#     on harness-repo pushes; the fail-closed allowlist still governs them.
+# ---------------------------------------------------------------------------
+class TestHarnessMainPushAllowlistOnly(GuardrailEnv):
+    def test_harness_main_push_allowed_with_matching_key(self):
+        self.set_harness_push_remote(MATCHING_REMOTE_PATTERN)
+        self.assert_allowed("git -C .claude push origin main")
+        # bare push while ON harness main
+        self.assert_allowed("git push origin main", cwd=self.harness)
+
+    def test_harness_main_push_key_absent_blocked(self):
+        self.set_harness_push_remote(None)
+        self.assert_denied(
+            "git -C .claude push origin main",
+            reason_contains="harness_push_remote",
+        )
+
+    def test_harness_main_push_mismatching_remote_blocked(self):
+        self.set_harness_push_remote(MISMATCHING_REMOTE_PATTERN)
+        self.assert_denied(
+            "git -C .claude push origin main",
+            reason_contains="harness_push_remote",
+        )
+
+    def test_harness_main_force_push_still_blocked(self):
+        # destructive-op law is universal; the exemption never reaches it
+        self.set_harness_push_remote(MATCHING_REMOTE_PATTERN)
+        self.assert_denied("git -C .claude push --force origin main")
 
 
 class TestRepoContextAttribution(GuardrailEnv):

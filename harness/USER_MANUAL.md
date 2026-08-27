@@ -337,11 +337,14 @@ block.
 `.claude/hooks/git_guardrails.py` (PreToolUse on Bash, stdlib python3)
 deterministically blocks: destructive ops (`git push --force`, `git reset --hard`,
 `git branch -D`, `git clean -f`); every Claude-initiated path to the protected branch
-(`git merge` on it, any push targeting it, `gh pr merge` -- PR merges are yours
-alone); and, fail-closed, any harness-repo push whose remote does not match the
-`harness_push_remote` allowlist key (key absent = ALL harness pushes blocked, which
-is exactly the recipient posture -- recipients never set the key). Repo context is
-attributed correctly for `git -C` and `cd`-form commands.
+(`git merge` on it, any PROJECT-repo push targeting it, `gh pr merge` -- PR merges
+are yours alone); and, fail-closed, any harness-repo push whose remote does not match
+the `harness_push_remote` allowlist key (key absent = ALL harness pushes blocked,
+which is exactly the recipient posture -- recipients never set the key). Harness-repo
+pushes are exempt from the protected-branch push block -- the allowlist is their only
+gate -- so the self-improver can push improvement commits on harness `main` directly
+(author installs only; without the key the exemption changes nothing). Repo context
+is attributed correctly for `git -C` and `cd`-form commands.
 
 ### Identity and auth
 
@@ -421,9 +424,11 @@ its words.
   local `context/`; mechanical detail is re-derived on demand.
 - **Self-improving commands.** Structural fixes discovered during sessions route
   through the self-improver sub-agent (`harness/procedures/self_improvement.md`),
-  which commits each accepted change in the harness repo; its jurisdiction is
-  `commands/`, `agents/`, `harness/`, `hooks/` -- `preferences.md` is out of
-  jurisdiction.
+  which commits each accepted change in the harness repo and, when the commit lands
+  on `main`, pushes it so the upstream harness repo stays synced (author installs
+  only -- recipient pushes stay blocked by the fail-closed allowlist); its
+  jurisdiction is `commands/`, `agents/`, `harness/`, `hooks/` -- `preferences.md`
+  is out of jurisdiction.
 
 ## Commands reference
 

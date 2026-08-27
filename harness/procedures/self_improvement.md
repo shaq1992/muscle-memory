@@ -38,10 +38,14 @@ values through this flow.
    The self-improver makes exactly one targeted change per invocation and
    COMMITS it in the harness repo at `.claude/` (one commit per invocation,
    message `improve: <file> -- <summary>`, on the currently checked-out branch
-   -- the phase branch during a harness plan, local `main` otherwise; pushing
-   stays user-only). On a zip install with no harness repo, it states that
-   fallback plainly and reports excerpts instead of a diff. Wait for it to
-   return.
+   -- the phase branch during a harness plan, local `main` otherwise). A
+   commit on `main` is PUSHED immediately (`git -C .claude push origin main`),
+   keeping the public harness repo synced with small improvements; phase-branch
+   commits are never pushed by the improver -- the plan's closing sequence owns
+   those, and major version-level improvements still arrive via orchestrated
+   harness plans and their user-merged PRs. On a zip install with no harness
+   repo, it states that fallback plainly and reports excerpts instead of a
+   diff. Wait for it to return.
 
 4. **Surface the response.** Show the sub-agent's full response to the user:
    `## Changes Made` (the commit hash + message and the commit's git diff; on
