@@ -8,7 +8,9 @@ orchestrator can no longer disarm another's guardrail (the single-slot
 fail-open bug, evidence row E031).
 
 The ratified cases:
-  - match          -> outside-allowlist blocks, inside-allowlist allows;
+  - match          -> outside-allowlist blocks, inside-allowlist allows
+                      (incl. the two exact-file CLAUDE.md allowances:
+                      project root + user-global ~/.claude/CLAUDE.md);
   - mismatch       -> a foreign session's marker never constrains this one,
                       and is never consumed;
   - multi-marker   -> only markers naming this session constrain it; several
@@ -30,6 +32,7 @@ Stdlib-only. Run with: python3 -m unittest discover .claude/harness/tests
 """
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -67,6 +70,11 @@ class IsolationHookEnv(unittest.TestCase):
         self.scratchpad = self.tmp / "claude-scratch" / "sess" / "scratchpad"
         self.scratchpad.mkdir(parents=True)
 
+        # Fake user home, so the hook's runtime ~ expansion (the user-global
+        # ~/.claude/CLAUDE.md allowance) resolves inside the temp tree.
+        self.home = self.tmp / "home"
+        self.home.mkdir()
+
     def marker_path(self, plan=PLAN_NAME):
         return self.claude_dir / "orchestrator_{0}_session.json".format(plan)
 
@@ -100,6 +108,9 @@ class IsolationHookEnv(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=30,
+            env=dict(
+                os.environ, HOME=str(self.home), USERPROFILE=str(self.home)
+            ),
         )
         return decision_and_reason(r)
 
@@ -195,6 +206,41 @@ class TestInsideAllowlistAllows(IsolationHookEnv):
         other = "notes/{0}_state.md".format(PLAN_NAME)
         self.write_marker(state_path=other)
         self.assert_allowed(self.proj / other)
+
+
+class TestClaudeMdFilesAllowed(IsolationHookEnv):
+    """Exact-file allowances: the project-root CLAUDE.md (GC PROMOTE target)
+    and the user-global ~/.claude/CLAUDE.md. Exact paths, never a directory,
+    never any other file named CLAUDE.md."""
+
+    def test_project_root_claude_md_allowed(self):
+        self.write_marker()
+        for tool_name in ["Write", "Edit"]:
+            with self.subTest(tool=tool_name):
+                self.assert_allowed(self.proj / "CLAUDE.md", tool_name)
+
+    def test_user_global_claude_md_allowed(self):
+        self.write_marker()
+        for tool_name in ["Write", "Edit"]:
+            with self.subTest(tool=tool_name):
+                self.assert_allowed(
+                    self.home / ".claude" / "CLAUDE.md", tool_name
+                )
+
+    def test_match_is_exact_not_by_name(self):
+        # Any OTHER file named (or resembling) CLAUDE.md stays blocked.
+        self.write_marker()
+        self.assert_denied(self.proj / "src" / "CLAUDE.md")
+        self.assert_denied(self.proj / "CLAUDE.md.bak")
+        self.assert_denied(self.proj / ".claude" / "CLAUDE.md")
+
+    def test_deny_reason_names_the_new_entries(self):
+        # The deny message is the orchestrator's only feedback when blocked;
+        # its numbered allowlist must include the two new entries.
+        self.write_marker()
+        reason = self.assert_denied(self.proj / "src" / "engine.py")
+        self.assertIn("project-root CLAUDE.md", reason)
+        self.assertIn("~/.claude/CLAUDE.md", reason)
 
 
 class TestNoMarkerRegression(IsolationHookEnv):
