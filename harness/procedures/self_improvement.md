@@ -2,8 +2,9 @@
 
 The shared flow for routing structural improvements discovered during a session
 back into the workflow command files. Referenced by the grilling command (its
-self-diagnosis step) and by the closing sequence of every phase implementation
-prompt -- neither restates it.
+self-diagnosis step), by the closing sequence of every phase implementation
+prompt, and by the orchestrator's self-improver spawn (`commands/orchestrator.md`
+Step 11) -- none of them restates it.
 
 ## Scope rule
 
