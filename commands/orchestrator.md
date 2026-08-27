@@ -593,8 +593,10 @@ lives with the actor who can violate it.
   stakeholder-readable spec, that is what the canonical arc is for.
 - **The Edit/Write allowlist is an ANTI-DRIFT GUARDRAIL, not a sandbox.** While
   the orchestrator session marker is in place, a hook blocks Edit / Write /
-  NotebookEdit outside the state file, `docs/orchestration/`, `docs/prompts/`
-  and the session scratchpad. Say plainly what that is worth: a Bash heredoc
+  NotebookEdit outside the state file, `docs/orchestration/`, `docs/prompts/`,
+  the session scratchpad, and two exact-file allowances -- the project-root
+  CLAUDE.md (the GC PROMOTE target) and the user-global `~/.claude/CLAUDE.md`
+  (user-ordered global-law additions). Say plainly what that is worth: a Bash heredoc
   bypasses it entirely, and so does any other write that does not go through
   those tools. It exists to catch the orchestrator drifting into doing the
   implementation work itself, which is a mistake made by accident. It stops
