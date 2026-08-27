@@ -289,10 +289,11 @@ until you delete the named file.
 your project's logic) under a closed tag vocabulary; they accumulate in one append-only
 `docs/observations.md`, written by handback ingestion and by standalone
 `/grill_and_implement` closes alike. When a tag reaches two occurrences anywhere in that
-file, the orchestrator emits ONE line saying so. `/orchestrator improve` then runs in a
-FRESH session with zero plan context and hands the approved items to the existing
-self-improver flow unchanged -- sessions report, the orchestrator counts, execution
-happens out of process.
+file, the orchestrator emits ONE line saying so. You then ask the live orchestrator to
+spawn a self-improver pass over them (the `/orchestrator improve` subcommand is retired):
+it composes the brief from the file and hands it to the existing self-improver flow
+unchanged, and handled items are dispositioned by appended lines. Sessions report, the
+orchestrator counts, and improvement runs only on your ask.
 
 **Delegation.** Long reads and corpus searches go to the `investigator` sub-agent, whose
 isolation law (read-only outside the scratchpad, named do-not-touch paths, a hard output
