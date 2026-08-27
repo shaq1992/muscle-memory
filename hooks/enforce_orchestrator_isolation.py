@@ -19,7 +19,11 @@ NotebookEdit are confined to an allowlist:
   5. the project-root CLAUDE.md (exact file, never a directory) -- a GC
      PROMOTE batch moves a state row into it by design;
   6. the user-global ~/.claude/CLAUDE.md (exact file; home expanded at
-     runtime) -- the user can order a global-law addition mid-plan.
+     runtime) -- the user can order a global-law addition mid-plan;
+  7. the harness corpus at .claude/{commands,agents,hooks,harness}/ -- the
+     self-improver's jurisdiction. Deliberately NOT allowlisted:
+     .claude/preferences.md, .claude/settings.json, and everything else at
+     the .claude/ top level -- the four directories exactly.
 
 Entries 5 and 6 match those two files EXACTLY; any other file named
 CLAUDE.md stays outside the allowlist.
@@ -33,17 +37,23 @@ replaces. The remedy is stated in the deny reason: delete the named file.
 A readable marker naming a DIFFERENT session never constrains this one --
 dispatched implementation sessions must write code -- and no marker at all is
 a structural no-op. The legacy single-slot orchestrator_session.json does not
-match the scan pattern and is inert; so are the other *_session.json marker
-families (handback_session.json, improve_session.json), which belong to
-different hooks.
+match the scan pattern and is inert; so is handback_session.json, which
+belongs to a different hook, and any improve_session.json left behind by
+the retired /orchestrator improve subcommand, which nothing consumes.
 
 This is an ANTI-DRIFT GUARDRAIL, not a sandbox. A Bash heredoc bypasses it
 entirely, and so does any other write that does not go through those three
 tools. It exists to catch an orchestrator drifting into doing the
 implementation work itself, which is a mistake made by accident. It stops
 nothing done on purpose, and no reader should be left thinking otherwise.
-The orchestrator can still CAUSE code to be written -- through a sub-agent,
-which is a different session and unaffected.
+Sub-agents spawned with the Agent tool SHARE the dispatching session's
+session_id, so they are bound by this allowlist too -- the harness-corpus
+allowance (entry 7) exists precisely so an orchestrator-spawned
+self-improver can edit the harness. Accepted consequence, stated plainly:
+the allowance also lets the orchestrator ITSELF edit harness files; the
+guardrail is anti-drift, not a sandbox, and the user has chosen capability
+over that slice of drift protection. Dispatched implementation SESSIONS
+are separate sessions and remain unaffected.
 
 Markers are never consumed here; each orchestrator removes its own marker
 when its work is done.
@@ -72,6 +82,11 @@ PATH_KEYS = ("file_path", "notebook_path")
 
 ALLOWED_DIRS = ("docs/orchestration/", "docs/prompts/")
 SCRATCHPAD_COMPONENT = "scratchpad"
+
+# The self-improver's jurisdiction inside the harness repo at .claude/ --
+# these four directories EXACTLY. preferences.md, settings.json and the
+# rest of the .claude/ top level stay guarded.
+HARNESS_CORPUS_SUBDIRS = ("commands", "agents", "hooks", "harness")
 
 
 def _allow():
@@ -165,7 +180,10 @@ def _allowlist_text(state_paths):
         "  3. docs/prompts/\n"
         "  4. the session scratchpad\n"
         "  5. the project-root CLAUDE.md (exact file)\n"
-        "  6. the user-global ~/.claude/CLAUDE.md (exact file)"
+        "  6. the user-global ~/.claude/CLAUDE.md (exact file)\n"
+        "  7. the harness corpus at"
+        " .claude/{commands,agents,hooks,harness}/"
+        " -- the self-improver's jurisdiction"
     )
 
 
@@ -243,6 +261,11 @@ def main():
     if resolved in _allowed_claude_md_paths():
         _allow()
         return
+
+    for subdir in HARNESS_CORPUS_SUBDIRS:
+        if _under(resolved, os.path.realpath(os.path.join(CLAUDE_DIR, subdir))):
+            _allow()
+            return
 
     _deny(
         "Orchestrator isolation: {0} targets {1}, which is outside this "
