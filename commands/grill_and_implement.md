@@ -275,8 +275,9 @@ nothing to report, append nothing; do not fabricate an observation to fill the f
 
 This is a ONE-LINE WRITE, not a self-improvement step. Do not compose a brief, spawn a
 sub-agent, review a diff or propose an edit to the harness. The observation is evidence
-for a later improve pass that reads the whole file; a single session is a sample of one,
-and acting on it is exactly the failure the append-only file exists to avoid.
+for a later user-asked improvement pass that reads the whole file; a single session is a
+sample of one, and acting on it is exactly the failure the append-only file exists to
+avoid.
 
 No phase-closing marker, no learnings file, no ledger entry, no document reconciliation
 -- the brief, the PR and that one appended line are the whole paper trail.
