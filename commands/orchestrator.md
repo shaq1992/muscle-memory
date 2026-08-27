@@ -1,6 +1,6 @@
 ---
-description: Drive a long-running, progressively-disclosed plan from a single durable state file. The same invocation initialises a new plan or resumes an existing one, writes state through before replying, dispatches one session at a time on the user's word, and ingests each session's handback. `improve` is a reserved first token that routes accumulated structural observations into the existing self-improvement flow.
-argument-hint: <plan_name> [additional text] -- or `improve` (reserved word, runs a structural improvement pass instead)
+description: Drive a long-running, progressively-disclosed plan from a single durable state file. The same invocation initialises a new plan or resumes an existing one, writes state through before replying, dispatches one session at a time on the user's word, and ingests each session's handback. On the user's ask, a live orchestrator spawns a self-improver to edit the harness itself.
+argument-hint: <plan_name> [additional text]
 ---
 
 Orchestrate the plan named in $ARGUMENTS.
@@ -27,11 +27,12 @@ conversation is already lost. Write it down first, then reply.
 
 1. **Reserved words.** The FIRST token is checked against the reserved list
    before anything else. The reserved list is exactly: `improve`. If the first
-   token is `improve`, this invocation is the improve subcommand (Step 11) and
-   nothing in Steps 2-10 runs. Because the list is declared, a plan can never be
-   named one of these words: if a user asks to initialise a plan whose
-   normalized slug is a reserved word, refuse, say which word collided, and ask
-   for a different name.
+   token is `improve`, refuse in one line: the `/orchestrator improve`
+   subcommand is RETIRED -- ask a live orchestrator session to spawn a
+   self-improver instead (Step 11). The word stays reserved so a plan can
+   never be named `improve`: if a user asks to initialise a plan whose
+   normalized slug is a reserved word, refuse, say which word collided, and
+   ask for a different name.
 2. **plan_name** -- the first token, normalized per the "Slug normalization"
    rule in the branch-model section of
    @.claude/harness/procedures/git_strategy.md. That rule is the single source
@@ -41,7 +42,7 @@ conversation is already lost. Write it down first, then reply.
    depends on whether this is an init or a resume (Steps 3 and 4).
 
 If no plan name is given, stop and say:
-"Usage: /orchestrator <plan_name> [additional text], or /orchestrator improve".
+"Usage: /orchestrator <plan_name> [additional text]".
 
 ## Step 2 -- Detect init vs resume, and write the session marker
 
@@ -313,8 +314,8 @@ checks out a branch and edits files in the plan's repository.
 A second concurrent session is permitted only when it holds no tree:
 
 - read-only or scratchpad-only work -- investigation, drafting, analysis; or
-- work in a DIFFERENT repository, such as an improve run against the harness
-  repo.
+- work in a DIFFERENT repository, such as a self-improver edit to the harness
+  repo, which holds no tree in the plan's repository.
 
 While a tree-holding session is outstanding in `## Dispatched`, the orchestrator
 REFUSES to dispatch a second one. The refusal is explicit: name the outstanding
@@ -444,15 +445,15 @@ in two unrelated plans is stronger evidence of a pattern than the same defect
 twice in one plan.
 
 When a tag reaches TWO occurrences, emit exactly ONE LINE: that N structural
-observations are pending, and that `/orchestrator improve` may be run in a fresh
-session.
+observations are pending, and that the user may ask this orchestrator to spawn
+a self-improver pass over them (Step 11).
 
-**That is the entire behaviour.** The orchestrator composes no brief, spawns no
-sub-agent, reviews no diff and runs no drift cascade of its own. The division of
-labour is deliberate: sessions report, the orchestrator judges by mechanical
-count, execution happens out of process. The orchestrator's privileged position
-is POSSESSION of the evidence, not deliberation about it -- which is exactly why
-the firewall costs nothing.
+**That is the entire behaviour at notice time.** The orchestrator composes no
+brief, spawns nothing, reviews no diff and runs no drift cascade unbidden. The
+division of labour is deliberate: sessions report, the orchestrator judges by
+mechanical count, and execution waits on the user's ask (Step 11). The
+orchestrator's privileged position is POSSESSION of the evidence, not
+deliberation about it -- which is exactly why the notice costs nothing.
 
 ## Step 10a -- GARBAGE COLLECTION (user-gated; never auto-runs)
 
@@ -460,8 +461,8 @@ The trigger is EVIDENCE, never a schedule: the ingest summary's last line
 reports `## Established` against the GC threshold (Step 9), and on an OVER
 report the orchestrator emits at most ONE line suggesting a GC pass -- the
 same restraint as Step 10's notice. GC itself runs only on the user's word.
-(Numbered 10a so the step numbers ratified elsewhere -- Step 11 improve,
-Step 12 plan end -- stay stable.)
+(Numbered 10a so the step numbers ratified elsewhere -- Step 11 self-improver
+spawning, Step 12 plan end -- stay stable.)
 
 On that word:
 
@@ -494,40 +495,45 @@ On that word:
 6. **Record the trim** in `## Orchestrator log`: date, batches applied, archive
    path (write-through trigger (d)).
 
-## Step 11 -- The `improve` subcommand
+## Step 11 -- Spawning the self-improver (the live improvement path)
 
-`/orchestrator improve` runs in a FRESH session with ZERO plan context. It never
-runs inside a session that is orchestrating a plan; the point is to judge
-structural proposals from a sample of many sessions rather than a sample of one,
-without polluting orchestrator context.
+The PRIMARY way live harness improvements happen: the USER asks this
+orchestrator session to spawn a self-improver -- targeting this command itself,
+any other command, agent, or hook, or any harness procedure, template or
+script. The retired `/orchestrator improve` subcommand's fresh-session
+ceremony and `improve_session.json` concurrency marker are gone; the user's
+ask is the whole gate.
 
-1. **Refuse a concurrent improve run.** Read `.claude/improve_session.json` if
-   present. If it exists and its `session_id` is not this session's, refuse to
-   start, say another improve run is in progress, and name the marker path so
-   the user can delete it if that run is dead. Otherwise write the marker with
-   this session's `session_id` and a start stamp, and remove it when the run
-   finishes.
-2. **Never run `git checkout` or `git switch` in the harness repo during an
-   improve run.** Edit files in place and commit on whatever branch is already
-   checked out. The observed collision was a checkout removing files underneath
-   a concurrently running session, so the banned operation is the one that
-   caused the harm. This is what makes an improve run safe to execute IN
-   PARALLEL with ongoing plan work -- it holds no tree in the plan's repository,
-   and it never moves the harness repo's HEAD.
-3. **Read `docs/observations.md` and the harness corpus** (`commands/`,
-   `agents/`, `hooks/`, `harness/`) before proposing anything. Count the tags
-   mechanically; look at the actual file that would change.
-4. **Compose the brief and SURFACE it.** Show it to the user and gate on their
-   okay before anything is edited.
-5. **Invoke the EXISTING flow, unchanged.** Hand the approved items to
-   @.claude/harness/procedures/self_improvement.md and follow it as written --
-   per-item user approval, one file per invocation, one commit, surfacing the
-   diff there, and the one-level drift cascade. This subcommand is a new CALLER
-   of that procedure; it does not modify it, extend it, or substitute its own
-   version of any step.
-6. **Mark the handled items dispositioned** in `docs/observations.md`. That file
-   is append-only, so a disposition is itself an appended line, not an edit to
-   the original.
+1. **Runs ONLY on the user's ask.** The orchestrator never spawns a
+   self-improver unbidden -- the same law as dispatch (Step 6). The ask IS the
+   approval: when the user's request is specific enough to act on, spawn
+   directly; when the orchestrator had to fill judgment gaps composing the
+   brief, surface the brief and gate on the user's okay first.
+2. **The brief and spawn follow
+   @.claude/harness/procedures/self_improvement.md unchanged** -- one targeted
+   change per invocation, surface the returned diff and drift warnings, and
+   the one-level drift cascade. This step is a new CALLER of that procedure,
+   exactly as the retired subcommand was; it does not modify it, extend it,
+   or substitute its own version of any step.
+3. **Targets: the self-improver's jurisdiction** -- `commands/`, `agents/`,
+   `hooks/`, `harness/` -- including this orchestrator command itself.
+   `.claude/preferences.md` stays out of jurisdiction, always.
+4. **Observations-driven passes start from `docs/observations.md`.** When the
+   user asks for a pass over accumulated observations, read the file, count
+   the tags mechanically, and compose the brief from what is actually there.
+   Handled items are dispositioned by APPENDED lines, as before -- the file
+   is append-only.
+5. **No marker, no fresh session, no checkout.** There is no
+   `improve_session.json` and no fresh-session requirement. The standing
+   restriction is unchanged: never `git checkout` or `git switch` in the
+   harness repo -- the observed collision was a checkout removing files
+   underneath a concurrently running session. The self-improver commits on
+   whatever branch is already checked out and pushes main commits
+   immediately, per its own Rule 4.
+6. **No hot-reload promise.** An amendment to command, schema or procedure
+   TEXT reaches the NEXT session that reads it, never a running one (see
+   "What this command does NOT do"). Hooks happen to be re-executed per tool
+   call, but do not promise hot-reload anywhere.
 
 ## Step 12 -- PLAN END
 
@@ -594,9 +600,13 @@ lives with the actor who can violate it.
 - **The Edit/Write allowlist is an ANTI-DRIFT GUARDRAIL, not a sandbox.** While
   the orchestrator session marker is in place, a hook blocks Edit / Write /
   NotebookEdit outside the state file, `docs/orchestration/`, `docs/prompts/`,
-  the session scratchpad, and two exact-file allowances -- the project-root
+  the session scratchpad, two exact-file allowances -- the project-root
   CLAUDE.md (the GC PROMOTE target) and the user-global `~/.claude/CLAUDE.md`
-  (user-ordered global-law additions). Say plainly what that is worth: a Bash heredoc
+  (user-ordered global-law additions) -- and the harness corpus at
+  `.claude/{commands,agents,hooks,harness}/` (the self-improver's
+  jurisdiction: sub-agents share this session's session_id, so the Step 11
+  spawn needs the allowance -- accepting that the orchestrator itself could
+  edit harness files too). Say plainly what that is worth: a Bash heredoc
   bypasses it entirely, and so does any other write that does not go through
   those tools. It exists to catch the orchestrator drifting into doing the
   implementation work itself, which is a mistake made by accident. It stops
