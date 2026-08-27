@@ -9,8 +9,10 @@ fail-open bug, evidence row E031).
 
 The ratified cases:
   - match          -> outside-allowlist blocks, inside-allowlist allows
-                      (incl. the two exact-file CLAUDE.md allowances:
-                      project root + user-global ~/.claude/CLAUDE.md);
+                      (incl. the two exact-file CLAUDE.md allowances --
+                      project root + user-global ~/.claude/CLAUDE.md -- and
+                      the harness corpus at .claude/{commands,agents,hooks,
+                      harness}/, the self-improver's jurisdiction);
   - mismatch       -> a foreign session's marker never constrains this one,
                       and is never consumed;
   - multi-marker   -> only markers naming this session constrain it; several
@@ -152,7 +154,7 @@ class TestOutsideAllowlistBlocks(IsolationHookEnv):
                 "src/engine.py",
                 "docs/prds/some_prd.md",
                 "README.md",
-                ".claude/commands/orchestrator.md",
+                ".claude/settings.json",
             ]:
                 with self.subTest(tool=tool_name, path=rel):
                     target = self.proj / rel
@@ -241,6 +243,45 @@ class TestClaudeMdFilesAllowed(IsolationHookEnv):
         reason = self.assert_denied(self.proj / "src" / "engine.py")
         self.assertIn("project-root CLAUDE.md", reason)
         self.assertIn("~/.claude/CLAUDE.md", reason)
+
+
+class TestHarnessCorpusAllowed(IsolationHookEnv):
+    """The harness corpus at .claude/{commands,agents,hooks,harness}/ is the
+    self-improver's jurisdiction: an orchestrator-spawned self-improver
+    shares the session_id and must be able to edit it. The four directories
+    exactly -- preferences.md, settings.json and the rest of the .claude/
+    top level stay guarded."""
+
+    def test_harness_corpus_dirs_allowed(self):
+        self.write_marker()
+        for rel in [
+            ".claude/commands/orchestrator.md",
+            ".claude/agents/self-improver.md",
+            ".claude/hooks/git_guardrails.py",
+            ".claude/harness/procedures/self_improvement.md",
+        ]:
+            for tool_name in ["Write", "Edit"]:
+                with self.subTest(path=rel, tool=tool_name):
+                    self.assert_allowed(self.proj / rel, tool_name)
+
+    def test_claude_top_level_files_still_blocked(self):
+        self.write_marker()
+        for rel in [
+            ".claude/preferences.md",
+            ".claude/settings.json",
+            ".claude/settings.local.json",
+        ]:
+            with self.subTest(path=rel):
+                self.assert_denied(self.proj / rel)
+
+    def test_unrelated_paths_still_blocked(self):
+        self.write_marker()
+        self.assert_denied(self.proj / "src" / "engine.py")
+
+    def test_deny_reason_names_the_corpus_entry(self):
+        self.write_marker()
+        reason = self.assert_denied(self.proj / ".claude" / "settings.json")
+        self.assertIn(".claude/{commands,agents,hooks,harness}/", reason)
 
 
 class TestNoMarkerRegression(IsolationHookEnv):
