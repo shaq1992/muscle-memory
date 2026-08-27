@@ -212,9 +212,9 @@ Write `none` when there is nothing to report. Do not fabricate an observation
 to fill the section.
 
 `other` is deliberately part of the vocabulary and is how the vocabulary grows:
-a tag that recurs as `other` across the observations file is the evidence an
-improve session uses to propose a new named tag. The list is not frozen at what
-was guessed when it was written.
+a tag that recurs as `other` across the observations file is the evidence a
+user-asked self-improver pass uses to propose a new named tag. The list is not
+frozen at what was guessed when it was written.
 
 ## `docs/observations.md`
 
@@ -236,11 +236,12 @@ One line per observation, in this fixed shape, so the file stays greppable:
 YYYY-MM-DD | <plan_name> | <NN or ->  | <tag> | <one-line description>
 ```
 
-The improve path reads this file and counts occurrences of a tag MECHANICALLY,
-across the WHOLE file -- the same defect appearing in two unrelated plans is
-stronger evidence of a pattern than the same defect twice in one plan. The
-fixed line shape exists to make that count mechanical rather than a judgement
-call, which is what keeps the loop cheap.
+An improvement pass -- the user asking a live orchestrator to spawn a
+self-improver over the accumulated observations -- reads this file and counts
+occurrences of a tag MECHANICALLY, across the WHOLE file -- the same defect
+appearing in two unrelated plans is stronger evidence of a pattern than the
+same defect twice in one plan. The fixed line shape exists to make that count
+mechanical rather than a judgement call, which is what keeps the loop cheap.
 
 ## The three legible terminal states
 
