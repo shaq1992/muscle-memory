@@ -15,7 +15,14 @@ NotebookEdit are confined to an allowlist:
   2. docs/orchestration/;
   3. docs/prompts/;
   4. the session scratchpad (any path with a "scratchpad" component -- it
-     lives outside the project tree and has no fixed location).
+     lives outside the project tree and has no fixed location);
+  5. the project-root CLAUDE.md (exact file, never a directory) -- a GC
+     PROMOTE batch moves a state row into it by design;
+  6. the user-global ~/.claude/CLAUDE.md (exact file; home expanded at
+     runtime) -- the user can order a global-law addition mid-plan.
+
+Entries 5 and 6 match those two files EXACTLY; any other file named
+CLAUDE.md stays outside the allowlist.
 
 FAIL-CLOSED on a corrupt marker: a marker file that cannot be parsed, or
 whose content is not a JSON object, DENIES all guarded writes -- for every
@@ -101,6 +108,20 @@ def _in_scratchpad(resolved):
     return SCRATCHPAD_COMPONENT in resolved.split(os.sep)
 
 
+def _allowed_claude_md_paths():
+    """Exact-file allowances (never directories): the project-root CLAUDE.md
+    and the user-global ~/.claude/CLAUDE.md. GC PROMOTE batches move a state
+    row into the project CLAUDE.md by design, and the user can order an
+    addition to the global file mid-plan; both are orchestrator pen-work,
+    not implementation drift. Home is expanded at runtime."""
+    return (
+        os.path.realpath(os.path.join(PROJECT_DIR, "CLAUDE.md")),
+        os.path.realpath(
+            os.path.expanduser(os.path.join("~", ".claude", "CLAUDE.md"))
+        ),
+    )
+
+
 def _scan_markers():
     """Return (matching_paths_to_markers, corrupt_paths).
 
@@ -142,7 +163,9 @@ def _allowlist_text(state_paths):
         first + "\n"
         "  2. docs/orchestration/\n"
         "  3. docs/prompts/\n"
-        "  4. the session scratchpad"
+        "  4. the session scratchpad\n"
+        "  5. the project-root CLAUDE.md (exact file)\n"
+        "  6. the user-global ~/.claude/CLAUDE.md (exact file)"
     )
 
 
@@ -214,6 +237,10 @@ def main():
             return
 
     if _in_scratchpad(resolved):
+        _allow()
+        return
+
+    if resolved in _allowed_claude_md_paths():
         _allow()
         return
 
