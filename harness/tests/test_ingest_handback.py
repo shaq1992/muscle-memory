@@ -37,9 +37,9 @@ Do the thing. Acceptance: the thing is done.
 
 | ID | Statement | Provenance | Disposition | Revisit trigger |
 |---|---|---|---|---|
-| E001 | Alpha fact about the system. | `measured` | `fact` | - |
-| E002 | Beta decision with a `code span`. | `reported` | `settled` | If re-opened. |
 | E003 | Gamma invariant holds everywhere. | `inferred` | `invariant` | - |
+| E002 | Beta decision with a `code span`. | `reported` | `settled` | If re-opened. |
+| E001 | Alpha fact about the system. | `measured` | `fact` | - |
 
 ## Open
 
@@ -162,6 +162,14 @@ class TestDeltaApply(IngestEnv):
         self.assertIn("E004", r.stdout)
         # New rows land inside ## Established, before ## Open.
         self.assertLess(text.index("New fact two."), text.index("## Open"))
+        # POSITION: stamped ADD rows insert immediately below the header
+        # separator, highest ID topmost -- ## Established is strictly
+        # decreasing E-ID order (ingest_handback.py apply_established,
+        # commit 8d8e169). A regression to bottom-append fails here.
+        sep = text.index("|---|---|---|---|---|")
+        self.assertLess(sep, text.index("| E005 |"))
+        self.assertLess(text.index("| E005 |"), text.index("| E004 |"))
+        self.assertLess(text.index("| E004 |"), text.index("| E003 |"))
 
     def test_change_replaces_row_and_keeps_id(self):
         # Prevents: a change silently re-keying or duplicating a row.
@@ -176,9 +184,10 @@ class TestDeltaApply(IngestEnv):
         self.assertIn("Beta decision, refined wording.", text)
         self.assertNotIn("Beta decision with a `code span`.", text)
         self.assertEqual(1, text.count("| E002 |"))
-        # Order preserved: E002 still sits between E001 and E003.
-        self.assertLess(text.index("| E001 |"), text.index("| E002 |"))
-        self.assertLess(text.index("| E002 |"), text.index("| E003 |"))
+        # Order preserved: E002 still sits between E003 and E001
+        # (decreasing-ID order, newest at the top).
+        self.assertLess(text.index("| E003 |"), text.index("| E002 |"))
+        self.assertLess(text.index("| E002 |"), text.index("| E001 |"))
         self.assertIn("- Next row ID: E004", text)
 
     def test_retire_hard_deletes_and_summary_names_ids(self):
@@ -317,12 +326,12 @@ class TestFlagsAndWarnings(IngestEnv):
         # Prevents: the GC trigger never firing on the row bound.
         rows = "\n".join(
             "| E{0:03d} | Fact number {0}. | `measured` | `fact` | - |".format(n)
-            for n in range(1, 82)
+            for n in range(81, 0, -1)
         )
         doc = STATE_DOC.replace(
-            "| E001 | Alpha fact about the system. | `measured` | `fact` | - |\n"
+            "| E003 | Gamma invariant holds everywhere. | `inferred` | `invariant` | - |\n"
             "| E002 | Beta decision with a `code span`. | `reported` | `settled` | If re-opened. |\n"
-            "| E003 | Gamma invariant holds everywhere. | `inferred` | `invariant` | - |",
+            "| E001 | Alpha fact about the system. | `measured` | `fact` | - |",
             rows,
         ).replace("- Next row ID: E004", "- Next row ID: E082")
         self.state.write_text(doc, encoding="utf-8")
