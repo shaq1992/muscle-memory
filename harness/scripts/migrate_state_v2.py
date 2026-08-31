@@ -6,19 +6,27 @@ Schema v2 (harness/templates/state_schema.md) adds two things this script
 installs mechanically, changing nothing else:
 
   1. an immutable ID column on the ## Established table: E + 3 zero-padded
-     digits (E001..E999), monotonic in table order, never reused;
+     digits (E001..E999), consumed in ascending order from the counter and
+     never reused, with the table kept in strictly DECREASING ID order
+     top-down -- newest rows at the top (state_schema.md, user decision
+     2026-08-31). Migrating a v1 file (rows oldest-first top-down) stamps the
+     OLDEST (topmost pre-migration) row with the LOWEST new ID, then reverses
+     the data rows so the migrated table lands newest-at-top;
   2. the ## Orchestrator log section (appended LAST), carrying the ID counter
      as a "Next row ID: ENNN" line so an ID is never reissued after a trim,
      plus an incarnation count and a dated migration note.
 
 The script is IDEMPOTENT: an already-migrated file is a no-op (exit 0), and a
-partially-stamped file (new rows appended after migration) is stamped from the
-recorded counter onward, never renumbering an existing ID. It is also the ONLY
+partially-stamped v2 file (new unstamped rows sitting at the TOP of the
+table, per the decreasing-order convention) is stamped from the recorded
+counter onward -- bottom-up, so the table stays strictly decreasing -- never
+renumbering or reordering an existing stamped row. It is also the ONLY
 sanctioned pen for applying v2 to a live state file -- it acts as its
 invoker's pen under the one-writer rule, not as a second writer.
 
 Fail-closed: on any structural surprise (missing ## Established, unparseable
-table, duplicate or out-of-range IDs, counter behind the table) it prints
+table, duplicate or out-of-range IDs, counter behind the table, or a stamping
+that would not leave the table strictly decreasing) it prints
 "FAIL <check>: <detail>" lines and exits 1 WITHOUT writing. --check reports
 what would change and never writes. Success prints an "OK: ..." line, exit 0.
 
@@ -163,10 +171,41 @@ def migrate(text):
     if header_needs_stamp:
         new_lines[header_idx] = V2_HEADER
         new_lines[separator_idx] = V2_SEPARATOR
-    for i in unstamped_idxs:
-        new_lines[i] = "| {0} {1}".format(fmt_id(counter), new_lines[i])
-        counter += 1
+        # v1 migration: rows are oldest-first top-down. Stamp in table order
+        # (the OLDEST, topmost row gets the LOWEST new ID), then reverse the
+        # data rows in place so the migrated table lands newest-at-top --
+        # strictly decreasing ID order, per state_schema.md.
+        for i in unstamped_idxs:
+            new_lines[i] = "| {0} {1}".format(fmt_id(counter), new_lines[i])
+            counter += 1
+        contents = [new_lines[i] for i in row_idxs]
+        for i, content in zip(row_idxs, reversed(contents)):
+            new_lines[i] = content
+    else:
+        # v2 table: unstamped rows sit at the TOP (newest first). Stamp them
+        # bottom-up so the topmost gets the highest new ID and the table
+        # stays strictly decreasing; stamped rows are never reordered.
+        for i in reversed(unstamped_idxs):
+            new_lines[i] = "| {0} {1}".format(fmt_id(counter), new_lines[i])
+            counter += 1
     next_id = fmt_id(counter)
+
+    # Order post-condition: whenever anything was stamped, the resulting
+    # table must be strictly decreasing top-down. Fail closed (no write)
+    # otherwise -- e.g. an unstamped row misplaced BELOW stamped rows in a
+    # v2 table. A fully-stamped file is never checked (and never reordered):
+    # a legacy increasing-order file re-run stays a byte-identical no-op.
+    if unstamped_idxs:
+        ids = []
+        for i in row_idxs:
+            m = ID_RE.match(first_cell(new_lines[i]))
+            ids.append(int(m.group(1)) if m else -1)
+        if any(a <= b for a, b in zip(ids, ids[1:])):
+            return text, "", [
+                "FAIL order: stamping would not leave '## Established' in "
+                "strictly decreasing ID order top-down (on a v2 table, "
+                "unstamped rows must sit at the TOP); refusing to write"
+            ]
 
     if log_bounds is None:
         today = datetime.date.today().isoformat()

@@ -1,9 +1,11 @@
 """Behavioral tests for the one-shot state-schema v2 migration script.
 
 migrate_state_v2.py stamps immutable row IDs (E + 3 digits) onto every
-## Established row of an orchestrated plan's state file and appends the v2
-## Orchestrator log section carrying the ID counter. Each test names the
-failure it prevents.
+## Established row of an orchestrated plan's state file -- oldest (topmost
+pre-migration) row lowest, table reversed to land newest-at-top per the
+strictly-decreasing order convention (state_schema.md, 2026-08-31) -- and
+appends the v2 ## Orchestrator log section carrying the ID counter. Each
+test names the failure it prevents.
 
 Stdlib-only. Run with: python3 -m unittest discover .claude/harness/tests
 """
@@ -87,15 +89,21 @@ class MigrateEnv(unittest.TestCase):
 
 
 class TestStampsIdsInOrder(MigrateEnv):
-    def test_stamps_ids_in_table_order(self):
-        # Prevents: rows entering v2 without stable IDs, or IDs out of order.
+    def test_stamps_oldest_lowest_and_lands_newest_at_top(self):
+        # Prevents: rows entering v2 without stable IDs, IDs stamped onto the
+        # wrong rows, or a migrated table violating the strictly-decreasing
+        # (newest-at-top) order convention.
         self.write()
         r = run_migrate(self.state)
         self.assertEqual(0, r.returncode, r.stdout + r.stderr)
         text = self.read()
+        # the OLDEST (topmost pre-migration) row gets the LOWEST new ID
         self.assertIn("| E001 | First fact about the system.", text)
         self.assertIn("| E002 | A settled decision", text)
         self.assertIn("| E003 | An invariant row after a blank line.", text)
+        # and the migrated table is strictly decreasing top-down
+        self.assertLess(text.index("| E003 |"), text.index("| E002 |"))
+        self.assertLess(text.index("| E002 |"), text.index("| E001 |"))
 
     def test_header_and_separator_rewritten(self):
         # Prevents: a malformed 4/5-column mix that positional readers misparse.
@@ -159,11 +167,13 @@ class TestPartialStamping(MigrateEnv):
         # Prevents: ID collision when new rows join an already-stamped file.
         self.write()
         run_migrate(self.state)
-        # simulate the orchestrator appending a new (unstamped) row later
+        # simulate a new (unstamped) row added later at the TOP of the table,
+        # where the decreasing-order convention says new rows go
         text = self.read()
+        anchor = V2_HEADER + "\n" + V2_SEP
         text = text.replace(
-            "## Open",
-            "| A brand new fact. | `measured` | `fact` | - |\n\n## Open",
+            anchor,
+            anchor + "\n| A brand new fact. | `measured` | `fact` | - |",
             1,
         )
         self.state.write_text(text, encoding="utf-8")
@@ -172,8 +182,54 @@ class TestPartialStamping(MigrateEnv):
         out = self.read()
         self.assertIn("| E004 | A brand new fact.", out)
         self.assertIn("Next row ID: E005", out)
-        # existing IDs unchanged
+        # existing IDs unchanged, and the table stays strictly decreasing
         self.assertIn("| E001 | First fact", out)
+        self.assertLess(out.index("| E004 |"), out.index("| E003 |"))
+        self.assertLess(out.index("| E003 |"), out.index("| E001 |"))
+
+    def test_unstamped_row_below_stamped_rows_fails_closed(self):
+        # Prevents: stamping that would silently break the decreasing order
+        # (on a v2 table, unstamped rows belong at the TOP; a bottom-appended
+        # row is a structural surprise, not something to paper over).
+        self.write()
+        run_migrate(self.state)
+        text = self.read()
+        text = text.replace(
+            "## Open",
+            "| A misplaced new fact. | `measured` | `fact` | - |\n\n## Open",
+            1,
+        )
+        self.state.write_text(text, encoding="utf-8")
+        r = run_migrate(self.state)
+        self.assertEqual(1, r.returncode)
+        self.assertIn("FAIL order", r.stdout)
+        self.assertEqual(text, self.read())
+
+
+class TestLegacyOrderNoop(MigrateEnv):
+    def test_fully_stamped_legacy_increasing_file_is_untouched(self):
+        # Prevents: a re-run scrambling a file migrated under the OLD
+        # increasing-order convention -- nothing to stamp means nothing
+        # moves, byte for byte.
+        legacy = V1_DOC.replace(V1_HEADER, V2_HEADER, 1)
+        legacy = legacy.replace("|---|---|---|---|", V2_SEP, 1)
+        legacy = legacy.replace("| First fact", "| E001 | First fact", 1)
+        legacy = legacy.replace(
+            "| A settled decision", "| E002 | A settled decision", 1
+        )
+        legacy = legacy.replace(
+            "| An invariant row", "| E003 | An invariant row", 1
+        )
+        legacy += (
+            "\n## Orchestrator log\n\n"
+            "- Incarnations: 1\n"
+            "- Next row ID: E004\n"
+        )
+        self.write(legacy)
+        r = run_migrate(self.state)
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertEqual(legacy, self.read())
+        self.assertIn("already", r.stdout.lower())
 
 
 class TestFailsClosed(MigrateEnv):
