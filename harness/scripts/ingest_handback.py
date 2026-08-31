@@ -14,9 +14,12 @@ orchestrator. It:
      the read-receipt block, and never reads ## For the next session --
      that section is the orchestrator's judgement, not the script's);
   2. applies the ## Delta marker blocks to ## Established by row ID:
-     ADD rows (`| - |` ID cell) are appended and stamped from the
-     `- Next row ID:` counter in ## Orchestrator log (bumped in the same
-     write); CHANGE rows replace the identified row in place, keeping its
+     ADD rows (`| - |` ID cell) are stamped from the `- Next row ID:`
+     counter in ## Orchestrator log (bumped in the same write) and
+     inserted at the TOP of the table, immediately below the header's
+     separator line -- ## Established is strictly decreasing E-ID order,
+     newest rows first (user decision 2026-08-31);
+     CHANGE rows replace the identified row in place, keeping its
      ID; RETIRE (IDs named on the marker line before the colon) HARD-DELETES
      the row lines -- the ID is never reused and the summary names the
      retired IDs. Scope is ESTABLISHED-ONLY: an `OPEN (orchestrator-manual):`
@@ -270,7 +273,6 @@ def apply_established(lines, delta, failures, flags, warnings):
     start, end = bounds
 
     row_idx_by_id = {}
-    last_row_idx = None
     for i in range(start, end):
         stripped = lines[i].rstrip()
         if not stripped.startswith("|"):
@@ -284,7 +286,6 @@ def apply_established(lines, delta, failures, flags, warnings):
                     cell)
             )
         row_idx_by_id[cell] = i
-        last_row_idx = i
 
     for rid in list(delta.changes) + delta.retires:
         if rid not in row_idx_by_id:
@@ -359,18 +360,30 @@ def apply_established(lines, delta, failures, flags, warnings):
     applied["retired"] = list(delta.retires)
 
     if delta.adds:
-        # Retired rows all sit at or before last_row_idx, so deleting them
-        # shifts the insertion point left by exactly len(retires).
-        if last_row_idx is not None:
-            insert_at = last_row_idx + 1 - len(delta.retires)
-        else:
-            insert_at = end
+        # ## Established is strictly DECREASING E-ID order: newest rows at
+        # the TOP (user decision 2026-08-31). Insert immediately below the
+        # header's `|---|` separator line -- computed from the separator,
+        # never from a data row, because a retire CAN delete the first data
+        # row while the separator precedes every data row and never shifts.
+        # The insertion index stays FIXED across the loop: stamping consumes
+        # the counter in ascending order, and each newly stamped row pushes
+        # the previously inserted one down, so the highest ID ends topmost
+        # and the table stays strictly decreasing top-down.
+        insert_at = None
+        for i in range(start, min(end, len(new_lines))):
+            stripped = new_lines[i].strip()
+            if stripped.startswith("|") and is_separator_row(stripped):
+                insert_at = i + 1
+                break
+        if insert_at is None:
+            # No header separator in the section: fall back to the section
+            # end, adjusted for any rows the retire pass already deleted.
+            insert_at = end - len(delta.retires)
         for line in delta.adds:
             rid = fmt_id(counter)
             rest = line[1:].split("|", 1)[1]
             stamped = "| {0} |{1}".format(rid, rest)
             new_lines.insert(insert_at, stamped)
-            insert_at += 1
             applied["added"].append(rid)
             counter += 1
         for i, line in enumerate(new_lines):
