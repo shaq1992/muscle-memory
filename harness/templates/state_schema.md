@@ -106,8 +106,12 @@ ONE table. These columns, in this order:
 | ID | Statement | Provenance | Disposition | Revisit trigger |
 
 **The ID column (schema v2).** Every row carries a short immutable ID:
-`E` plus three zero-padded digits (`E001`..`E999`), assigned in table order
-from the `Next row ID` counter in `## Orchestrator log`. IDs are MONOTONIC and
+`E` plus three zero-padded digits (`E001`..`E999`), consumed in ascending
+order from the `Next row ID` counter in `## Orchestrator log`. The table
+itself is kept in strictly DECREASING E-ID order top-down -- newest rows at
+the top (user decision 2026-08-31) -- and `harness/scripts/ingest_handback.py`
+maintains that order mechanically by inserting ADD rows immediately below the
+header's separator line. IDs are MONOTONIC and
 NEVER REUSED -- not after a row is retired, not after a trim, not ever; the
 counter lives in the log section precisely so that it survives any trim of the
 table itself. An ID names the row for every downstream mechanism (dispatch
@@ -185,16 +189,17 @@ five rows out of six is noise on every one of them.
 Write a condition, not a date: "if the vendor changes the rate limit", not
 "in two weeks". A row with no plausible trigger takes `-`.
 
-**Worked examples.** One row per disposition, showing the intended shape:
+**Worked examples.** One row per disposition, showing the intended shape
+(and the decreasing-ID order, newest at the top):
 
 | ID | Statement | Provenance | Disposition | Revisit trigger |
 |---|---|---|---|---|
-| E001 | The nightly export completes in 6-8 minutes on the current dataset. | `measured` | `fact` | If the dataset grows past ~2x its current size. |
-| E002 | Every write path stays idempotent; a replayed message must never double-apply. | `inferred` | `invariant` | - |
-| E003 | Batch size fixed at 500; larger batches were rejected for tail-latency reasons. | `measured` | `settled` | If the tail-latency budget is renegotiated. |
-| E004 | Do not call the search endpoint inside the per-item loop -- it silently truncates at 100 and the earlier attempt lost rows without erroring. | `measured` | `avoid` | If the vendor publishes pagination on that endpoint. |
-| E005 | The upstream feed has no delete events, so removals are invisible; reconcile on the weekly full snapshot instead of fixing this. | `reported` | `carry` | - |
 | E006 | Any schema change to the shared events table requires the platform team's sign-off before it is written. | - | `gate` | If ownership of that table moves. |
+| E005 | The upstream feed has no delete events, so removals are invisible; reconcile on the weekly full snapshot instead of fixing this. | `reported` | `carry` | - |
+| E004 | Do not call the search endpoint inside the per-item loop -- it silently truncates at 100 and the earlier attempt lost rows without erroring. | `measured` | `avoid` | If the vendor publishes pagination on that endpoint. |
+| E003 | Batch size fixed at 500; larger batches were rejected for tail-latency reasons. | `measured` | `settled` | If the tail-latency budget is renegotiated. |
+| E002 | Every write path stays idempotent; a replayed message must never double-apply. | `inferred` | `invariant` | - |
+| E001 | The nightly export completes in 6-8 minutes on the current dataset. | `measured` | `fact` | If the dataset grows past ~2x its current size. |
 
 **No-contradiction law.** `## Established` may NEVER hold two rows that
 contradict each other on the same subject. This law is carried over unchanged
