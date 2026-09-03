@@ -291,6 +291,12 @@ class TestClosingHookRegistrationFlaggedExtra(GuardrailEnv):
         deny = json.dumps(settings.get("permissions", {}).get("deny", []))
         self.assertIn(".env", deny, ".env read-denies must remain")
         self.assertNotIn("approvals", deny, "approvals deny rules are retired")
+        allow = settings.get("permissions", {}).get("allow", [])
+        self.assertTrue(
+            any("git push origin --delete" in entry for entry in allow),
+            "the work-unit branch-delete allow rule from bootstrap Step 6 "
+            "must remain",
+        )
 
 
 # ---------------------------------------------------------------------------
