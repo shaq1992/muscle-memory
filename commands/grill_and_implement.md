@@ -170,7 +170,10 @@ surfaces the brief, which gives them visibility for free.
 **ORCHESTRATED ONLY.** The posture is not self-derived: the dispatched task body carries
 a one-line stamp -- `TDD posture: WARRANTED` or `TDD posture: OPTIONAL` -- written by the
 orchestrator (`commands/orchestrator.md` Step 7) from that same preferences.md rule.
-Obey the stamp.
+Obey the stamp. The stamp's exact wording is enforced fail-closed at dispatch time by
+`harness/scripts/assemble_dispatch.py`'s `POSTURE_RE` and is shared with
+`commands/orchestrator.md` Step 7, so any change to it must update all three files in
+lockstep.
 
 ## Step 2 -- Write the brief
 
