@@ -158,7 +158,11 @@ marked in this exact shape:
   The orchestrator's counter stamps the real ID at ingest; a session never
   invents its own.
 - CHANGE rows carry the existing row's E-ID and are FULL replacement rows --
-  the whole row as it should now read, same five cells, same ID.
+  the whole row as it should now read, same five cells, same ID. A CHANGE row
+  carrying only the new material ERASES the rest of the row at ingest -- an
+  "(append to the existing row)" annotation is free text the script never
+  reads. A session extending a row must reproduce the ENTIRE existing
+  statement plus its addition in the replacement row.
 - RETIRE names its E-IDs on the marker line BEFORE the colon --
   `RETIRE (E012, E015): <reason>` -- and takes no table rows. IDs mentioned
   after the colon (in the reason) are never read. Retirement is HARD-DELETE:
@@ -168,6 +172,10 @@ marked in this exact shape:
   `OPEN (orchestrator-manual):`, still pre-formatted in the Open table's
   shape. The script counts these rows in its summary and NEVER applies them
   -- `## Open` is orchestrator-manual, always.
+- Table-cell text must NEVER carry a literal pipe character: the ingest
+  script parses rows by splitting on pipes, so a pipe inside a cell breaks
+  the five-cell shape and fails the ingest closed. Escaping is not the
+  convention; substitute a slash or the word "or" instead.
 - Anything else in the section -- an unmarked table row, a prose paragraph, a
   row the script cannot apply unambiguously -- FAILS the ingest closed, with
   the state file untouched.
@@ -190,7 +198,10 @@ exists rather than pushing everything through `## Delta`.
 ### `## Structural observations`
 
 Defects in the WORKFLOW MACHINERY that this session ran under -- never defects
-in the project's domain logic, and never plan-specific notes.
+in the project's domain logic, and never plan-specific notes. Project-domain
+findings misfiled here (a data-sparsity figure, a note on a project script)
+fail the line-shape parse and do not belong: they go in `## Delta` if they
+meet that bar, `## For the next session` otherwise.
 
 Closed vocabulary. Each observation is one line in the exact machine shape
 `- <tag> | <description>` -- dash, tag, pipe, short free-text description.
