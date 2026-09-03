@@ -128,12 +128,19 @@ BOTH `python3` occurrences in each hook command below (the `command -v` guard an
       "Stop": [
         { "hooks": [ { "type": "command", "command": "D=\"${CLAUDE_PROJECT_DIR:-.}\"; command -v python3 >/dev/null 2>&1 && exec python3 \"$D/.claude/hooks/enforce_phase_closing.py\" || exit 0" } ] },
         { "hooks": [ { "type": "command", "command": "D=\"${CLAUDE_PROJECT_DIR:-.}\"; command -v python3 >/dev/null 2>&1 && exec python3 \"$D/.claude/hooks/enforce_handback.py\" || exit 0" } ] }
+      ],
+      "UserPromptSubmit": [
+        { "hooks": [ { "type": "command", "command": "D=\"${CLAUDE_PROJECT_DIR:-.}\"; command -v python3 >/dev/null 2>&1 && exec python3 \"$D/.claude/hooks/arm_handback_marker.py\" || exit 0" } ] }
       ]
     }
   }
   ```
-- If it DOES exist, parse it as JSON and MERGE idempotently: add the four hook
-  registrations only if an equivalent entry is not already present; add each
+- The `UserPromptSubmit` registration exists because `arm_handback_marker.py`
+  deterministically arms the handback marker that `enforce_handback.py` keys off.
+- If it DOES exist, parse it as JSON and MERGE idempotently: add the five hook
+  registrations only if an equivalent entry is not already present (in particular,
+  a re-run on a settings.json written before the `UserPromptSubmit` entry existed
+  adds that entry without duplicating anything); add each
   `permissions.deny` and `permissions.allow` rule only if absent (create the `allow`
   list if the file has none). Preserve every other existing key and every
   user-added entry (`skillOverrides`, extra allow/deny rules, etc.) untouched. Do
