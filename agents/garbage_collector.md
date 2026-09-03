@@ -130,7 +130,10 @@ real ID from its counter). The "replaces ...; full detail in ..." marker lives
 ON the condensed row's Statement itself -- the user's 2026-08-12 hand-rolled
 pattern, and what lets a cold reader follow the chain without this batch in
 hand. Keep the strongest provenance among the replaced rows, never a stronger
-one.
+one. The condensed row's cell text must NEVER carry a literal pipe character
+-- substitute a slash or the word "or"; escaping is not the convention -- per
+the no-pipe law in `harness/templates/state_schema.md`'s Established section,
+which binds your condensed rows by name.
 
 **PROMOTE** -- a row that has become project-wide law moves to CLAUDE.md:
 
