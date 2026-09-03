@@ -130,6 +130,14 @@ never hard-blocks, because some dense rows earn their length (a billing-rule
 row carrying measured constants is the canonical example). The warn threshold
 is a prompt for judgement, not a limit.
 
+**No literal pipes in cell text.** Cell text must NEVER carry a literal pipe
+character: every consumer of these tables parses rows by splitting on pipes,
+so a pipe inside a cell breaks the row shape. Escaping is not the convention;
+substitute a slash or the word "or" instead. This binds ALL writers of state
+rows -- handback-ingested rows, orchestrator-manual rows, and the garbage
+collector's condensed rows alike -- and applies equally to the `## Open`
+table below.
+
 This single table replaces six lists that would otherwise be maintained
 separately -- pinned invariants, the do-not-re-validate green list, traps
 carried forward, limitations to carry rather than fix, established facts, and
