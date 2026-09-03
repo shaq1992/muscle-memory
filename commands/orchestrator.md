@@ -395,7 +395,13 @@ hand-editing the handback into an ingestable shape.
    retired IDs, and the retiring handback is the durable trail. Rows under an
    `OPEN (orchestrator-manual):` marker are NOT applied: the script only
    counts them in the summary, and the orchestrator applies them to `## Open`
-   by hand -- `## Open` is orchestrator-manual, always. The script also runs
+   by hand -- `## Open` is orchestrator-manual, always. Before transcribing
+   each such row, verify its cell text carries no literal pipe character --
+   substitute a slash or the word "or" -- per the no-pipe law in
+   @.claude/harness/templates/state_schema.md's Established section, which
+   applies equally to the `## Open` table: the script only counts these rows
+   and never validates their cells, so the hand transcription is the only
+   guard. The script also runs
    the STRUCTURAL side of the no-contradiction check: an incoming statement
    duplicating an existing row is FLAGGED in the summary, never resolved.
    Judging SEMANTIC contradiction stays the orchestrator's: on a flagged pair
