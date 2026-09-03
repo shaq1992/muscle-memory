@@ -109,6 +109,9 @@ BOTH `python3` occurrences in each hook command below (the `command -v` guard an
   ```json
   {
     "permissions": {
+      "allow": [
+        "Bash(git push origin --delete:*)"
+      ],
       "deny": [
         "Read(.env)",
         "Read(./.env)",
@@ -131,11 +134,20 @@ BOTH `python3` occurrences in each hook command below (the `command -v` guard an
   ```
 - If it DOES exist, parse it as JSON and MERGE idempotently: add the four hook
   registrations only if an equivalent entry is not already present; add each
-  `permissions.deny` rule only if absent. Preserve every other existing key (`allow`,
-  `skillOverrides`, etc.) untouched. Do not rewrite an existing hook command's
-  interpreter -- an already-wired project keeps its wiring.
+  `permissions.deny` and `permissions.allow` rule only if absent (create the `allow`
+  list if the file has none). Preserve every other existing key and every
+  user-added entry (`skillOverrides`, extra allow/deny rules, etc.) untouched. Do
+  not rewrite an existing hook command's interpreter -- an already-wired project
+  keeps its wiring.
 - The `.env` deny rules are load-bearing security invariants -- they must end up
   present.
+- The `git push origin --delete` allow rule exists so the orchestrated per-work-unit
+  close (git_strategy.md step 4: delete the work-unit branch, remote and local) can
+  complete autonomously -- the auto-mode permission classifier otherwise flags the
+  remote delete as destructive and blocks it. It is safe because the
+  `git_guardrails.py` PreToolUse hook independently denies every push form that
+  deletes the protected branch (`--delete main`, `-d`, `:main`, `refs/heads/main`),
+  so the allowlist can never open a path to deleting main.
 - Report: created-fresh (naming the interpreter written) / merged (list what was
   added) / already-complete.
 
