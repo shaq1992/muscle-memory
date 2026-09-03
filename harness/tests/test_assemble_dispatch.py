@@ -69,6 +69,8 @@ BODY_TEXT = """/grill_and_implement example-plan session 07 -- do the thing
 # Session 07: the thing
 
 Build the thing per the ratified design.
+
+TDD posture: OPTIONAL
 """
 
 
@@ -221,6 +223,51 @@ class TestFailClosed(AssembleDispatchEnv):
         self.assertEqual(
             "{}\n", self.manifest_path.read_text(encoding="utf-8")
         )
+
+    def test_body_without_tdd_posture_blocks(self):
+        # Prevents: the measured 2026-08-17 defect -- a dispatched prompt
+        # going out with no 'TDD posture:' stamp, forcing the receiving
+        # session to self-apply the preferences rule the orchestrator was
+        # supposed to decide (orchestrator.md Step 7: exactly one line).
+        self.body_path.write_text(
+            BODY_TEXT.replace("TDD posture: OPTIONAL\n", ""),
+            encoding="utf-8",
+        )
+        r = self.run_assembler()
+        self.assertEqual(1, r.returncode)
+        self.assertIn("TDD-posture", r.stdout)
+        self.assertIn("TDD posture: WARRANTED", r.stdout)
+        self.assertIn("TDD posture: OPTIONAL", r.stdout)
+        self.assertFalse(self.prompt_path.exists())
+        self.assertFalse(self.manifest_path.exists())
+
+    def test_body_with_illegal_posture_value_blocks(self):
+        # Prevents: a stamp carrying a value the receiving command does not
+        # recognise -- only WARRANTED and OPTIONAL are legal.
+        self.body_path.write_text(
+            BODY_TEXT.replace(
+                "TDD posture: OPTIONAL", "TDD posture: MANDATORY"
+            ),
+            encoding="utf-8",
+        )
+        r = self.run_assembler()
+        self.assertEqual(1, r.returncode)
+        self.assertIn("TDD-posture", r.stdout)
+        self.assertFalse(self.prompt_path.exists())
+        self.assertFalse(self.manifest_path.exists())
+
+    def test_body_with_duplicate_tdd_posture_blocks(self):
+        # Prevents: two contradicting stamps in one body -- the receiving
+        # session would have to pick one, which is a second author for a
+        # decision that must have exactly one.
+        self.body_path.write_text(
+            BODY_TEXT + "\nTDD posture: WARRANTED\n", encoding="utf-8"
+        )
+        r = self.run_assembler()
+        self.assertEqual(1, r.returncode)
+        self.assertIn("2 TDD-posture lines", r.stdout)
+        self.assertFalse(self.prompt_path.exists())
+        self.assertFalse(self.manifest_path.exists())
 
     def test_missing_established_section_blocks(self):
         # Prevents: extracting "rows" from a file that is not a v2 state

@@ -26,8 +26,15 @@ against this manifest.
 
 Fail-closed: on any problem (malformed or missing E-ID, missing
 ## Established table, pre-existing prompt or manifest file -- session
-numbers are never reused) it prints "FAIL <check>: <detail>" lines and exits
-1 WITHOUT writing anything. Success prints an "OK: ..." line, exit 0.
+numbers are never reused, a task body without exactly ONE TDD-posture
+line) it prints "FAIL <check>: <detail>" lines and exits 1 WITHOUT
+writing anything. Success prints an "OK: ..." line, exit 0.
+
+The TDD-posture check enforces commands/orchestrator.md Step 7: the
+authored task body must carry exactly one line reading
+"TDD posture: WARRANTED" or "TDD posture: OPTIONAL" (surrounding
+whitespace allowed); the receiving command obeys that stamp, so a
+dispatch without it forces the session to self-derive the posture.
 
 Portable: stdlib-only, ASCII, no host-project paths; every path arrives as
 an argument.
@@ -42,6 +49,8 @@ import sys
 
 ESTABLISHED_HEADING = "## Established"
 ID_RE = re.compile(r"^E\d{3}$")
+POSTURE_RE = re.compile(r"^\s*TDD posture: (?:WARRANTED|OPTIONAL)\s*$")
+POSTURE_LEGAL = "'TDD posture: WARRANTED' or 'TDD posture: OPTIONAL'"
 
 
 def first_cell(line):
@@ -182,6 +191,20 @@ def main(argv=None):
         failures.append("FAIL body: cannot read {0}: {1}".format(
             args.body, exc))
         body_text = ""
+    else:
+        posture_count = sum(
+            1 for line in body_text.splitlines() if POSTURE_RE.match(line)
+        )
+        if posture_count == 0:
+            failures.append(
+                "FAIL body: no TDD-posture line in the task body; it must "
+                "carry exactly one ({0})".format(POSTURE_LEGAL)
+            )
+        elif posture_count > 1:
+            failures.append(
+                "FAIL body: {0} TDD-posture lines in the task body; it must "
+                "carry exactly one ({1})".format(posture_count, POSTURE_LEGAL)
+            )
 
     if os.path.exists(args.out):
         failures.append(
