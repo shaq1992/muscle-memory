@@ -90,6 +90,15 @@ indistinguishable from a session that was never dispatched.
    hook is registered; the marker is inert without it. `.claude/hooks/enforce_handback.py`
    is the hook that reads it, and it removes the marker itself once the handback passes.
 
+   Normally `hooks/arm_handback_marker.py` (a UserPromptSubmit hook, registered by
+   `commands/bootstrap_to_custom_commands.md` Step 6) has ALREADY written this same marker
+   deterministically the moment the dispatched prompt was submitted, so finding it present
+   is expected. This session-side write is retained as an idempotent FALLBACK for
+   settings.json files predating that registration, and it stays unconditional --
+   rewriting the same marker is harmless. The marker's key set is a shared contract
+   between this step, `arm_handback_marker.py` and `enforce_handback.py`: any change to
+   its schema must update all three in lockstep.
+
 An orchestrated session writes a handback marker INSTEAD OF a phase-closing marker. The
 two are mutually exclusive by construction, so never write both.
 
