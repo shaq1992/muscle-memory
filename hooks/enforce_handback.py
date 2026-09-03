@@ -1,7 +1,11 @@
 """Stop-event hook enforcing the orchestrated-session handback obligation.
 
-A dispatched session writes .claude/handback_session.json when it reads a
-prompt carrying an "## Orchestration" block. This hook then blocks that
+.claude/handback_session.json is written deterministically by the companion
+UserPromptSubmit hook hooks/arm_handback_marker.py the moment the dispatched
+prompt carrying an "## Orchestration" block is SUBMITTED, before the model
+has read a word of it; the session-side write in
+commands/grill_and_implement.md Step 0a item 2 is retained as a fallback
+(re-writing the same marker is idempotent). This hook then blocks that
 session's closing turn until a schema-valid handback exists at the path the
 marker names -- and only that file: the check is scoped to the single path
 the marker names, never to any other document that happens to carry a
@@ -9,8 +13,9 @@ the marker names, never to any other document that happens to carry a
 
 That "## Orchestration" heading string is named here for documentation only.
 This hook never parses a prompt; it keys off .claude/handback_session.json
-alone. The heading itself is owned by commands/orchestrator.md Step 7, so a
-rename there means updating this docstring too.
+alone (the prompt parsing lives in arm_handback_marker.py). The heading
+itself is owned by commands/orchestrator.md Step 7, so a rename there means
+updating this docstring too.
 
 No marker, or a marker whose session_id does not match this invocation, is a
 structural no-op -- the hook allows unconditionally. Enforcement only ever
