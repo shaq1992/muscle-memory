@@ -285,6 +285,12 @@ Step 8 clears.
    stamp sets the posture ONLY; the receiving implementer derives the
    behavioral tests itself during grilling, into the quick brief's
    `## Behavioral tests` section (`commands/grill_and_implement.md` Step 2).
+
+   `harness/scripts/assemble_dispatch.py` enforces the one-stamp rule
+   fail-closed -- a body with zero or multiple posture lines aborts the
+   dispatch with nothing written -- and the stamp's exact wording is shared
+   with `commands/grill_and_implement.md` and the assembler's `POSTURE_RE`,
+   so any change to it must update all three in lockstep.
 4. **Verbatim rows only.** Single-source is about AUTHORSHIP, not physical
    uniqueness of bytes. A row copied verbatim and unedited from state, with
    state named as its source, has ONE author and cannot drift into disagreement;
