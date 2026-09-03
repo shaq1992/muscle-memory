@@ -490,7 +490,12 @@ On that word:
    never `ingest_handback.py`, whose input is a handback. A condensed row's ID
    is stamped from the `Next row ID` counter and the counter advanced in the
    same write; replaced and retired rows are HARD-DELETED -- IDs never reused,
-   the archive is the durable trail. A batch the user declines is dropped
+   the archive is the durable trail. Before transcribing any batch row into
+   the state file, verify its cell text carries no literal pipe character --
+   substitute a slash or the word "or" -- per the no-pipe law in
+   @.claude/harness/templates/state_schema.md's Established section: this
+   path bypasses `ingest_handback.py`'s fail-closed check, so the
+   transcription step is the last guard. A batch the user declines is dropped
    without residue.
 6. **Record the trim** in `## Orchestrator log`: date, batches applied, archive
    path (write-through trigger (d)).
