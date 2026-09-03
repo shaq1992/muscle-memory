@@ -32,7 +32,8 @@ self-improver flow (or upstream releases):
   agents/         -- workflow agents (self-improver, investigator, experimenter,
                      garbage_collector)
   hooks/          -- deterministic hooks: git_guardrails.py, enforce_phase_closing.py,
-                     enforce_handback.py, enforce_orchestrator_isolation.py
+                     enforce_handback.py, arm_handback_marker.py,
+                     enforce_orchestrator_isolation.py
   harness/        -- read-only-in-daily-use machinery
     USER_MANUAL.md         -- this file
     INSTALL.md             -- recipient install guide (clone or zip, then /on_board)
@@ -278,7 +279,12 @@ better reports.
 **Enforcement.** `.claude/hooks/enforce_handback.py` (Stop) blocks a dispatched
 session's closing turn until a schema-valid handback exists at the path its marker names;
 it and `enforce_phase_closing.py` are mutually exclusive by construction, reading
-different marker files. `.claude/hooks/enforce_orchestrator_isolation.py` (PreToolUse on
+different marker files. That marker, `.claude/handback_session.json`, is written
+deterministically by the companion UserPromptSubmit hook
+`hooks/arm_handback_marker.py` the moment a dispatched prompt carrying an
+`## Orchestration` block is submitted; `enforce_handback.py` reads it. The
+session-side marker write in `/grill_and_implement`'s Step 0a remains as a
+fallback for settings.json files predating the UserPromptSubmit registration. `.claude/hooks/enforce_orchestrator_isolation.py` (PreToolUse on
 Edit/Write/NotebookEdit) keeps an orchestrator session out of the implementation work --
 an anti-drift guardrail, not a sandbox: a Bash heredoc bypasses it entirely, and it is
 documented that way on purpose. Orchestrator markers are PER-PLAN
