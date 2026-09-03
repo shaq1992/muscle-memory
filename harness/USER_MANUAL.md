@@ -64,8 +64,12 @@ self-improver jurisdiction:
                      user_name, harness_push_remote) + short Verification and
                      Monitoring prose sections; consumers state a fallback when it
                      is absent (this is what makes the system portable by design)
-  settings.json   -- permissions (deny rules) + hook registration, written with the
-                     interpreter detected on YOUR machine
+  settings.json   -- permissions (env read-deny rules + an allow rule for
+                     git push origin --delete, so autonomous work-unit branch
+                     cleanup completes without a permission prompt --
+                     git_guardrails.py still blocks deleting the protected
+                     branch) + hook registration, written with the interpreter
+                     detected on YOUR machine
 CLAUDE.md         -- per-turn protective skeleton (project root; generated from the
                      skeleton template, then filled by the user)
 docs/             -- prds/, multi_phase_plans/, prompts/, learnings/, quick/,
