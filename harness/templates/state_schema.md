@@ -90,6 +90,15 @@ from the SESSION-level `Status:` line defined in
 `harness/templates/handback_schema.md`; the two vocabularies are separate and
 must never be conflated even though both fields are named `Status`.
 
+These structural facts -- the seven-section set and order, the strictly-
+decreasing E-ID convention in `## Established`, the `- Next row ID: E<NNN>`
+counter line format in `## Orchestrator log`, and the pipe-free five-column
+shape of the `## Established` and `## Open` tables -- are mechanically enforced
+by `check_state_structure` in `harness/scripts/handback_validation.py` (runnable
+on demand via `harness/scripts/validate_state.py`). That check and this template
+are a lockstep contract: any change to those facts must update BOTH in the same
+edit, or the validator and the schema silently diverge.
+
 ### `## Objective`
 
 The objective, plus its ACCEPTANCE CRITERIA, written before looking at any
