@@ -110,6 +110,22 @@ PROJECT_DIR = os.path.dirname(CLAUDE_DIR)
 MARKER_PATH = os.path.join(CLAUDE_DIR, "handback_session.json")
 PAUSE_MARKER_PATH = os.path.join(CLAUDE_DIR, "handback_pause.json")
 
+# The shared Delta-grammar / observation-line validators live in a pure,
+# no-side-effect module one directory over (the hook is in hooks/, the module
+# in harness/scripts/). Make it importable by a path computed from THIS hook's
+# own location, then import the grammar rather than re-deriving it here -- the
+# SAME parsers the ingest runs (harness/scripts/ingest_handback.py), so a
+# malformed handback is caught at the session's own close, not hand-repaired by
+# the orchestrator at ingest. Importing the module has no side effects (it only
+# compiles regexes and defines functions), so this stays safe to run on every
+# Stop event.
+sys.path.insert(0, os.path.join(CLAUDE_DIR, "harness", "scripts"))
+from handback_validation import (  # noqa: E402
+    parse_delta,
+    parse_observations,
+    section_bounds,
+)
+
 STATUS_RE = re.compile(r"^Status:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
 RECEIPT_ROWS_RE = re.compile(r"^- Rows:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
 RECEIPT_SHA_RE = re.compile(
@@ -408,6 +424,36 @@ def main():
                     )
                 )
                 return
+
+        # The three sections are present; now enforce the ## Delta
+        # marker-block grammar and the ## Structural observations line shape
+        # with the SAME shared parsers the ingest runs, slicing each section
+        # body with section_bounds and collecting the failures list exactly as
+        # ingest does. Only PARTIAL and COMPLETE reach here -- ABANDONED and
+        # OPEN never do -- so the cheap abandon path is never grammar-checked.
+        hb_lines = content.splitlines()
+        grammar_failures = []
+        delta_bounds = section_bounds(hb_lines, "## Delta")
+        if delta_bounds is not None:
+            parse_delta(
+                hb_lines[delta_bounds[0]:delta_bounds[1]], grammar_failures
+            )
+        obs_bounds = section_bounds(hb_lines, "## Structural observations")
+        if obs_bounds is not None:
+            parse_observations(
+                hb_lines[obs_bounds[0]:obs_bounds[1]], grammar_failures
+            )
+        if grammar_failures:
+            _block(
+                "Handback grammar check failed: {0} is 'Status: {1}' but its "
+                "'## Delta' / '## Structural observations' sections do not "
+                "parse. This is the SAME grammar the orchestrator ingests, so "
+                "fix it here. Apply these exact fixes verbatim, then stop "
+                "again:\n\n{2}".format(
+                    handback_path, status, "\n".join(grammar_failures)
+                )
+            )
+            return
 
     os.remove(MARKER_PATH)
     _allow()
