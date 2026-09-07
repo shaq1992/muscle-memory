@@ -57,6 +57,15 @@ from assemble_dispatch import orchestration_block  # noqa: E402
 ARM_HOOK = HARNESS_ROOT / "hooks" / "arm_handback_marker.py"
 HANDBACK_HOOK = HARNESS_ROOT / "hooks" / "enforce_handback.py"
 
+# enforce_handback.py imports the shared validators at load time from a path
+# computed off its OWN location (CLAUDE_DIR/harness/scripts), so a hook copy
+# running inside the temp tree resolves the module inside that same tree. The
+# end-to-end fixture must therefore stage the real module alongside the hook
+# copy, or the enforce_handback subprocess dies with ImportError.
+HANDBACK_VALIDATION = (
+    HARNESS_ROOT / "harness" / "scripts" / "handback_validation.py"
+)
+
 SESSION_NUMBER = "07"
 BRANCH = "{0}-session-{1}".format(PLAN_NAME, SESSION_NUMBER)
 HANDBACK_REL = "docs/orchestration/{0}/handbacks/{1}.md".format(
@@ -276,6 +285,17 @@ class TestArmedMarkerHonoredEndToEnd(ArmHookEnv):
             self.proj / ".claude" / "hooks" / "enforce_handback.py"
         )
         shutil.copyfile(str(HANDBACK_HOOK), str(self.stop_hook_copy))
+
+        # Stage the shared validator module where the hook copy's
+        # own-location relative import (CLAUDE_DIR/harness/scripts) will find
+        # it inside the isolated tree; without it the enforce_handback
+        # subprocess dies at ImportError.
+        scripts_dir = self.proj / ".claude" / "harness" / "scripts"
+        scripts_dir.mkdir(parents=True)
+        shutil.copyfile(
+            str(HANDBACK_VALIDATION),
+            str(scripts_dir / "handback_validation.py"),
+        )
 
     def stop_decision(self, session):
         r = subprocess.run(
