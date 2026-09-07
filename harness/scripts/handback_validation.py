@@ -1,10 +1,21 @@
-"""Shared handback Delta-grammar and row-shape validation.
+"""Shared handback Delta-grammar validators and state/section primitives.
 
-Pure, stdlib-only validation primitives lifted VERBATIM out of
+Pure, stdlib-only primitives lifted VERBATIM out of
 harness/scripts/ingest_handback.py so that more than one consumer can import
-the SAME grammar instead of re-deriving it: the ingest script (the
-orchestrator's pen), the handback Stop hook (hooks/enforce_handback.py), and
-a future on-demand state-structure check.
+the SAME grammar and the SAME state/section helpers instead of re-deriving
+them: the ingest script (the orchestrator's pen), the handback Stop hook
+(hooks/enforce_handback.py), and a future on-demand state-structure check.
+
+This module hosts two families:
+
+  - Delta marker-block / row-shape GRAMMAR validators (OBSERVATION_TAGS,
+    OPEN_MANUAL_MARKER, the ID/observation regexes, first_cell/cells/
+    is_separator_row/is_header_row, the Delta class, parse_delta,
+    parse_observations);
+  - shared STATE/SECTION primitives the ingest, the Stop hook, and the
+    state-structure check all need (the ESTABLISHED_HEADING / LOG_HEADING
+    section names, the ID_MAX ceiling, the NEXT_ID_RE counter regex, and the
+    fmt_id / section_bounds / normalized pure helpers).
 
 Contract of this module:
 
@@ -41,6 +52,40 @@ OPEN_MANUAL_MARKER = "OPEN (orchestrator-manual):"
 ID_RE = re.compile(r"^E(\d{3})$")
 ID_FIND_RE = re.compile(r"\bE\d{3}\b")
 OBSERVATION_RE = re.compile(r"^-\s*([A-Za-z][A-Za-z-]*)\s*\|\s*(.+)$")
+
+# Shared state/section primitives (copied VERBATIM from ingest_handback.py).
+# The section heading names and the `- Next row ID:` counter regex the ingest,
+# the Stop hook, and the state-structure check all key off of.
+ESTABLISHED_HEADING = "## Established"
+LOG_HEADING = "## Orchestrator log"
+
+NEXT_ID_RE = re.compile(r"^- Next row ID: E(\d{3})\s*$")
+ID_MAX = 999
+
+
+def fmt_id(n):
+    return "E{0:03d}".format(n)
+
+
+def section_bounds(lines, heading):
+    """(start, end) indexes of a section's body, or None if absent."""
+    start = None
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            start = i + 1
+            break
+    if start is None:
+        return None
+    end = len(lines)
+    for j in range(start, len(lines)):
+        if lines[j].startswith("## "):
+            end = j
+            break
+    return start, end
+
+
+def normalized(statement):
+    return " ".join(statement.split())
 
 
 def first_cell(line):
