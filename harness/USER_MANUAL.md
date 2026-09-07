@@ -45,7 +45,8 @@ self-improver flow (or upstream releases):
                               state_schema, handback_schema,
                               preferences_template.md
     scripts/               -- validate_prompt.py, assemble_dispatch.py,
-                              ingest_handback.py, migrate_state_v2.py,
+                              ingest_handback.py, handback_validation.py,
+                              validate_state.py, migrate_state_v2.py,
                               make_portable_zip.sh
     tests/                 -- stdlib-unittest suite for the hooks and scripts
                               (python3 -m unittest discover .claude/harness/tests)
