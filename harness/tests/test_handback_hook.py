@@ -33,6 +33,15 @@ from helpers import CLOSING_HOOK, HARNESS_ROOT, PLAN_NAME
 
 HANDBACK_HOOK = HARNESS_ROOT / "hooks" / "enforce_handback.py"
 
+# The hook imports the shared Delta-grammar / observation validators at load
+# time from a path computed off its OWN location (CLAUDE_DIR/harness/scripts),
+# so a hook copy running inside the temp tree resolves the module inside that
+# same tree. The fixture must therefore stage the real module alongside the
+# hook copy, or every hook subprocess dies with ImportError.
+HANDBACK_VALIDATION = (
+    HARNESS_ROOT / "harness" / "scripts" / "handback_validation.py"
+)
+
 SESSION_NUMBER = 7
 
 # The minimal content that unblocks the hook, exactly as the handback schema's
@@ -100,6 +109,29 @@ COMPLETE_HANDBACK = (
     "none\n"
 )
 
+# A COMPLETE handback whose ## Delta carries a bare table row with no
+# ADD/CHANGE/RETIRE marker line above it -- the exact malformed marker block
+# parse_delta rejects with a "FAIL delta:" line. Every other section is valid,
+# so the block can only come from the shared Delta grammar the hook now runs.
+MALFORMED_DELTA_HANDBACK = (
+    "Status: COMPLETE\n"
+    "\n"
+    "**Handed to this session (read receipt):**\n"
+    "- | greenlist | the fixture row |\n"
+    "\n"
+    "## Delta\n"
+    "\n"
+    "| E001 | a statement with no marker above it | a | b | c |\n"
+    "\n"
+    "## For the next session\n"
+    "\n"
+    "Nothing outstanding.\n"
+    "\n"
+    "## Structural observations\n"
+    "\n"
+    "none\n"
+)
+
 
 class HandbackHookEnv(unittest.TestCase):
     """Fixture running a COPY of enforce_handback.py in a temp project tree."""
@@ -118,6 +150,16 @@ class HandbackHookEnv(unittest.TestCase):
         shutil.copyfile(str(HANDBACK_HOOK), str(self.hook_copy))
         self.closing_hook_copy = hooks_dir / "enforce_phase_closing.py"
         shutil.copyfile(str(CLOSING_HOOK), str(self.closing_hook_copy))
+
+        # Stage the shared validator module where the hook's own-location
+        # relative import (CLAUDE_DIR/harness/scripts) will find it inside the
+        # isolated tree; without it every hook subprocess dies at ImportError.
+        scripts_dir = self.proj / ".claude" / "harness" / "scripts"
+        scripts_dir.mkdir(parents=True)
+        shutil.copyfile(
+            str(HANDBACK_VALIDATION),
+            str(scripts_dir / "handback_validation.py"),
+        )
 
         self.marker_path = self.proj / ".claude" / "handback_session.json"
         self.closing_marker_path = self.proj / ".claude" / "phase_closing.json"
@@ -337,6 +379,29 @@ class TestCompleteAllowsAndSelfDeletes(HandbackHookEnv):
                 self.assertIn(ABANDON_MINIMUM, reason)
         self.write_handback(COMPLETE_HANDBACK)
         self.assert_allowed_stop()
+
+
+class TestDeltaGrammarBlocks(HandbackHookEnv):
+    def test_malformed_delta_marker_block_blocks(self):
+        # A COMPLETE handback whose ## Delta carries a table row with no
+        # ADD/CHANGE/RETIRE marker line above it must BLOCK the close. The hook
+        # now runs the SAME shared grammar the orchestrator ingests, so the
+        # malformed marker block is caught at the session's own close (the
+        # verbatim "FAIL delta:" line) rather than hand-repaired at ingest.
+        self.write_marker()
+        self.write_handback(MALFORMED_DELTA_HANDBACK)
+        reason = self.assert_blocked(reason_contains="FAIL delta:")
+        self.assertIn(ABANDON_MINIMUM, reason)
+        self.assertTrue(self.marker_path.exists())
+
+    def test_well_formed_complete_still_allows(self):
+        # The control that proves the grammar check does not over-block: a
+        # well-formed COMPLETE (Delta 'none', observations 'none') still closes
+        # and self-deletes its marker, exactly as before the grammar check.
+        self.write_marker()
+        self.write_handback(COMPLETE_HANDBACK)
+        self.assert_allowed_stop()
+        self.assertFalse(self.marker_path.exists())
 
 
 class TestMarkersMutuallyExclusive(HandbackHookEnv):
