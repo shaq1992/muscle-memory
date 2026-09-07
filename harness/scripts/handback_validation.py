@@ -4,7 +4,8 @@ Pure, stdlib-only primitives lifted VERBATIM out of
 harness/scripts/ingest_handback.py so that more than one consumer can import
 the SAME grammar and the SAME state/section helpers instead of re-deriving
 them: the ingest script (the orchestrator's pen), the handback Stop hook
-(hooks/enforce_handback.py), and a future on-demand state-structure check.
+(hooks/enforce_handback.py), and the on-demand state-structure check
+(check_state_structure, hosted here).
 
 This module hosts two families:
 
@@ -15,7 +16,13 @@ This module hosts two families:
   - shared STATE/SECTION primitives the ingest, the Stop hook, and the
     state-structure check all need (the ESTABLISHED_HEADING / LOG_HEADING
     section names, the ID_MAX ceiling, the NEXT_ID_RE counter regex, and the
-    fmt_id / section_bounds / normalized pure helpers).
+    fmt_id / section_bounds / normalized pure helpers), PLUS the whole-file
+    state-structure validator itself (check_state_structure) that checks the
+    seven-section order, E-ID uniqueness and strictly-decreasing order, the
+    ID counter, and pipe-free table rows against the structure DEFINED in
+    harness/templates/state_schema.md -- that template and this check are a
+    lockstep contract, exactly as the Delta grammar is with
+    harness/templates/handback_schema.md.
 
 Contract of this module:
 
@@ -233,3 +240,149 @@ def parse_observations(body_lines, failures):
             continue
         out.append((tag, desc))
     return out
+
+
+def check_state_structure(lines):
+    """Structure-check an orchestration state file, PURELY.
+
+    `lines` is the state file split into lines with NO trailing newlines.
+    Returns a list of "FAIL state: ..." strings -- empty when the file is
+    well-formed. Does NO file I/O, NO printing and NEVER exits: the caller
+    owns fail-closed, exactly like every other validator in this module.
+
+    The structure enforced is DEFINED in harness/templates/state_schema.md
+    (this check and that template are a lockstep contract). It verifies:
+
+      1. the SEVEN sections are present, unique, and in the fixed order;
+      2. ## Established carries no duplicate E-IDs;
+      3. ## Established E-IDs run in strictly DECREASING order top-down
+         (newest at the top);
+      4. the '- Next row ID: E<NNN>' counter in ## Orchestrator log parses
+         and exceeds the highest E-ID in ## Established;
+      5. every data row in ## Established and ## Open is pipe-clean (splits
+         into exactly 5 cells -- more signals an embedded literal pipe).
+    """
+    failures = []
+
+    # Section names in their fixed order (state_schema.md "Structure").
+    state_sections = [
+        "## Objective",
+        ESTABLISHED_HEADING,
+        "## Open",
+        "## Next",
+        "## Maybe",
+        "## Dispatched",
+        LOG_HEADING,
+    ]
+
+    # (1) Seven sections present, unique, and in order.
+    first_idx = {}
+    counts = {}
+    for idx, line in enumerate(lines):
+        s = line.strip()
+        if s in state_sections:
+            counts[s] = counts.get(s, 0) + 1
+            if s not in first_idx:
+                first_idx[s] = idx
+    for h in state_sections:
+        c = counts.get(h, 0)
+        if c == 0:
+            failures.append(
+                "FAIL state: required section heading {0!r} is missing".format(
+                    h)
+            )
+        elif c > 1:
+            failures.append(
+                "FAIL state: section heading {0!r} appears {1} times (each "
+                "section must appear exactly once)".format(h, c)
+            )
+    present_in_file_order = sorted(first_idx, key=lambda h: first_idx[h])
+    expected_present = [h for h in state_sections if h in first_idx]
+    if present_in_file_order != expected_present:
+        failures.append(
+            "FAIL state: sections are out of order -- found {0}, expected "
+            "order {1}".format(present_in_file_order, expected_present)
+        )
+
+    # (2)+(3) ## Established E-IDs: unique and strictly decreasing top-down.
+    est_ids = []
+    est_bounds = section_bounds(lines, ESTABLISHED_HEADING)
+    if est_bounds is not None:
+        start, end = est_bounds
+        seen = set()
+        ids_in_order = []
+        for i in range(start, end):
+            s = lines[i].strip()
+            if not s.startswith("|"):
+                continue
+            if is_separator_row(s) or is_header_row(s):
+                continue
+            cell = first_cell(s)
+            if not ID_RE.match(cell):
+                continue
+            if cell in seen:
+                failures.append(
+                    "FAIL state: duplicate E-ID {0} in {1}".format(
+                        cell, ESTABLISHED_HEADING)
+                )
+            seen.add(cell)
+            ids_in_order.append(cell)
+        est_ids = ids_in_order
+        for earlier, later in zip(ids_in_order, ids_in_order[1:]):
+            n_earlier = int(ID_RE.match(earlier).group(1))
+            n_later = int(ID_RE.match(later).group(1))
+            if n_earlier <= n_later:
+                failures.append(
+                    "FAIL state: {0} is not strictly greater than {1} in {2} "
+                    "-- rows must run in strictly DECREASING E-ID order "
+                    "top-down (newest at the top)".format(
+                        earlier, later, ESTABLISHED_HEADING)
+                )
+                break
+
+    # (4) Counter consistency: '- Next row ID: E<NNN>' > highest E-ID.
+    counter = None
+    log_bounds = section_bounds(lines, LOG_HEADING)
+    if log_bounds is not None:
+        for i in range(log_bounds[0], log_bounds[1]):
+            m = NEXT_ID_RE.match(lines[i].strip())
+            if m:
+                counter = int(m.group(1))
+                break
+    if counter is None:
+        failures.append(
+            "FAIL state: no parseable '- Next row ID: E<NNN>' counter line "
+            "in {0}".format(LOG_HEADING)
+        )
+    elif est_ids:
+        top = max(int(ID_RE.match(r).group(1)) for r in est_ids)
+        if counter <= top:
+            failures.append(
+                "FAIL state: counter {0} does not exceed the highest E-ID "
+                "{1} in {2} -- the counter must name the NEXT id to "
+                "assign".format(fmt_id(counter), fmt_id(top),
+                                 ESTABLISHED_HEADING)
+            )
+
+    # (5) No literal pipes: every data row of ## Established and ## Open
+    # must split into exactly 5 cells; more means an embedded pipe.
+    for heading in (ESTABLISHED_HEADING, "## Open"):
+        bounds = section_bounds(lines, heading)
+        if bounds is None:
+            continue
+        for i in range(bounds[0], bounds[1]):
+            s = lines[i].strip()
+            if not s.startswith("|"):
+                continue
+            if is_separator_row(s) or is_header_row(s):
+                continue
+            n = len(cells(s))
+            if n > 5:
+                failures.append(
+                    "FAIL state: row in {0} splits into {1} cells (expected "
+                    "5) -- a literal pipe in cell text breaks the row shape; "
+                    "use a slash or 'or' instead: {2!r}".format(
+                        heading, n, s[:80])
+                )
+
+    return failures
