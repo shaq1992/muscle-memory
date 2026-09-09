@@ -81,6 +81,7 @@ needs no rewiring.
 Create (idempotent) at the project root:
 ```
 mkdir -p docs/prds docs/multi_phase_plans docs/learnings docs/prompts docs/quick
+mkdir -p docs/orchestration
 mkdir -p docs/comms/incoming docs/comms/outgoing
 mkdir -p context
 ```
