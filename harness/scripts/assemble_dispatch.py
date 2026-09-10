@@ -3,6 +3,7 @@
 Usage: python3 .claude/harness/scripts/assemble_dispatch.py
            --state <state_file> --body <body_file> --plan <plan_name>
            --session <NN> --branch <branch> --rows E001,E002,... --out <prompt_path>
+           [--accumulation-branch <branch>]
 
 Run from the PROJECT ROOT with project-relative paths: the --state value is
 echoed VERBATIM into the prompt's "State file:" field, and the reading
@@ -16,7 +17,19 @@ Step 7; the receiving command detects the block's PRESENCE, so its shape is
 load-bearing -- and writes the per-session dispatch manifest to
 <state_dir>/<plan_name>/dispatches/<NN>.json in the same run:
 
-    {"plan_name", "session_number", "row_ids", "prompt_path", "prompt_sha256"}
+    {"plan_name", "session_number", "row_ids", "accumulation_branch",
+     "prompt_path", "prompt_sha256"}
+
+--accumulation-branch names the branch the plan's sessions are cut from and
+merge back into; it defaults to integration/<plan_name>, and a plan that
+declares a different one (e.g. fix/<name>) as a settled state-file row
+passes it on every dispatch. It is ALWAYS emitted, both as the Branch
+field's "(cut from <accumulation branch>)" continuation line and as the
+"- **Accumulation branch:** <branch>" field on its own line immediately
+after it. The field is read by commands/grill_and_implement.md (absent ->
+integration/<plan_name>, for older prompts); hooks/arm_handback_marker.py
+parses only the Branch field and ignores it. A change to its spelling must
+update orchestrator.md Step 7 and grill_and_implement.md in lockstep.
 
 prompt_sha256 is the SHA-256 (lowercase hex) over the EXACT BYTES of the
 prompt file as written, so the manifest matches the prompt by construction.
@@ -27,8 +40,12 @@ against this manifest.
 Fail-closed: on any problem (malformed or missing E-ID, missing
 ## Established table, pre-existing prompt or manifest file -- session
 numbers are never reused, a task body without exactly ONE TDD-posture
-line) it prints "FAIL <check>: <detail>" lines and exits 1 WITHOUT
-writing anything. Success prints an "OK: ..." line, exit 0.
+line, an invalid --accumulation-branch value) it prints
+"FAIL <check>: <detail>" lines and exits 1 WITHOUT writing anything.
+Success prints an "OK: ..." line, exit 0.
+
+The --accumulation-branch value must be non-empty, contain no whitespace
+and no "..", and must not start with "-" or end with "/" or ".lock".
 
 The TDD-posture check enforces commands/orchestrator.md Step 7: the
 authored task body must carry exactly one line reading
@@ -116,8 +133,36 @@ def extract_rows(state_text, row_ids, failures):
     return rows
 
 
-def orchestration_block(state_path, plan, session, branch, row_lines):
-    """The fixed ## Orchestration block per orchestrator.md Step 7."""
+def default_accumulation_branch(plan):
+    """The plan's accumulation branch when none is declared."""
+    return "integration/{0}".format(plan)
+
+
+def accumulation_branch_problems(value):
+    """Reasons the --accumulation-branch value is unusable ([] if valid)."""
+    if not value:
+        return ["is empty"]
+    problems = []
+    if any(ch.isspace() for ch in value):
+        problems.append("contains whitespace")
+    if ".." in value:
+        problems.append("contains '..'")
+    if value.startswith("-"):
+        problems.append("starts with '-'")
+    if value.endswith("/"):
+        problems.append("ends with '/'")
+    if value.endswith(".lock"):
+        problems.append("ends with '.lock'")
+    return problems
+
+
+def orchestration_block(state_path, plan, session, branch, row_lines,
+                        accumulation_branch=None):
+    """The fixed ## Orchestration block per orchestrator.md Step 7.
+
+    accumulation_branch None -> integration/<plan> (the default)."""
+    if accumulation_branch is None:
+        accumulation_branch = default_accumulation_branch(plan)
     lines = [
         "## Orchestration",
         "",
@@ -126,7 +171,8 @@ def orchestration_block(state_path, plan, session, branch, row_lines):
             plan, session
         ),
         "- **Branch:** {0}".format(branch),
-        "  (cut from integration/{0})".format(plan),
+        "  (cut from {0})".format(accumulation_branch),
+        "- **Accumulation branch:** {0}".format(accumulation_branch),
         "- **Rows this session must obey:**",
     ]
     for row in row_lines:
@@ -151,9 +197,23 @@ def main(argv=None):
                         help="comma-separated row E-IDs, e.g. E001,E003")
     parser.add_argument("--out", required=True,
                         help="prompt file path to write")
+    parser.add_argument("--accumulation-branch", default=None,
+                        help="branch sessions are cut from and merge into "
+                             "(default: integration/<plan>)")
     args = parser.parse_args(argv)
 
     failures = []
+
+    if args.accumulation_branch is None:
+        accumulation_branch = default_accumulation_branch(args.plan)
+    else:
+        accumulation_branch = args.accumulation_branch
+    for problem in accumulation_branch_problems(accumulation_branch):
+        failures.append(
+            "FAIL args: --accumulation-branch {0!r} {1}".format(
+                accumulation_branch, problem
+            )
+        )
 
     try:
         session = "{0:02d}".format(int(args.session))
@@ -236,7 +296,7 @@ def main(argv=None):
         body_text.rstrip("\n")
         + "\n\n"
         + orchestration_block(args.state, args.plan, session, args.branch,
-                              row_lines)
+                              row_lines, accumulation_branch)
     )
     prompt_bytes = prompt_text.encode("utf-8")
 
@@ -251,6 +311,7 @@ def main(argv=None):
         "plan_name": args.plan,
         "session_number": session,
         "row_ids": row_ids,
+        "accumulation_branch": accumulation_branch,
         "prompt_path": args.out,
         "prompt_sha256": digest,
     }
