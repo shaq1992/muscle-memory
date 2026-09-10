@@ -88,9 +88,15 @@ words gets no entry.
   contract added silently. The prompt writer copies the block VERBATIM; the plan
   is kept true at every phase close by the document-reconciliation step, so the
   verbatim copy is simply correct.
+- **accumulation branch** -- The branch an orchestrated plan's sessions cut from and
+  merge back into: `integration/<plan_name>` by default, or a pre-existing branch the plan
+  declares in a settled state row (e.g. `fix/<name>` cut from a team branch). Carried to
+  each session by the `## Orchestration` block's `Accumulation branch:` field; a declared
+  branch is never created by Claude.
 - **integration branch** -- `integration/<plan_name>`, cut from the default branch
   in a plan's first phase; the single accumulation point all phase branches merge
   into, kept off the protected branch until the plan-end PR is merged by the USER.
+  For orchestrated plans it is the default accumulation branch (see accumulation branch).
 - **shakedown PR** -- A trivial micro-PR (scratch branch, one throwaway commit,
   `gh pr create`, user merges via `! gh pr merge`, branch cleaned up) run once to
   prove the full PR loop end-to-end before any real work depends on it.
