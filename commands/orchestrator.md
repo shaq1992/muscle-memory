@@ -133,10 +133,13 @@ replying:
 - `## Orchestrator log` seeds its two required lines: `- Incarnations: 1` and
   `- Next row ID: E001`.
 
-Initialising the plan does not create any branch. The integration branch is cut
-by the plan's first work unit under the per-work-unit flow in
-@.claude/harness/procedures/git_strategy.md; the orchestrator's only git actions
-are the plan-end push and pull request in Step 12.
+Initialising the plan does not create any branch. The plan's accumulation branch --
+`integration/<plan_name>` by default -- is cut by the plan's first work unit under the
+per-work-unit flow in @.claude/harness/procedures/git_strategy.md. A plan may instead
+declare a PRE-EXISTING accumulation branch (e.g. `fix/<name>` cut from a team branch)
+as a `settled` row in `## Established` naming the branch and its base; every dispatch
+then passes it (Step 7). The orchestrator never creates a declared branch. Its only git
+actions are the push and pull request of Step 12.
 
 ## Step 4 -- RESUME (a state file exists)
 
@@ -229,16 +232,22 @@ Step 8 clears.
      --state docs/orchestration/<plan_name>_state.md \
      --body <task_body_file> --plan <plan_name> --session <NN> \
      --branch <plan_name>-session-<NN> --rows E006,E007,... \
+     --accumulation-branch <branch> \
      --out "docs/prompts/$(date +%d%m%y)/<plan_name>_session_<NN>_prompt.md"
    ```
+
+   `--accumulation-branch` is omitted for the default `integration/<plan_name>`,
+   and passed on EVERY dispatch when the state file carries a settled
+   accumulation-branch row -- a dispatch that forgets it silently builds on the
+   wrong branch.
 
    The script extracts the named rows VERBATIM from the state file
    (fail-closed on a missing E-ID), appends the fixed `## Orchestration`
    block below, and writes the manifest to
    `docs/orchestration/<plan_name>/dispatches/<NN>.json` -- session number,
-   row IDs, and the SHA-256 of the prompt file's exact bytes, so the
-   manifest matches the prompt by construction. That hash is what the
-   session's read receipt is verified against
+   row IDs, the accumulation branch, and the SHA-256 of the prompt file's
+   exact bytes, so the manifest matches the prompt by construction. That hash
+   is what the session's read receipt is verified against
    (`harness/templates/handback_schema.md`); a prompt hand-edited after
    assembly is a different dispatch and fails verification by design, so on
    any change to the body, re-run the assembler rather than editing the
@@ -255,7 +264,8 @@ Step 8 clears.
    - **State file:** docs/orchestration/<plan_name>_state.md
    - **Handback:** docs/orchestration/<plan_name>/handbacks/<NN>.md
    - **Branch:** <plan_name>-session-<NN>
-     (cut from integration/<plan_name>)
+     (cut from <accumulation branch>)
+   - **Accumulation branch:** <integration/<plan_name>, or the plan's declared branch>
    - **Rows this session must obey:**
      | <verbatim row copied from the state file's Established table> |
      | ... |
@@ -264,15 +274,17 @@ Step 8 clears.
    The `Branch:` field's VALUE is read VERBATIM as a branch name by the
    receiving command, so nothing but the branch name may appear in it -- which
    is why the "cut from" clause sits outside the value, on its own continuation
-   line.
+   line. The `Accumulation branch:` value is read the same way: the session
+   cuts from it and merges back into it, and STOPS if a non-default
+   accumulation branch does not exist on origin.
 
    The receiving command is `/grill_and_implement`: it detects the block's
    PRESENCE and switches out of its standalone quick lane into orchestrated
    mode, so a renamed heading silently drops it back into standalone, where it
    would open a pull request. What comes back is a session that worked on the
-   branch the block names and merged into `integration/<plan_name>`, opening no
-   pull request of its own, per the orchestrated-no-self-PR rule in the plan-end
-   PR flow of @.claude/harness/procedures/git_strategy.md.
+   branch the block names and merged into the block's accumulation branch,
+   opening no pull request of its own, per the orchestrated-no-self-PR rule in
+   the plan-end PR flow of @.claude/harness/procedures/git_strategy.md.
 
    The rows are the relevant do-not-re-validate entries, pinned invariants and
    gates, FILTERED to what this session actually touches. Filtering is the
@@ -558,10 +570,18 @@ There is no `is_final_phase` analogue under progressive disclosure -- by
 construction nothing knows in advance which session is the last. The ONLY signal
 is the user's declaration that the plan is done.
 
-On that declaration:
+**Accumulation-branch PR before plan end.** When the plan declares a non-default
+accumulation branch, the user may ask for a PR at ANY time. On that ask: run
+git_strategy.md's active-account check, push the accumulation branch, open a PR
+from it onto the base named in its settled row (never the protected branch unless
+that IS the base) using the same title/body convention, and record the PR link in
+`## Orchestrator log`. The plan does NOT end and the header `Status:` is
+unchanged. The user merges; the orchestrator never runs `gh pr merge`.
 
-1. Push the integration branch and open the pull request per the plan-end PR
-   flow in @.claude/harness/procedures/git_strategy.md -- including its
+On the user's declaration that the plan is done:
+
+1. Push the accumulation branch and open the pull request onto its base per the
+   plan-end PR flow in @.claude/harness/procedures/git_strategy.md -- including its
    active-account check and its title/body convention. Nothing about that flow
    is special-cased here.
 2. Record the PR link in the state file.
@@ -570,7 +590,7 @@ On that declaration:
    schema.
 4. The USER merges. The orchestrator never runs `gh pr merge`.
 
-If the user withholds the merge, the plan still ends: the integration branch and
+If the user withholds the merge, the plan still ends: the accumulation branch and
 the open PR are its durable artifacts, and the state file still carries its
 terminal status so a later resume does not re-dispatch against finished work.
 
