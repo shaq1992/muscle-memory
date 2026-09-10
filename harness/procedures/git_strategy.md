@@ -34,8 +34,16 @@ branch rules for orchestrated work.
   it -- phases and orchestrated sessions alike. It is the plan's single
   accumulation point; the protected branch is never touched by Claude at any
   point.
-- **Work-unit branches**, always cut from the integration branch and merged
-  back into it:
+- **Declared accumulation branch (orchestrated plans only).** An orchestrated plan may
+  replace `integration/<plan_name>` with a PRE-EXISTING branch -- e.g. `fix/<name>` cut
+  from a team branch -- declared as a `settled` row in its state file naming the branch
+  and its base. It takes every role the integration branch has in this procedure; the
+  orchestrator passes it on each dispatch through the `## Orchestration` block's
+  `Accumulation branch:` field. Claude never creates a declared branch: a session STOPS if
+  it is missing on origin. Canonical multi-phase plans always use `integration/<plan_name>`.
+  "Accumulation branch" below means whichever of the two is in force.
+- **Work-unit branches**, always cut from the plan's accumulation branch and
+  merged back into it:
   - **Phase branches:** `<plan_name>-phase-<NN>` -- one per phase of a
     canonical multi-phase plan. Example: `example-plan-phase-04`.
   - **Session branches:** `<plan_name>-session-<NN>` -- one per session
@@ -94,15 +102,17 @@ The same four steps run for a phase and for an orchestrated session; read
 "work unit" as whichever applies.
 
 1. If this is the plan's FIRST work unit: from the default branch, create and
-   push `integration/<plan_name>`.
+   push `integration/<plan_name>`. (Skipped when a declared accumulation branch
+   is in force -- it already exists.)
 2. Create the work-unit branch (`<plan_name>-phase-<NN>` or
-   `<plan_name>-session-<NN>`) from the integration branch.
+   `<plan_name>-session-<NN>`) from the accumulation branch.
 3. Implement; commit on the work-unit branch (commit rules per
    closing_sequence.md).
-4. Autonomous close: push the work-unit branch -> merge it into the integration
+4. Autonomous close: push the work-unit branch -> merge it into the accumulation
    branch with git defaults and an explicit message
-   (`git merge <work-unit-branch> -m "merge: ..."`) -> push integration ->
-   delete the work-unit branch, remote and local (`git branch -d`, never `-D`).
+   (`git merge <work-unit-branch> -m "merge: ..."`) -> push the accumulation
+   branch -> delete the work-unit branch, remote and local (`git branch -d`,
+   never `-D`).
 
 **Zero-commit rule:** a work unit whose branch ends with zero commits skips
 push/merge/delete entirely and reports "no tracked changes this phase"
@@ -110,20 +120,26 @@ plainly, naming why (e.g. all deliverables were config-only or gitignored).
 
 ## Plan-end PR flow
 
-At the final phase, after the last phase branch has merged into integration:
+At the final phase (for an orchestrated plan: on the user's declaration that
+the plan is done), after the last work-unit branch has merged into the
+accumulation branch:
 
 1. **Autonomous:** first confirm the ACTIVE gh account owns the target repo
    (`gh auth status`), and switch to the owning account if it is not active --
    `gh pr create` follows gh's active account, so with multiple github.com
    identities a plan can otherwise open the PR as the wrong user (repo-local
    push pinning does NOT cover it; see "Identity and auth (gh)" below). Then
-   push the integration branch and open the PR with `gh pr create` (title/body
-   convention below).
+   push the accumulation branch and open the PR from it onto its base with
+   `gh pr create` (title/body convention below). The base is the protected
+   branch for `integration/<plan_name>`, or the base named in a declared
+   branch's settled row. With a declared accumulation branch the user may ask
+   for this PR at ANY time, not only at plan end; the orchestrator opens it on
+   their word and the plan continues.
 2. **User-gated:** the USER merges the PR with a `!`-prefixed
    `gh pr merge <n> --merge` -- the keystroke IS the approval, and its output
    lands in the transcript. Claude NEVER runs `gh pr merge` (the guardrail
    hook flat-blocks it). If the user withholds the merge, the plan ends with
-   the integration branch and the open PR as the durable artifacts.
+   the accumulation branch and the open PR as the durable artifacts.
 3. **Merge defaults** (preference keys): `merge_style: merge-commit`
    (`gh pr merge --merge`) and `retain_integration_branch: true` -- the
    integration branch is kept after the merge; deletion is per-plan opt-in.
@@ -143,14 +159,17 @@ or any other Claude-run path to the protected branch.
 
 **Orchestrated sessions open NO PR of their own.** A session dispatched by an
 orchestrated plan ends at step 4 of the per-work-unit flow: it merges into
-`integration/<plan_name>` and stops there. It does not run `gh pr create`, and
-it never targets the protected branch. This holds even when the session is run
-by a command that opens a PR in its standalone mode -- the presence of an
+the plan's accumulation branch (`integration/<plan_name>` unless a declared one
+is in force) and stops there. It does not run `gh pr create`, and it never
+targets the protected branch. This holds even when the session is run by a
+command that opens a PR in its standalone mode -- the presence of an
 orchestration block in the prompt replaces that command's own PR step with the
-merge into integration. Only the PLAN opens a PR, once, at the end, per the
-flow above. Without this rule every session of a long-running plan would open
-its own PR to the protected branch, flooding review and destroying the
-single-accumulation-point model the integration branch exists to provide.
+merge into the accumulation branch. Only the PLAN opens a PR, per the flow
+above -- once at plan end, or earlier on the user's word when a declared
+accumulation branch is in force. Without this rule every session of a
+long-running plan would open its own PR to the protected branch, flooding
+review and destroying the single-accumulation-point model the accumulation
+branch exists to provide.
 
 **PR title/body convention:** the no-AI-attribution law extends verbatim to PR
 titles and bodies. Fixed body shape: the plan one-liner; a bulleted phase list
@@ -160,7 +179,7 @@ phase branch was cut, so per-phase merge commits may not exist); a pointer note
 that detailed history lives in the per-phase commits.
 
 **Post-PR fixes:** review changes requested on an open plan PR are committed
-directly on the integration branch and pushed; the open PR tracks them -- no
+directly on the accumulation branch and pushed; the open PR tracks them -- no
 fix-phase ceremony.
 
 ## Interactive commands (TTY rule)
