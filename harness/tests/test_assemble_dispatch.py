@@ -7,6 +7,13 @@ block owned by commands/orchestrator.md Step 7 -- and writes the per-session
 dispatch manifest (docs/orchestration/<plan>/dispatches/<NN>.json) in the
 same run, so the manifest hash matches the prompt by construction.
 
+The accumulation branch (--accumulation-branch, default integration/<plan>)
+is the branch sessions are cut from and merge back into. It is emitted in the
+Branch field's "(cut from <branch>)" continuation line, in the
+"- **Accumulation branch:** <branch>" field line immediately after it, and
+in the manifest's "accumulation_branch" key. An invalid value fails closed
+with nothing written.
+
 Each case states the failure it prevents.
 
 Stdlib-only. Run with: python3 -m unittest discover .claude/harness/tests
@@ -103,7 +110,8 @@ class AssembleDispatchEnv(unittest.TestCase):
             / "{0}.json".format(self.SESSION)
         )
 
-    def run_assembler(self, rows="E001,E003", session=None, extra=None):
+    def run_assembler(self, rows="E001,E003", session=None, extra=None,
+                      accumulation_branch=None):
         argv = [
             sys.executable,
             str(ASSEMBLE_DISPATCH),
@@ -116,6 +124,12 @@ class AssembleDispatchEnv(unittest.TestCase):
             "--rows", rows,
             "--out", str(self.prompt_path),
         ]
+        if accumulation_branch is not None:
+            # The '=' form, so values starting with '-' (and the empty
+            # string) reach argparse as the option's value.
+            argv.append(
+                "--accumulation-branch={0}".format(accumulation_branch)
+            )
         if extra:
             argv.extend(extra)
         return subprocess.run(
@@ -144,7 +158,8 @@ class TestPositiveAssembly(AssembleDispatchEnv):
         )
         self.assertIn(
             "- **Branch:** {0}-session-07\n"
-            "  (cut from integration/{0})\n".format(PLAN_NAME),
+            "  (cut from integration/{0})\n"
+            "- **Accumulation branch:** integration/{0}\n".format(PLAN_NAME),
             text,
         )
         self.assertIn("- **Rows this session must obey:**\n", text)
@@ -178,6 +193,43 @@ class TestPositiveAssembly(AssembleDispatchEnv):
         self.assertEqual("07", manifest["session_number"])
         self.assertEqual(["E001", "E003"], manifest["row_ids"])
         self.assertEqual(str(self.prompt_path), manifest["prompt_path"])
+        digest = hashlib.sha256(
+            self.prompt_path.read_bytes()
+        ).hexdigest()
+        self.assertEqual(digest, manifest["prompt_sha256"])
+
+    def test_default_accumulation_branch_in_block_and_manifest(self):
+        # Prevents: a flag-less dispatch (every plan that never declared an
+        # accumulation branch) losing the integration/<plan> default -- the
+        # session would be cut from, and merge back into, the wrong branch.
+        r = self.run_assembler()
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        expected = "integration/{0}".format(PLAN_NAME)
+        text = self.prompt_path.read_text(encoding="utf-8")
+        self.assertIn("  (cut from {0})\n".format(expected), text)
+        self.assertIn(
+            "- **Accumulation branch:** {0}\n".format(expected), text
+        )
+        manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(expected, manifest["accumulation_branch"])
+
+    def test_custom_accumulation_branch_emitted_everywhere(self):
+        # Prevents: a declared accumulation branch (e.g. fix/<name>) reaching
+        # only some of its three emission sites, so the prompt and manifest
+        # disagree on where the session is cut from and merges back into.
+        custom = "fix/diff-bag-identity"
+        r = self.run_assembler(accumulation_branch=custom)
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        text = self.prompt_path.read_text(encoding="utf-8")
+        self.assertIn(
+            "- **Branch:** {0}-session-07\n"
+            "  (cut from {1})\n"
+            "- **Accumulation branch:** {1}\n".format(PLAN_NAME, custom),
+            text,
+        )
+        self.assertNotIn("integration/{0}".format(PLAN_NAME), text)
+        manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(custom, manifest["accumulation_branch"])
         digest = hashlib.sha256(
             self.prompt_path.read_bytes()
         ).hexdigest()
@@ -277,6 +329,26 @@ class TestFailClosed(AssembleDispatchEnv):
         self.assertEqual(1, r.returncode)
         self.assertIn("Established", r.stdout)
         self.assertFalse(self.prompt_path.exists())
+
+    def test_invalid_accumulation_branch_writes_nothing(self):
+        # Prevents: a malformed accumulation branch (whitespace, '..', a
+        # leading '-' that git would read as an option, a trailing '/' or
+        # '.lock', or nothing at all) being baked into a dispatch the
+        # session would then fail to cut from or merge into.
+        for value in [
+            "fix/has space",
+            "fix/../x",
+            "fix/x/",
+            "fix/x.lock",
+            "-fix",
+            "",
+        ]:
+            with self.subTest(accumulation_branch=value):
+                r = self.run_assembler(accumulation_branch=value)
+                self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+                self.assertIn("--accumulation-branch", r.stdout)
+                self.assertFalse(self.prompt_path.exists())
+                self.assertFalse(self.manifest_path.exists())
 
 
 if __name__ == "__main__":
