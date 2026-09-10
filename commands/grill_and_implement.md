@@ -1,5 +1,5 @@
 ---
-description: Lightweight grill-then-build for tasks too small for a full plan. Runs a mixed-style grilling capped at 8 questions, writes a short brief to docs/quick/<slug>_brief.md, gates go/no-go via AskUserQuestion, then implements in-session. Standalone it ends in a quick/<slug> PR the user merges; handed a prompt carrying an "## Orchestration" block it runs as an orchestrated session instead -- session branch, merge into integration, handback, no PR.
+description: Lightweight grill-then-build for tasks too small for a full plan. Runs a mixed-style grilling capped at 8 questions, writes a short brief to docs/quick/<slug>_brief.md, gates go/no-go via AskUserQuestion, then implements in-session. Standalone it ends in a quick/<slug> PR the user merges; handed a prompt carrying an "## Orchestration" block it runs as an orchestrated session instead -- session branch, merge into the plan's accumulation branch, handback, no PR.
 argument-hint: <slug> <task> (slug = short kebab-case slug max 20 chars; then describe the task + @file references) -- or paste an orchestrated session prompt
 ---
 
@@ -25,12 +25,14 @@ that happens to exist, not the user saying the work belongs to a plan.
   state file, an orchestrator, or a handback. A user who has never seen an orchestrator
   can run this command end to end.
 - **`## Orchestration` block present -> ORCHESTRATED.** The block is written by
-  `/orchestrator` and carries four bolded fields, spelled exactly `State file:`,
-  `Handback:`, `Branch:` and `Rows this session must obey:`. Those fields are the
+  `/orchestrator` and carries five bolded fields, spelled exactly `State file:`,
+  `Handback:`, `Branch:`, `Accumulation branch:` and `Rows this session must obey:`.
+  `Accumulation branch:` is optional when READING: a prompt assembled before it existed
+  omits it, and its absence means `integration/<plan_name>`. Those fields are the
   session's parameters; read them, do not re-derive them. The orchestrated additions are
   listed inline below, each marked ORCHESTRATED ONLY.
 
-The heading string `## Orchestration`, those four bolded field names, and the convention
+The heading string `## Orchestration`, those five bolded field names, and the convention
 that a field's value is BARE (the value on its own line, annotations on continuation
 lines) are all OWNED by `commands/orchestrator.md` Step 7 item 3, which writes them. Any
 change to the heading, to a field name, or to that value convention must land in both
@@ -54,10 +56,11 @@ see which lane they are in.
 `## Orchestration` block, not from the first token: the block's `Branch:` field carries
 them as `<plan_name>-session-<NN>`. The branch name is EXACTLY the text on that field's
 own line and nothing else -- any indented continuation beneath it (such as the
-`(cut from integration/<plan_name>)` parenthetical) is annotation, never part of the
+`(cut from <accumulation branch>)` parenthetical) is annotation, never part of the
 name. If the invocation also supplies a slug token, it names only the brief; absent one,
 derive the brief slug from the plan name and session number and normalize it the same
-way.
+way. The accumulation branch is EXACTLY the text on the `Accumulation branch:` field's own
+line (same bare-value convention); absent that field, it is `integration/<plan_name>`.
 
 ## Step 0a -- Open the handback (ORCHESTRATED ONLY)
 
@@ -261,20 +264,26 @@ protected-branch invariant of `harness/procedures/git_strategy.md` holds identic
 **ORCHESTRATED ONLY** -- steps 1 and 3-4 above are REPLACED by the per-work-unit flow in
 `harness/procedures/git_strategy.md`, whose work unit here is the dispatched session:
 
-1. Cut the branch named in the block's `Branch:` field, `<plan_name>-session-<NN>`, from
-   `integration/<plan_name>` -- never from the default branch. Take the name from that
-   field's own line only, per "Parse arguments" above.
+1. Resolve the accumulation branch (see "Parse arguments"). If it is the default
+   `integration/<plan_name>` and does not yet exist on origin, create it from the default
+   branch and push it (the first-work-unit rule, unchanged). If it is ANY OTHER branch and
+   `git ls-remote --heads origin <branch>` is empty, STOP: report that the declared
+   accumulation branch is missing and must be created by the user -- never create it and
+   never guess its base. Then `git fetch origin` and cut the branch named in the block's
+   `Branch:` field, `<plan_name>-session-<NN>`, from `origin/<accumulation branch>` --
+   never from the default branch. Take the name from that field's own line only, per
+   "Parse arguments" above.
 2. Implement and commit on it exactly as above (same commit rules, same no-attribution
    law).
-3. Close by merging into `integration/<plan_name>` and stop there: push the session
-   branch, merge with git defaults and an explicit `-m "merge: ..."` message, push
-   integration, delete the session branch remote and local with `git branch -d` (never
-   `-D`).
-4. **Open NO pull request.** Only the PLAN opens a PR, once, at the end, and the
-   orchestrator does it. If every session opened its own PR the protected branch would be
-   flooded and the integration branch would stop being the plan's single accumulation
-   point. The zero-commit rule applies unchanged: a session branch with no commits skips
-   push/merge/delete and says so plainly.
+3. Close by merging into the accumulation branch and stop there: push the session branch,
+   check out the accumulation branch, merge with git defaults and an explicit
+   `-m "merge: ..."` message, push the accumulation branch, delete the session branch
+   remote and local with `git branch -d` (never `-D`).
+4. **Open NO pull request.** Only the PLAN opens a PR -- from the accumulation branch, by
+   the orchestrator, on the user's word. If every session opened its own PR the review
+   queue would flood and the accumulation branch would stop being the plan's single
+   accumulation point. The zero-commit rule applies unchanged: a session branch with no
+   commits skips push/merge/delete and says so plainly.
 
 ## Step 5 -- Close
 
