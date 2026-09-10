@@ -253,8 +253,9 @@ Schemas: `harness/templates/state_schema.md` (state) and
    STUB at `docs/orchestration/<plan_name>/handbacks/<NN>.md` in minute one -- whose
    read receipt (row-ID list + prompt hash) is verified against the dispatch manifest
    by the closing hook -- works on
-   `<plan_name>-session-<NN>` cut from `integration/<plan_name>`, merges back into
-   integration, and opens NO PR of its own.
+   `<plan_name>-session-<NN>` cut from the plan's accumulation branch
+   (`integration/<plan_name>` by default, or a declared branch such as `fix/<name>`),
+   merges back into it, and opens NO PR of its own.
 4. **You tell the orchestrator the session came back.** Ingest is mechanical: the
    handback's `## Delta` rows arrive pre-formatted in the state file's own table shape,
    and the ingest script (`harness/scripts/ingest_handback.py`, the orchestrator's pen)
@@ -267,8 +268,9 @@ Schemas: `harness/templates/state_schema.md` (state) and
    promote batches, the orchestrator snapshots state to a dated archive FIRST, and you
    gate every batch -- promotion of a row into CLAUDE.md most explicitly of all.
 5. **You declare the plan done.** Only then does the plan-end PR flow fire -- push
-   integration, `gh pr create`, and you merge. Nothing else in this lane ever reaches
-   the protected branch.
+   the accumulation branch, `gh pr create` onto its base, and you merge. (A declared
+   accumulation branch's PR may also be asked for at any time.) Nothing else in this
+   lane ever reaches the protected branch.
 
 **The three legible end states** come from writing the handback stub early: a stub still
 at `Status: OPEN` is positive evidence the session DIED, `PARTIAL` / `ABANDONED` is an
@@ -325,7 +327,10 @@ block.
   the default branch in its first WORK UNIT; work-unit branches branch from it and
   merge back into it -- `<plan_name>-phase-NN` for a canonical phase,
   `<plan_name>-session-NN` for an orchestrated session, zero-padded either way. The
-  protected branch is never touched by Claude.
+  protected branch is never touched by Claude. An orchestrated plan may instead
+  declare a pre-existing accumulation branch (e.g. `fix/<name>` cut from a team
+  branch) as a settled state row; sessions then cut from and merge into it, and the
+  user can ask for its PR onto that base at any time.
 - **Autonomous phase-level git** (no confirmation): push the phase branch, merge into
   integration with git defaults and an explicit `-m "merge: ..."` message, push
   integration, delete the phase branch (remote + local, `-d`). A phase branch with
