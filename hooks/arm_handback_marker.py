@@ -19,6 +19,27 @@ harness/scripts/assemble_dispatch.py (orchestration_block()); this hook is a
 third consumer of it, so a change to the heading or the bolded field names
 there must update the regexes here in lockstep.
 
+The text scanned is the literal submitted prompt PLUS the contents of every
+prompt file it references. Dispatched prompts are routinely handed over as a
+FILE REFERENCE -- the submitted text is just
+"/grill_and_implement @docs/prompts/<date>/<plan>_session_<NN>_prompt.md" --
+and while Claude Code expands that @-mention into the model's context, the
+UserPromptSubmit payload's "prompt" is the literal text, so a hook that
+scanned only the literal text saw a path, found no block, and exited 0
+silently, leaving the session un-armed (observed: plan ai-mirror-demo
+session 01, 2026-09-15; the Step 0a fallback wrote the marker that time,
+which is exactly the model obedience this hook exists to replace). A
+reference is (a) an "@"-prefixed path token, plain (@docs/prompts/x.md) or
+quoted (@"path with spaces.md"), or (b) any bare token ending in ".md" that
+resolves to an existing file. Relative paths resolve against
+CLAUDE_PROJECT_DIR when set, else the payload's "cwd" when present, else the
+parent of this .claude/ directory. Each file is read as UTF-8 (undecodable
+bytes replaced) and capped at REF_FILE_MAX_BYTES; missing, unreadable,
+non-file or oversized-beyond-cap references are skipped silently. Segments
+are scanned in order -- the literal prompt first, then each referenced file
+in order of first mention -- and the FIRST segment yielding a usable block
+(heading plus Handback field) wins; any later block is ignored.
+
 On trigger, the hook writes .claude/handback_session.json with EXACTLY the
 key names and value shapes that grill_and_implement.md Step 0a item 2
 specifies and enforce_handback.py reads:
@@ -86,6 +107,80 @@ BRANCH_VALUE_RE = re.compile(r"^(.+)-session-(\d+)$")
 HANDBACK_PATH_RE = re.compile(
     r"(?:^|/)docs/orchestration/([^/]+)/handbacks/([^/]+)\.md$"
 )
+
+# Prompt-file references embedded in the submitted text (see the docstring's
+# Trigger paragraph). Quoted forms first so a path with spaces is captured
+# whole; the plain form takes the run of non-whitespace after the "@".
+AT_REF_QUOTED_RE = re.compile(r"@\"([^\"]+)\"|@'([^']+)'")
+AT_REF_PLAIN_RE = re.compile(r"(?<![\w@])@([^\s\"'@]+)")
+# Trailing punctuation a path token may carry in prose ("see @x.md," etc.).
+REF_STRIP_CHARS = "\"'`<>()[]{},;:!?"
+# Per-file read cap for referenced prompt files (~1 MB).
+REF_FILE_MAX_BYTES = 1000000
+
+
+def _project_dir(payload):
+    """Base directory for relative references: CLAUDE_PROJECT_DIR when set,
+    else the payload's cwd when present, else the parent of .claude/."""
+    env_dir = os.environ.get("CLAUDE_PROJECT_DIR")
+    if isinstance(env_dir, str) and env_dir.strip():
+        return env_dir
+    cwd = payload.get("cwd")
+    if isinstance(cwd, str) and cwd.strip():
+        return cwd
+    return os.path.dirname(CLAUDE_DIR)
+
+
+def _referenced_paths(prompt):
+    """Candidate prompt-file references in order of first mention, deduped:
+    "@"-prefixed tokens (quoted or plain) and bare tokens ending in ".md".
+    Existence is NOT checked here; _read_referenced_files skips misses."""
+    if not isinstance(prompt, str):
+        return []
+    found = []
+    seen = set()
+
+    def add(candidate):
+        candidate = candidate.strip().strip(REF_STRIP_CHARS)
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            found.append(candidate)
+
+    # Position-ordered so "first block found" is well defined across forms.
+    hits = []
+    for m in AT_REF_QUOTED_RE.finditer(prompt):
+        hits.append((m.start(), m.group(1) or m.group(2)))
+    # Blank out the quoted spans so the plain form cannot re-match the
+    # leading word of a quoted path.
+    unquoted = AT_REF_QUOTED_RE.sub(lambda m: " " * len(m.group(0)), prompt)
+    for m in AT_REF_PLAIN_RE.finditer(unquoted):
+        hits.append((m.start(), m.group(1)))
+    for m in re.finditer(r"\S+", unquoted):
+        token = m.group(0).strip(REF_STRIP_CHARS)
+        if token.startswith("@"):
+            continue
+        if token.lower().endswith(".md"):
+            hits.append((m.start(), token))
+    for _, candidate in sorted(hits, key=lambda h: h[0]):
+        add(candidate)
+    return found
+
+
+def _read_referenced_files(prompt, base_dir):
+    """Contents of each referenced file that resolves to a readable regular
+    file, in reference order. Every failure is skipped silently."""
+    texts = []
+    for ref in _referenced_paths(prompt):
+        try:
+            path = ref if os.path.isabs(ref) else os.path.join(base_dir, ref)
+            if not os.path.isfile(path):
+                continue
+            with open(path, "rb") as f:
+                data = f.read(REF_FILE_MAX_BYTES)
+            texts.append(data.decode("utf-8", errors="replace"))
+        except Exception:
+            continue
+    return texts
 
 
 def _parse_orchestration(prompt):
@@ -158,7 +253,15 @@ def main():
         # a Stop event; arming with one would be noise, not enforcement.
         sys.exit(0)
 
-    parsed = _parse_orchestration(payload.get("prompt"))
+    prompt = payload.get("prompt")
+    # Literal prompt first, then each referenced prompt file in order of
+    # first mention; the first segment with a usable block wins.
+    parsed = _parse_orchestration(prompt)
+    if parsed is None:
+        for text in _read_referenced_files(prompt, _project_dir(payload)):
+            parsed = _parse_orchestration(text)
+            if parsed is not None:
+                break
     if parsed is None:
         sys.exit(0)
 
