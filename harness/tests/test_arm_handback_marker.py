@@ -17,13 +17,23 @@ Cases and the failures they prevent:
    marker with exactly the keys session_id / plan_name / session_number /
    handback_path (a shape drift between assembler and arming hook would
    silently disarm every dispatched session);
-2. Branch-less fallback -- plan/NN derive from the conventional handback
+2. file-referenced dispatch -- the real dispatch form is
+   "/grill_and_implement @docs/prompts/<date>/<plan>_session_<NN>_prompt.md",
+   where the submitted text carries NO block and the block lives in the
+   @-referenced file; the hook must resolve the reference (against
+   CLAUDE_PROJECT_DIR, else the payload's cwd) and arm from the file's
+   contents, and a reference to a missing file must stay a silent no-op
+   (a regression to literal-only scanning would pass the exact-block case
+   yet disarm every orchestrated session -- the 2026-09-15 ai-mirror-demo
+   session-01 miss);
+3. Branch-less fallback -- plan/NN derive from the conventional handback
    path when the Branch field is absent or unparseable (a hand-edited
    dispatch must still arm);
-3. silent no-ops -- no block, no Handback field, no session_id, and
-   malformed stdin all exit 0 writing NOTHING (an arming hook that ever
-   blocks or delays a prompt is worse than no hook);
-4. end-to-end -- a marker written by the arming hook is honored by a copy
+4. silent no-ops -- no block, no Handback field, no session_id, a bare
+   .md token naming a missing file, and malformed stdin all exit 0
+   writing NOTHING (an arming hook that ever blocks or delays a prompt is
+   worse than no hook);
+5. end-to-end -- a marker written by the arming hook is honored by a copy
    of enforce_handback.py (blocks a missing handback for the same
    session_id), proving the writer and the reader agree on the schema.
 
@@ -39,6 +49,7 @@ Stdlib-only. Run with: python3 -m unittest discover .claude/harness/tests
 """
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -130,16 +141,32 @@ class ArmHookEnv(unittest.TestCase):
         shutil.copyfile(str(ARM_HOOK), str(self.hook_copy))
         self.marker_path = self.proj / ".claude" / "handback_session.json"
 
-    def run_arm(self, stdin_text):
+    def isolated_env(self):
+        """Subprocess env pinning CLAUDE_PROJECT_DIR to the temp project.
+
+        The variable is inherited from a live Claude Code session and is
+        the hook's FIRST choice for resolving relative prompt-file
+        references; left alone it would make a fixture's relative
+        reference resolve against the REAL project instead of the temp
+        tree."""
+        env = {
+            k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"
+        }
+        env["CLAUDE_PROJECT_DIR"] = str(self.proj)
+        return env
+
+    def run_arm(self, stdin_text, env=None):
         """Feed raw stdin to the arming hook; assert the universal posture:
         exit 0, no stdout, no stderr (on UserPromptSubmit, stdout would be
-        injected as context and a non-zero exit would block the prompt)."""
+        injected as context and a non-zero exit would block the prompt).
+        env, when given, replaces the subprocess environment."""
         r = subprocess.run(
             [sys.executable, str(self.hook_copy)],
             input=stdin_text,
             capture_output=True,
             text=True,
             timeout=30,
+            env=env,
         )
         self.assertEqual(
             0, r.returncode,
@@ -208,6 +235,66 @@ class TestExactBlockArms(ArmHookEnv):
         self.assertEqual(HANDBACK_REL, marker["handback_path"])
 
 
+class TestReferencedPromptFile(ArmHookEnv):
+    """The real dispatch form: the submitted text is a one-line command
+    @-referencing a prompt file; the ## Orchestration block lives ONLY in
+    that file."""
+
+    PROMPT_REL = "docs/prompts/150926/{0}_session_{1}_prompt.md".format(
+        PLAN_NAME, SESSION_NUMBER
+    )
+
+    def _dispatch_payload(self, prompt_rel):
+        return json.dumps(
+            {
+                "session_id": self.SESSION,
+                "cwd": str(self.proj),
+                "prompt": "/grill_and_implement @{0}".format(prompt_rel),
+            }
+        )
+
+    def test_at_reference_arms_from_file(self):
+        # Prevents: a regression to literal-only scanning -- the submitted
+        # text has no block, so an unresolved @-reference means NO marker
+        # for every orchestrated session (the 2026-09-15 ai-mirror-demo
+        # session-01 miss) while the exact-block case still passes.
+        prompt_file = self.proj / self.PROMPT_REL
+        prompt_file.parent.mkdir(parents=True)
+        prompt_file.write_text(dispatched_prompt(), encoding="utf-8")
+
+        self.run_arm(
+            self._dispatch_payload(self.PROMPT_REL), env=self.isolated_env()
+        )
+
+        self.assertTrue(
+            self.marker_path.exists(),
+            "@-referenced prompt file did not arm a marker",
+        )
+        marker = self.read_marker()
+        self.assertEqual(
+            MARKER_KEYS, set(marker),
+            "marker key set must match the three-file contract exactly",
+        )
+        self.assertEqual(self.SESSION, marker["session_id"])
+        self.assertEqual(PLAN_NAME, marker["plan_name"])
+        self.assertEqual(SESSION_NUMBER, marker["session_number"])
+        self.assertEqual(HANDBACK_REL, marker["handback_path"])
+
+    def test_missing_reference_is_silent_no_op(self):
+        # Prevents: a dangling @-reference (typo, unwritten prompt file)
+        # blocking or polluting the prompt -- the fail-soft posture holds
+        # for the file-resolution path too. run_arm asserts exit 0 with
+        # no stdout/stderr.
+        self.run_arm(
+            self._dispatch_payload("docs/prompts/nope/missing.md"),
+            env=self.isolated_env(),
+        )
+        self.assertFalse(
+            self.marker_path.exists(),
+            "a missing @-referenced file must not arm a marker",
+        )
+
+
 class TestBranchlessFallback(ArmHookEnv):
     def _strip_branch(self, prompt):
         lines = [
@@ -261,17 +348,28 @@ class TestSilentNoOps(ArmHookEnv):
         blank_session_id = json.dumps(
             {"session_id": "   ", "prompt": dispatched_prompt()}
         )
+        # A bare .md token (no "@") is also treated as a prompt-file
+        # reference; one naming a missing file must be skipped silently.
+        bare_md_missing_file = json.dumps(
+            {"session_id": self.SESSION,
+             "cwd": str(self.proj),
+             "prompt": "docs/prompts/nope/missing.md"}
+        )
+        # Pin CLAUDE_PROJECT_DIR to the temp tree so no case can resolve a
+        # relative reference against the real project.
+        env = self.isolated_env()
         for label, stdin_text in [
             ("no-orchestration-block", no_block),
             ("block-without-handback-field", block_without_handback),
             ("missing-session-id", missing_session_id),
             ("blank-session-id", blank_session_id),
+            ("bare-md-token-missing-file", bare_md_missing_file),
             ("malformed-stdin", "this is not json {"),
             ("non-dict-payload", json.dumps(["not", "a", "dict"])),
             ("empty-stdin", ""),
         ]:
             with self.subTest(case=label):
-                self.run_arm(stdin_text)
+                self.run_arm(stdin_text, env=env)
                 self.assertFalse(
                     self.marker_path.exists(),
                     "{0} must not arm a marker".format(label),
