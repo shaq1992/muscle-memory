@@ -14,6 +14,15 @@ Branch field's "(cut from <branch>)" continuation line, in the
 in the manifest's "accumulation_branch" key. An invalid value fails closed
 with nothing written.
 
+The invocation line (--command, default grill_and_implement) is the line
+telling the session that opens the prompt WHICH command to run. The written
+body carries exactly one "/grill_and_implement" line: an existing one (bare
+or with arguments) is kept; otherwise the bare line is inserted directly
+after the body's first H1, blank-line separated, ahead of the TDD-posture
+stamp. A body invoking another command, or the requested one twice, fails
+closed; "--command none" inserts and checks nothing. The inserted line is
+covered by prompt_sha256 by construction.
+
 Each case states the failure it prevents.
 
 Stdlib-only. Run with: python3 -m unittest discover .claude/harness/tests
@@ -21,6 +30,7 @@ Stdlib-only. Run with: python3 -m unittest discover .claude/harness/tests
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -79,6 +89,11 @@ Build the thing per the ratified design.
 
 TDD posture: OPTIONAL
 """
+
+# The same body WITHOUT its invocation line: H1 first, posture stamp last.
+BODY_NO_INVOCATION = BODY_TEXT.split("\n", 2)[2]
+
+INVOCATION_LINE_RE = re.compile(r"^/grill_and_implement", re.MULTILINE)
 
 
 class AssembleDispatchEnv(unittest.TestCase):
@@ -349,6 +364,132 @@ class TestFailClosed(AssembleDispatchEnv):
                 self.assertIn("--accumulation-branch", r.stdout)
                 self.assertFalse(self.prompt_path.exists())
                 self.assertFalse(self.manifest_path.exists())
+
+
+class TestInvocationLine(AssembleDispatchEnv):
+    def test_missing_line_inserted_after_h1_before_posture(self):
+        # Prevents: a dispatched prompt opened via "@docs/prompts/..." that
+        # never names the command to run -- the ## Orchestration block says
+        # only that the session is orchestrated, so the session would have
+        # to guess; and an insertion landing anywhere but directly after the
+        # H1 (e.g. after the posture stamp) drifting from the layout
+        # orchestrator.md Step 7 documents.
+        self.body_path.write_text(BODY_NO_INVOCATION, encoding="utf-8")
+        r = self.run_assembler()
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        expected_lead = (
+            b"# Session 07: the thing\n"
+            b"\n"
+            b"/grill_and_implement\n"
+            b"\n"
+            b"Build the thing per the ratified design.\n"
+            b"\n"
+            b"TDD posture: OPTIONAL\n"
+            b"\n"
+            b"## Orchestration\n"
+        )
+        written = self.prompt_path.read_bytes()
+        self.assertTrue(
+            written.startswith(expected_lead),
+            "prompt leading bytes:\n{0!r}".format(written[:len(expected_lead)]),
+        )
+        text = written.decode("utf-8")
+        self.assertEqual(1, len(INVOCATION_LINE_RE.findall(text)))
+
+    def test_existing_line_with_arguments_kept_not_duplicated(self):
+        # Prevents: a body the orchestrator already wrote with the full
+        # "/grill_and_implement <plan> session <NN> -- <title>" line gaining
+        # a second, bare copy -- two invocation lines in one prompt.
+        r = self.run_assembler()
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        text = self.prompt_path.read_text(encoding="utf-8")
+        self.assertEqual(1, len(INVOCATION_LINE_RE.findall(text)))
+        self.assertTrue(text.startswith(BODY_TEXT.rstrip("\n")))
+
+    def test_body_invoking_other_command_blocks(self):
+        # Prevents: a body meant for some other command being silently
+        # rewritten into a /grill_and_implement dispatch (or shipped with two
+        # different invocation lines) -- the FAIL must point at the explicit
+        # opt-out so the fix is a flag, not a hand edit of the body.
+        self.body_path.write_text(
+            BODY_TEXT.replace(
+                "/grill_and_implement example-plan",
+                "/other_command example-plan",
+            ),
+            encoding="utf-8",
+        )
+        r = self.run_assembler()
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        fail_lines = [l for l in r.stdout.splitlines() if l.startswith("FAIL")]
+        self.assertTrue(
+            any("/other_command" in l and "--command none" in l
+                for l in fail_lines),
+            r.stdout,
+        )
+        self.assertFalse(self.prompt_path.exists())
+        self.assertFalse(self.manifest_path.exists())
+
+    def test_body_invoking_command_twice_blocks(self):
+        # Prevents: two invocation lines in one body -- a second author for
+        # the single instruction telling the session what to run.
+        self.body_path.write_text(
+            BODY_TEXT + "\n/grill_and_implement\n", encoding="utf-8"
+        )
+        r = self.run_assembler()
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("2 lines invoke /grill_and_implement", r.stdout)
+        self.assertFalse(self.prompt_path.exists())
+        self.assertFalse(self.manifest_path.exists())
+
+    def test_command_none_inserts_and_checks_nothing(self):
+        # Prevents: the explicit opt-out for a non-grill_and_implement
+        # dispatch still failing on, or injecting, a /grill_and_implement
+        # line -- the body must go out exactly as authored.
+        other_body = BODY_TEXT.replace(
+            "/grill_and_implement example-plan", "/other_command example-plan"
+        )
+        self.body_path.write_text(other_body, encoding="utf-8")
+        r = self.run_assembler(extra=["--command", "none"])
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        text = self.prompt_path.read_text(encoding="utf-8")
+        self.assertEqual([], INVOCATION_LINE_RE.findall(text))
+        self.assertTrue(text.startswith(other_body.rstrip("\n")))
+        self.assertTrue(self.manifest_path.is_file())
+
+    def test_invalid_command_value_writes_nothing(self):
+        # Prevents: a mistyped --command (hyphen, space, capital, or nothing
+        # at all) being pasted into the body as a bogus "/<value>" line, or
+        # silently treated as the opt-out.
+        for value in ["Bad-Name", "grill and implement", "GRILL", ""]:
+            with self.subTest(command=value):
+                r = self.run_assembler(
+                    extra=["--command={0}".format(value)]
+                )
+                self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+                self.assertIn("--command", r.stdout)
+                self.assertFalse(self.prompt_path.exists())
+                self.assertFalse(self.manifest_path.exists())
+
+    def test_manifest_hash_covers_inserted_line(self):
+        # Prevents: a manifest hashed over the body BEFORE insertion -- the
+        # receipt check in hooks/enforce_handback.py would then reject every
+        # honest session that echoed the hash of the prompt it actually read.
+        self.body_path.write_text(BODY_NO_INVOCATION, encoding="utf-8")
+        r = self.run_assembler()
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        written = self.prompt_path.read_bytes()
+        self.assertIn(b"\n/grill_and_implement\n", written)
+        manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            hashlib.sha256(written).hexdigest(), manifest["prompt_sha256"]
+        )
+        # And the hash is NOT the pre-insertion body's prompt.
+        self.assertNotEqual(
+            hashlib.sha256(
+                BODY_NO_INVOCATION.rstrip("\n").encode("utf-8")
+            ).hexdigest(),
+            manifest["prompt_sha256"],
+        )
 
 
 if __name__ == "__main__":
