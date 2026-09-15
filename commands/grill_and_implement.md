@@ -1,6 +1,6 @@
 ---
 description: Lightweight grill-then-build for tasks too small for a full plan. Runs a mixed-style grilling capped at 8 questions, writes a short brief to docs/quick/<slug>_brief.md, gates go/no-go via AskUserQuestion, then implements in-session. Standalone it ends in a quick/<slug> PR the user merges; handed a prompt carrying an "## Orchestration" block it runs as an orchestrated session instead -- session branch, merge into the plan's accumulation branch, handback, no PR.
-argument-hint: <slug> <task> (slug = short kebab-case slug max 20 chars; then describe the task + @file references) -- or paste an orchestrated session prompt
+argument-hint: <slug> <task> (slug = short kebab-case slug max 20 chars; then describe the task + @file references) -- or paste / @-reference an orchestrated session prompt, which names this command itself
 ---
 
 Run a compressed grill-and-implement loop for the task described in $ARGUMENTS. This is
@@ -29,8 +29,12 @@ that happens to exist, not the user saying the work belongs to a plan.
   `Handback:`, `Branch:`, `Accumulation branch:` and `Rows this session must obey:`.
   `Accumulation branch:` is optional when READING: a prompt assembled before it existed
   omits it, and its absence means `integration/<plan_name>`. Those fields are the
-  session's parameters; read them, do not re-derive them. The orchestrated additions are
-  listed inline below, each marked ORCHESTRATED ONLY.
+  session's parameters; read them, do not re-derive them. A prompt assembled by
+  `harness/scripts/assemble_dispatch.py` also carries its own `/grill_and_implement`
+  line directly under its first H1 title (inserted by the assembler by default, ahead of
+  the `TDD posture:` stamp) -- that line IS the invocation, not task text: do not
+  re-invoke this command and do not read it as part of the task. The orchestrated
+  additions are listed inline below, each marked ORCHESTRATED ONLY.
 
 The heading string `## Orchestration`, those five bolded field names, and the convention
 that a field's value is BARE (the value on its own line, annotations on continuation
