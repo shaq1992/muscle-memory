@@ -233,6 +233,7 @@ Step 8 clears.
      --body <task_body_file> --plan <plan_name> --session <NN> \
      --branch <plan_name>-session-<NN> --rows E006,E007,... \
      --accumulation-branch <branch> \
+     [--command none] \
      --out "docs/prompts/$(date +%d%m%y)/<plan_name>_session_<NN>_prompt.md"
    ```
 
@@ -240,6 +241,19 @@ Step 8 clears.
    and passed on EVERY dispatch when the state file carries a settled
    accumulation-branch row -- a dispatch that forgets it silently builds on the
    wrong branch.
+
+   The script also ensures the written body carries exactly ONE
+   `/grill_and_implement` invocation line -- the `## Orchestration` block alone
+   says only that the session is orchestrated, not WHICH command to run. When
+   the authored body lacks one, the bare line `/grill_and_implement` is inserted
+   on its own line directly after the body's first H1 title, blank-line
+   separated, before the `TDD posture:` stamp; a body that already invokes it,
+   bare or followed by arguments, is left as is. A body that invokes a
+   DIFFERENT command (a `/<name>` at line start) fails closed, like the posture
+   rule. `--command none` is passed ONLY when the user explicitly says the
+   dispatch is not a grill_and_implement one: nothing is inserted and no
+   invocation line is required or checked. The orchestrator never adds the line
+   by hand and never passes `--command none` on its own judgement.
 
    The script extracts the named rows VERBATIM from the state file
    (fail-closed on a missing E-ID), appends the fixed `## Orchestration`
