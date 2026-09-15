@@ -3,14 +3,15 @@
 Usage: python3 .claude/harness/scripts/assemble_dispatch.py
            --state <state_file> --body <body_file> --plan <plan_name>
            --session <NN> --branch <branch> --rows E001,E002,... --out <prompt_path>
-           [--accumulation-branch <branch>]
+           [--accumulation-branch <branch>] [--command <name>|none]
 
 Run from the PROJECT ROOT with project-relative paths: the --state value is
 echoed VERBATIM into the prompt's "State file:" field, and the reading
 session resolves it against its own working directory.
 
 The orchestrator authors only the task body; this script writes the WHOLE
-prompt file. It extracts the requested rows VERBATIM by E-ID from the state
+prompt file. It ensures the body carries the receiving command's invocation
+line (below), extracts the requested rows VERBATIM by E-ID from the state
 file's ## Established table, appends the fixed ## Orchestration block --
 heading, field names and value convention owned by commands/orchestrator.md
 Step 7; the receiving command detects the block's PRESENCE, so its shape is
@@ -40,7 +41,8 @@ against this manifest.
 Fail-closed: on any problem (malformed or missing E-ID, missing
 ## Established table, pre-existing prompt or manifest file -- session
 numbers are never reused, a task body without exactly ONE TDD-posture
-line, an invalid --accumulation-branch value) it prints
+line, a body invoking a command other than --command, an invalid
+--accumulation-branch or --command value) it prints
 "FAIL <check>: <detail>" lines and exits 1 WITHOUT writing anything.
 Success prints an "OK: ..." line, exit 0.
 
@@ -52,6 +54,29 @@ authored task body must carry exactly one line reading
 "TDD posture: WARRANTED" or "TDD posture: OPTIONAL" (surrounding
 whitespace allowed); the receiving command obeys that stamp, so a
 dispatch without it forces the session to self-derive the posture.
+
+The invocation line (--command, default grill_and_implement) tells the
+session that opens the prompt via "@docs/prompts/..." WHICH command to run
+-- the ## Orchestration block alone says only that it is orchestrated. The
+written body carries exactly one line invoking "/<command>": an existing
+line that invokes it (bare, or followed by arguments such as
+"/grill_and_implement <plan> session <NN> -- <title>") is kept as is;
+otherwise the bare line "/<command>" is inserted on its own line directly
+after the body's first H1 title line, blank-line separated, ahead of the
+TDD-posture stamp (or as the first line when the body has no H1):
+
+    # Session 06 -- <title>
+
+    /grill_and_implement
+
+    TDD posture: WARRANTED
+
+A body that invokes a DIFFERENT command ("^/[a-z_]+" at line start), or
+invokes the requested one more than once, fails closed like the posture
+rule. "--command none" is the explicit opt-out for a dispatch that is not a
+grill_and_implement one: nothing is inserted and no invocation line is
+required or checked. The inserted line lands before the manifest hash is
+taken, so it is covered by prompt_sha256 by construction.
 
 Portable: stdlib-only, ASCII, no host-project paths; every path arrives as
 an argument.
@@ -68,6 +93,13 @@ ESTABLISHED_HEADING = "## Established"
 ID_RE = re.compile(r"^E\d{3}$")
 POSTURE_RE = re.compile(r"^\s*TDD posture: (?:WARRANTED|OPTIONAL)\s*$")
 POSTURE_LEGAL = "'TDD posture: WARRANTED' or 'TDD posture: OPTIONAL'"
+DEFAULT_COMMAND = "grill_and_implement"
+COMMAND_NONE = "none"
+COMMAND_NAME_RE = re.compile(r"^[a-z_]+$")
+# A slash-command invocation line: "/<name>" alone, or followed by
+# whitespace-separated arguments. Group 1 is the command name.
+INVOCATION_RE = re.compile(r"^/([a-z_]+)(?:\s+\S.*)?\s*$")
+H1_RE = re.compile(r"^#\s+\S")
 
 
 def first_cell(line):
@@ -156,6 +188,56 @@ def accumulation_branch_problems(value):
     return problems
 
 
+def with_invocation_line(body_text, command, failures):
+    """body_text carrying exactly one line invoking /<command>.
+
+    command None (the --command none opt-out) -> body_text unchanged, no
+    check. A body already invoking <command> (bare or with arguments) is
+    returned as is. A body invoking a DIFFERENT command, or the requested
+    one more than once, appends a FAIL line and returns body_text unchanged
+    -- the caller writes nothing on failures. Otherwise the bare line
+    "/<command>" is inserted after the first H1 line (blank-line separated
+    on both sides), or as the first line when there is no H1."""
+    if command is None:
+        return body_text
+    lines = body_text.splitlines()
+    invoked = [m.group(1) for m in map(INVOCATION_RE.match, lines) if m]
+    others = sorted(set(name for name in invoked if name != command))
+    if others:
+        failures.append(
+            "FAIL body: task body invokes {0}, not /{1}; pass --command "
+            "<name> for the intended command, or --command none for a "
+            "dispatch that is not a /{1} one".format(
+                ", ".join("/" + name for name in others), command
+            )
+        )
+        return body_text
+    if len(invoked) > 1:
+        failures.append(
+            "FAIL body: {0} lines invoke /{1} in the task body; it must "
+            "carry exactly one".format(len(invoked), command)
+        )
+        return body_text
+    if invoked:
+        return body_text
+    invocation = "/{0}".format(command)
+    insert_at = 0
+    for i, line in enumerate(lines):
+        if H1_RE.match(line):
+            insert_at = i + 1
+            break
+    block = [invocation]
+    if insert_at > 0:
+        block.insert(0, "")
+    if insert_at < len(lines) and lines[insert_at].strip():
+        block.append("")
+    new_lines = lines[:insert_at] + block + lines[insert_at:]
+    text = "\n".join(new_lines)
+    if body_text.endswith("\n"):
+        text += "\n"
+    return text
+
+
 def orchestration_block(state_path, plan, session, branch, row_lines,
                         accumulation_branch=None):
     """The fixed ## Orchestration block per orchestrator.md Step 7.
@@ -200,9 +282,27 @@ def main(argv=None):
     parser.add_argument("--accumulation-branch", default=None,
                         help="branch sessions are cut from and merge into "
                              "(default: integration/<plan>)")
+    parser.add_argument("--command", default=DEFAULT_COMMAND,
+                        help="receiving command whose invocation line "
+                             "'/<name>' the body must carry; inserted after "
+                             "the body's H1 title when absent (default: "
+                             "{0}); 'none' = insert and require nothing, "
+                             "for a dispatch that is not a /{0} one".format(
+                                 DEFAULT_COMMAND))
     args = parser.parse_args(argv)
 
     failures = []
+
+    if args.command == COMMAND_NONE:
+        command = None
+    elif COMMAND_NAME_RE.match(args.command):
+        command = args.command
+    else:
+        failures.append(
+            "FAIL args: --command {0!r} is not a command name ([a-z_]+) "
+            "or 'none'".format(args.command)
+        )
+        command = None
 
     if args.accumulation_branch is None:
         accumulation_branch = default_accumulation_branch(args.plan)
@@ -252,6 +352,7 @@ def main(argv=None):
             args.body, exc))
         body_text = ""
     else:
+        body_text = with_invocation_line(body_text, command, failures)
         posture_count = sum(
             1 for line in body_text.splitlines() if POSTURE_RE.match(line)
         )
