@@ -17,18 +17,30 @@ Every project-specific parameter comes from the contiguous `key: value` block at
 an epic or a person; if you find yourself typing one that did not come from that block or
 from the caller's instruction, stop.
 
-- `jira_site` -- the Atlassian Cloud hostname. **REQUIRED.** If the key is absent, make
-  no Jira call: halt and report that `jira_site` is missing from the preferences key block
-  and that the line to add is `jira_site: <your-site>.atlassian.net`.
+- `jira_site` -- the Atlassian Cloud hostname. **REQUIRED.** If the key is absent OR its
+  value still begins with `[` (an unfilled template placeholder from
+  `harness/templates/preferences_template.md`), make no Jira call: halt and report that
+  `jira_site` is missing or unfilled in the preferences key block and that the line to add
+  is `jira_site: <your-site>.atlassian.net`.
 - `jira_project_key` -- the default JQL scope and the project every new issue is created
   in.
 - `jira_epic_key` -- the parent of every new issue unless the caller names another parent.
 - `jira_default_issue_type` -- the issue type for new issues; default `Story` if the key is
   absent.
 
+Apply the same placeholder check to `jira_project_key` and `jira_epic_key` before any
+create call: if either value still begins with `[`, do the reads, do NOT create, and report
+the unfilled key under `## Not done`.
+
 Pass `jira_site` as the `cloudId` argument to every MCP tool. If a tool rejects it, call
 `getAccessibleAtlassianResources` ONCE, take the UUID it returns for that hostname, and use
 that as `cloudId` for the rest of the run.
+
+These four key names and their absence semantics (missing `jira_site` = halt; missing
+`jira_default_issue_type` = `Story`; the whole group omitted when the project has no Jira)
+are owned jointly with `harness/templates/preferences_template.md` and elicited by
+`commands/on_board.md` Step 4, so any rename or semantic change must update those files in
+lockstep.
 
 ## Operations
 
