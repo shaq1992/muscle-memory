@@ -94,6 +94,11 @@ own git repo, and every improvement is a versioned commit:
    during a harness plan; local `main` otherwise -- never switch branches). Message
    convention, exactly: `improve: <file> -- <summary>`. No AI attribution anywhere in the
    message, ever.
+   The commit and the `git -C .claude push origin main` must be issued as SEPARATE Bash
+   calls, never chained with `&&` in one command, because the git_guardrails.py PreToolUse
+   hook blocks the whole command when the push is disallowed and the commit would then
+   never run. After any blocked push, re-check `git -C .claude status --short` and
+   `git -C .claude log -1` before reporting a commit hash.
 3. Capture the diff for the report: `git -C .claude show <commit> --stat --patch` (or
    `git -C .claude diff HEAD~1 HEAD`).
 4. **Sync main (main-branch commits only).** If the commit landed on `main`, push it:
