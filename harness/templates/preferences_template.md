@@ -1,11 +1,16 @@
 # Preferences
 
 Single project-opinion surface, generated at `.claude/preferences.md` by
-/bootstrap and filled in by the user (or by /on-board elicitation). The
-contiguous `key: value` block below is machine-parseable (one key per line, no
-prose on the line) -- hooks and commands read it directly; inline defaults
-apply when the file is absent. The `jira_*` keys are read by
-`agents/jira_agent.md`. The self-improver never edits this file.
+/bootstrap_to_custom_commands and filled in by the user (or by /on_board
+elicitation). The contiguous `key: value` block below is machine-parseable (one
+key per line, no prose on the line) -- hooks and commands read it directly;
+inline defaults apply when the file is absent. The `jira_*` keys are read by
+`agents/jira_agent.md`; the four key names (`jira_site`, `jira_project_key`,
+`jira_epic_key`, `jira_default_issue_type`) are also elicited by
+`commands/on_board.md` Step 4 and listed in `harness/USER_MANUAL.md`, so any
+rename must update all of them in lockstep. The test fixture `BASE_PARAMS` in
+`harness/tests/helpers.py` mirrors this key block and must be extended in
+lockstep whenever a key is added here. The self-improver never edits this file.
 
 Keys ship as working defaults; change a value only if your project's
 conventions differ. Bracketed values are placeholders to fill in.
