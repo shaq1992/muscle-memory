@@ -612,7 +612,7 @@ terminal status so a later resume does not re-dispatch against finished work.
 
 These are the CALLER's obligations. The isolation law that binds the sub-agent
 itself lives in the sub-agent's own definition (`.claude/agents/investigator.md`,
-`.claude/agents/experimenter.md`) so that it applies whether or not the caller
+`.claude/agents/experimenter.md`, `.claude/agents/jira_agent.md`) so that it applies whether or not the caller
 remembered to state it -- hand-writing isolation clauses per call is the failure
 that design replaces. There is no separate delegation procedure file; each rule
 lives with the actor who can violate it.
@@ -627,6 +627,13 @@ lives with the actor who can violate it.
   scratchpad only) or WEB evidence goes to the `experimenter`. When in doubt,
   start with the investigator: it is the cheaper, narrower tool, and its
   empty-handed report is the evidence that the experimenter is warranted.
+- **Jira work.** Searches, creates, edits, comments and transitions on Jira go
+  to the `jira_agent`, which reads the `jira_*` keys from the preferences key
+  block and acts on the instruction as given, without a preview gate -- a
+  sub-agent cannot ask the user anything. So the orchestrator states the exact
+  target (issue key, status name, assignee) and obtains the user's confirmation
+  for any write BEFORE dispatching, and records the returned keys/URLs in state
+  before replying.
 - **What NOT to delegate.** Decisions, dispatch, and any write to the state
   file. The orchestrator's job is to decide and to record; a sub-agent's job is
   to find out.
