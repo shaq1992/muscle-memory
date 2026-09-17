@@ -100,12 +100,35 @@ a value. Elicit, with one line on what each key drives downstream:
 - `encoding_constraint` -- any console/encoding limits sessions must respect (offer
   "UTF-8 throughout, no constraint" as the common answer).
 
+**Jira group (optional).** Ask whether the project tracks work in Jira. These four
+`jira_*` keys are read by `agents/jira_agent.md` (the Jira sub-agent behind
+/jira_and_status_update and the orchestrator's Jira delegation), and `jira_site` is
+REQUIRED for it to run -- it halts without making a Jira call if the key is absent.
+
+- **If yes**, elicit and write all four:
+  - `jira_site` -- the Atlassian Cloud hostname (e.g. `yoursite.atlassian.net`);
+    passed as the `cloudId` to every Jira MCP call.
+  - `jira_project_key` -- the Jira project key: default JQL scope and the project
+    every new issue is created in.
+  - `jira_epic_key` -- the parent epic key for new issues.
+  - `jira_default_issue_type` -- confirm the shipped default `Story` or take the
+    project's issue type.
+- **If no**, DELETE the four `jira_*` lines from the key block entirely -- the
+  template (`harness/templates/preferences_template.md`) says to omit the whole Jira
+  group, and a bracketed placeholder left in `jira_site` would be read as a literal
+  hostname. Do not leave blank values.
+
+Either way the block stays contiguous (one `key: value` per line, no prose, no
+blank line inside it) so it remains machine-parseable.
+
 Batch related keys into single AskUserQuestion calls (max 4 questions per call) with
 sensible defaults as the recommended options. Leave the remaining git-topology keys
 at their shipped working defaults unless the user objects; edit the file with the
 answers. If an existing preferences.md was kept, skip elicitation and instead flag
-the per-project keys (interpreter, test_command, default/protected branch) for the
-user to review -- they may carry another project's values (owner-port case).
+the per-project keys (interpreter, test_command, default/protected branch,
+jira_site, jira_project_key, jira_epic_key) for the user to review -- they may
+carry another project's values (owner-port case), and on Jira keys that means
+another project's site, board, and epic.
 
 ## Step 5 -- CLAUDE.md assist (opt-in, novice-by-default)
 
