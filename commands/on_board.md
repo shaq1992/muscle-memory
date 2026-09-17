@@ -103,7 +103,8 @@ a value. Elicit, with one line on what each key drives downstream:
 **Jira group (optional).** Ask whether the project tracks work in Jira. These four
 `jira_*` keys are read by `agents/jira_agent.md` (the Jira sub-agent behind
 /jira_and_status_update and the orchestrator's Jira delegation), and `jira_site` is
-REQUIRED for it to run -- it halts without making a Jira call if the key is absent.
+REQUIRED for it to run -- it halts without making a Jira call if the key is absent or its
+value still begins with `[` (unfilled placeholder).
 
 - **If yes**, elicit and write all four:
   - `jira_site` -- the Atlassian Cloud hostname (e.g. `yoursite.atlassian.net`);
@@ -115,8 +116,8 @@ REQUIRED for it to run -- it halts without making a Jira call if the key is abse
     project's issue type.
 - **If no**, DELETE the four `jira_*` lines from the key block entirely -- the
   template (`harness/templates/preferences_template.md`) says to omit the whole Jira
-  group, and a bracketed placeholder left in `jira_site` would be read as a literal
-  hostname. Do not leave blank values.
+  group, and a bracketed placeholder left in `jira_site` makes agents/jira_agent.md halt
+  on every dispatch. Do not leave blank values.
 
 Either way the block stays contiguous (one `key: value` per line, no prose, no
 blank line inside it) so it remains machine-parseable.
