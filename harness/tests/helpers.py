@@ -38,6 +38,8 @@ PLAN_NAME = "example-plan"
 # Fixture preferences.md WITHOUT harness_push_remote; tests that need the key
 # call set_harness_push_remote() to append it. Mirrors the real file's layout:
 # one contiguous machine-parseable key block at the top.
+# Extend this fixture in lockstep whenever the key block in
+# harness/templates/preferences_template.md grows, so it keeps mirroring it.
 BASE_PARAMS = """# Preferences (test fixture)
 
 user_name: Test User
@@ -51,6 +53,10 @@ retain_integration_branch: true
 interpreter: python3
 test_command: python3 -m unittest
 encoding_constraint: ascii
+jira_site: example.atlassian.net
+jira_project_key: EX
+jira_epic_key: EX-1
+jira_default_issue_type: Story
 """
 
 # Glob pattern matching the fixture harness remote (a local bare-repo path).
