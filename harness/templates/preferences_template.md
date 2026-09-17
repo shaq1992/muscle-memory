@@ -4,7 +4,8 @@ Single project-opinion surface, generated at `.claude/preferences.md` by
 /bootstrap and filled in by the user (or by /on-board elicitation). The
 contiguous `key: value` block below is machine-parseable (one key per line, no
 prose on the line) -- hooks and commands read it directly; inline defaults
-apply when the file is absent. The self-improver never edits this file.
+apply when the file is absent. The `jira_*` keys are read by
+`agents/jira_agent.md`. The self-improver never edits this file.
 
 Keys ship as working defaults; change a value only if your project's
 conventions differ. Bracketed values are placeholders to fill in.
@@ -20,6 +21,10 @@ retain_integration_branch: true
 interpreter: [project-code interpreter -- e.g. venv/bin/python, python3, node]
 test_command: [full project test-suite command -- e.g. venv/bin/pytest tests/ -v, npm test]
 encoding_constraint: [e.g. "ASCII-only source and output (cp1252 console)", or "UTF-8 throughout, no constraint"]
+jira_site: [Atlassian Cloud hostname, e.g. yoursite.atlassian.net -- REQUIRED by agents/jira_agent.md; omit the whole Jira group if the project has no Jira]
+jira_project_key: [Jira project key used as default JQL scope and for new issues]
+jira_epic_key: [parent epic key for new issues]
+jira_default_issue_type: Story
 
 `harness_push_remote` is deliberately NOT set here: it is the fail-closed
 allowlist for pushes made from inside the harness repo at `.claude/`. Only the
