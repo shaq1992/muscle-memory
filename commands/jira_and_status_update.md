@@ -219,6 +219,8 @@ observations. Those belong in a learnings file or commit message.
 
 ## Hardcoded Output Constraints
 
+`agents/jira_agent.md` references this section and Step 4's Description/Comment shape by name when composing Jira text, so any rename or restructuring of either must update `agents/jira_agent.md` in lockstep.
+
 These apply to all output regardless of custom_instructions:
 
 - Never name deleted or unmerged branches
