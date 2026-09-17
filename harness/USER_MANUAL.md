@@ -30,7 +30,7 @@ self-improver flow (or upstream releases):
 .claude/
   commands/       -- invocable commands ONLY (everything here shows in the skills listing)
   agents/         -- workflow agents (self-improver, investigator, experimenter,
-                     garbage_collector)
+                     garbage_collector, jira_agent)
   hooks/          -- deterministic hooks: git_guardrails.py, enforce_phase_closing.py,
                      enforce_handback.py, arm_handback_marker.py,
                      enforce_orchestrator_isolation.py
@@ -316,6 +316,11 @@ probe that must be written and RUN, or evidence fetched from the web -- go to it
 sibling, the `experimenter`, which duplicates that discipline in
 `agents/experimenter.md` and adds a write-and-run lane confined to the session
 scratchpad (throwaway venv allowed inside it; no servers, no system-state changes).
+Jira searches, creates, edits, comments and transitions go to the `jira_agent`
+sub-agent (`agents/jira_agent.md`), which reads `jira_site`, `jira_project_key`,
+`jira_epic_key` and `jira_default_issue_type` from the preferences key block and acts
+on the caller's instruction without a preview gate, so the caller obtains any user
+confirmation BEFORE dispatching it. It never writes to the repo or runs mutating git.
 Caller-side routing lives in `commands/orchestrator.md`'s "Delegating to sub-agents".
 
 ## Git strategy (the PR law)
