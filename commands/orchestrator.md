@@ -233,7 +233,7 @@ Step 8 clears.
      --body <task_body_file> --plan <plan_name> --session <NN> \
      --branch <plan_name>-session-<NN> --rows E006,E007,... \
      --accumulation-branch <branch> \
-     [--command none] \
+     [--command none | --command orchestrated_grill [--requirements-doc <path>]] \
      --out "docs/prompts/$(date +%d%m%y)/<plan_name>_session_<NN>_prompt.md"
    ```
 
@@ -254,6 +254,21 @@ Step 8 clears.
    dispatch is not a grill_and_implement one: nothing is inserted and no
    invocation line is required or checked. The orchestrator never adds the line
    by hand and never passes `--command none` on its own judgement.
+
+   **The requirements-grilling lane (`--command orchestrated_grill`).** Passed
+   ONLY when the user asks for a grilling session -- a session whose product is
+   a requirements doc, not code; never on the orchestrator's own judgement. In
+   this lane the assembler inserts the bare `/orchestrated_grill` line (same
+   placement and same fail-closed rule for a body invoking a different
+   command), and the task body carries NO TDD-posture stamp -- the assembler
+   REJECTS one, because a grilling session implements nothing. The block gains
+   one bare-value field, `Requirements doc:`, defaulting to
+   `docs/orchestration/<plan_name>/requirements/<NN>.md`; pass
+   `--requirements-doc <path>` only to override that default (it fails closed
+   in any other lane). The one-stamp rule and the `/grill_and_implement`
+   insertion described in this step apply to the DEFAULT lane only. The lean
+   handback and requirements doc the session writes are defined in
+   @.claude/harness/templates/grill_handback_schema.md, not restated here.
 
    The script extracts the named rows VERBATIM from the state file
    (fail-closed on a missing E-ID), appends the fixed `## Orchestration`
@@ -280,10 +295,14 @@ Step 8 clears.
    - **Branch:** <plan_name>-session-<NN>
      (cut from <accumulation branch>)
    - **Accumulation branch:** <integration/<plan_name>, or the plan's declared branch>
+   - **Requirements doc:** <docs/orchestration/<plan_name>/requirements/<NN>.md, or --requirements-doc>
    - **Rows this session must obey:**
      | <verbatim row copied from the state file's Established table> |
      | ... |
    ```
+
+   The `Requirements doc:` field is present ONLY in the grilling lane
+   (`--command orchestrated_grill`); every other dispatch's block omits it.
 
    The `Branch:` field's VALUE is read VERBATIM as a branch name by the
    receiving command, so nothing but the branch name may appear in it -- which
@@ -299,12 +318,16 @@ Step 8 clears.
    branch the block names and merged into the block's accumulation branch,
    opening no pull request of its own, per the orchestrated-no-self-PR rule in
    the plan-end PR flow of @.claude/harness/procedures/git_strategy.md.
+   In the grilling lane the receiving command is instead
+   `commands/orchestrated_grill.md` (NOT `/grill_and_implement`): it reads
+   `Requirements doc:` verbatim, ignores the branch fields, and holds no tree
+   (Step 8).
 
    The rows are the relevant do-not-re-validate entries, pinned invariants and
    gates, FILTERED to what this session actually touches. Filtering is the
    point: a session handed the whole table reads none of it.
 
-   **The authored task body carries exactly ONE TDD-posture line** --
+   **In the default lane, the authored task body carries exactly ONE TDD-posture line** --
    `TDD posture: WARRANTED` or `TDD posture: OPTIONAL` -- decided by task type
    per the tests-as-deliverables rule in `.claude/preferences.md` (that rule is
    project opinion and lives there alone: reference it, never restate it). The
@@ -347,7 +370,10 @@ A second concurrent session is permitted only when it holds no tree:
 
 - read-only or scratchpad-only work -- investigation, drafting, analysis; or
 - work in a DIFFERENT repository, such as a self-improver edit to the harness
-  repo, which holds no tree in the plan's repository.
+  repo, which holds no tree in the plan's repository; or
+- a requirements-grilling session (`--command orchestrated_grill`, Step 7),
+  which opens no branch, makes no commits and writes only gitignored `docs/`
+  files -- so it may run concurrently with a tree-holding session.
 
 While a tree-holding session is outstanding in `## Dispatched`, the orchestrator
 REFUSES to dispatch a second one. The refusal is explicit: name the outstanding
@@ -373,7 +399,36 @@ RESUME -- an outstanding row in `## Dispatched` is a standing instruction to loo
 at that handback path on disk before doing anything else, and what is found there
 is the answer: a finalized handback gets ingested, a stub still at `OPEN` is
 positive evidence the session died, and no file at all means the session was
-never run.
+never run. (A grilling session's `OPEN` stub is the exception -- see below.)
+
+**Grill handbacks are ingested MANUALLY.** A handback from a requirements-
+grilling session follows @.claude/harness/templates/grill_handback_schema.md,
+not the sibling schema, and everything below about the script does NOT apply
+to it: NEVER run `ingest_handback.py` on a grill handback. Instead, before
+replying (write-through trigger (a)):
+
+- **Read the lean handback whole** -- it is short by design -- EXCEPT the read
+  receipt, which is still never read back; for its verdict run
+  `python3 hooks/enforce_handback.py --check-receipt <handback_path>` (or the
+  equivalent) and read only its OK/FAIL line.
+- **Author any state rows yourself**, under the write-through triggers, from
+  the requirements doc -- never by transcribing the handback's
+  `## For the orchestrator` suggestions, which are advisory (state wins).
+- **Copy each `## Structural observations` line** to `docs/observations.md`
+  by hand, in the fixed dated shape of the sibling handback schema; append
+  only.
+- **Update the `## Dispatched` row per the handback's `Status`**, exactly as
+  action 4 below describes, and refill or empty `## Next` per action 5.
+- **An `OPEN` stub means "died, or still grilling"** -- a grilling session
+  stops on every question -- so ASK THE USER which, never infer a death from
+  the status alone.
+
+**The requirements doc is read FREELY.** The orchestrator is ALLOWED and
+ENCOURAGED to read a grilling session's requirements doc -- in full or in
+pieces, as often as it needs. This is the DELIBERATE EXCEPTION to the
+read-only-the-summary discipline below (a user decision): the doc IS the
+content the orchestrator must turn into rows and dispatches, so economising
+on it would make the lean index a second author of facts the doc states.
 
 **What MECHANICAL means.** It describes HOW the rows are applied, not what sets
 the ingest off. The mechanical legs are EXECUTED by
