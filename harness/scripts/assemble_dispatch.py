@@ -4,6 +4,7 @@ Usage: python3 .claude/harness/scripts/assemble_dispatch.py
            --state <state_file> --body <body_file> --plan <plan_name>
            --session <NN> --branch <branch> --rows E001,E002,... --out <prompt_path>
            [--accumulation-branch <branch>] [--command <name>|none]
+           [--requirements-doc <path>]
 
 Run from the PROJECT ROOT with project-relative paths: the --state value is
 echoed VERBATIM into the prompt's "State file:" field, and the reading
@@ -20,6 +21,11 @@ load-bearing -- and writes the per-session dispatch manifest to
 
     {"plan_name", "session_number", "row_ids", "accumulation_branch",
      "prompt_path", "prompt_sha256"}
+
+(plus "command" and "requirements_doc_path" in the orchestrated_grill
+lane only, below; the six keys above are unchanged in every lane, so the
+receipt verification in hooks/enforce_handback.py and
+hooks/enforce_grill_handback.py is unaffected).
 
 --accumulation-branch names the branch the plan's sessions are cut from and
 merge back into; it defaults to integration/<plan_name>, and a plan that
@@ -41,10 +47,38 @@ against this manifest.
 Fail-closed: on any problem (malformed or missing E-ID, missing
 ## Established table, pre-existing prompt or manifest file -- session
 numbers are never reused, a task body without exactly ONE TDD-posture
-line, a body invoking a command other than --command, an invalid
---accumulation-branch or --command value) it prints
+line (outside the orchestrated_grill lane), a TDD-posture line in an
+orchestrated_grill body, a body invoking a command other than --command,
+an invalid --accumulation-branch, --command or --requirements-doc value,
+--requirements-doc without --command orchestrated_grill) it prints
 "FAIL <check>: <detail>" lines and exits 1 WITHOUT writing anything.
 Success prints an "OK: ..." line, exit 0.
+
+ORCHESTRATED GRILL LANE (--command orchestrated_grill). The bare
+"/orchestrated_grill" line is inserted directly after the body's first H1
+exactly like any other command (below), and a body invoking a different
+command still fails closed. The TDD-posture one-stamp rule is SKIPPED: a
+grilling session implements nothing, so no stamp is required, and a body
+that DOES carry one fails closed (the stamp would be meaningless). The
+## Orchestration block gains one bare-value field, placed after the
+"- **Accumulation branch:**" line and before "- **Rows this session must
+obey:**":
+
+    - **Requirements doc:** <path>
+
+<path> is --requirements-doc when given, else
+docs/orchestration/<plan_name>/requirements/<NN>.md; it must be non-empty
+with no whitespace (the field is a single bare value). The Branch and
+Accumulation branch fields are emitted unchanged (the grill command ignores
+them). --requirements-doc without --command orchestrated_grill fails
+closed. SHARED CONTRACT: the field name "Requirements doc:" and its
+bare-value shape are OWNED by commands/orchestrator.md Step 7, read by
+commands/orchestrated_grill.md, and parsed by hooks/arm_handback_marker.py
+(REQUIREMENTS_DOC_FIELD_RE, which also detects the line-start
+"/orchestrated_grill" this script inserts); a change to the field's
+spelling or shape must update all four files in lockstep. The default lane
+and --command none are byte-identical to their behaviour before this lane
+existed (prompt and manifest).
 
 The --accumulation-branch value must be non-empty, contain no whitespace
 and no "..", and must not start with "-" or end with "/" or ".lock".
@@ -95,6 +129,7 @@ POSTURE_RE = re.compile(r"^\s*TDD posture: (?:WARRANTED|OPTIONAL)\s*$")
 POSTURE_LEGAL = "'TDD posture: WARRANTED' or 'TDD posture: OPTIONAL'"
 DEFAULT_COMMAND = "grill_and_implement"
 COMMAND_NONE = "none"
+GRILL_COMMAND = "orchestrated_grill"
 COMMAND_NAME_RE = re.compile(r"^[a-z_]+$")
 # A slash-command invocation line: "/<name>" alone, or followed by
 # whitespace-separated arguments. Group 1 is the command name.
@@ -238,11 +273,19 @@ def with_invocation_line(body_text, command, failures):
     return text
 
 
+def default_requirements_doc(plan, session):
+    """The grill lane's requirements-doc path when none is given."""
+    return "docs/orchestration/{0}/requirements/{1}.md".format(plan, session)
+
+
 def orchestration_block(state_path, plan, session, branch, row_lines,
-                        accumulation_branch=None):
+                        accumulation_branch=None, requirements_doc=None):
     """The fixed ## Orchestration block per orchestrator.md Step 7.
 
-    accumulation_branch None -> integration/<plan> (the default)."""
+    accumulation_branch None -> integration/<plan> (the default).
+    requirements_doc None -> no Requirements doc field (every lane but
+    orchestrated_grill); otherwise its bare-value line is emitted after the
+    Accumulation branch field and before Rows."""
     if accumulation_branch is None:
         accumulation_branch = default_accumulation_branch(plan)
     lines = [
@@ -255,6 +298,10 @@ def orchestration_block(state_path, plan, session, branch, row_lines,
         "- **Branch:** {0}".format(branch),
         "  (cut from {0})".format(accumulation_branch),
         "- **Accumulation branch:** {0}".format(accumulation_branch),
+    ]
+    if requirements_doc is not None:
+        lines.append("- **Requirements doc:** {0}".format(requirements_doc))
+    lines += [
         "- **Rows this session must obey:**",
     ]
     for row in row_lines:
@@ -289,6 +336,11 @@ def main(argv=None):
                              "{0}); 'none' = insert and require nothing, "
                              "for a dispatch that is not a /{0} one".format(
                                  DEFAULT_COMMAND))
+    parser.add_argument("--requirements-doc", default=None,
+                        help="requirements-doc path emitted as the block's "
+                             "'Requirements doc:' field; only with --command "
+                             "{0} (default: docs/orchestration/<plan>/"
+                             "requirements/<NN>.md)".format(GRILL_COMMAND))
     args = parser.parse_args(argv)
 
     failures = []
@@ -325,6 +377,28 @@ def main(argv=None):
         )
         session = args.session
 
+    grill = command == GRILL_COMMAND
+    requirements_doc = None
+    if grill:
+        if args.requirements_doc is None:
+            requirements_doc = default_requirements_doc(args.plan, session)
+        else:
+            requirements_doc = args.requirements_doc
+        if not requirements_doc:
+            failures.append("FAIL args: --requirements-doc is empty")
+        elif any(ch.isspace() for ch in requirements_doc):
+            failures.append(
+                "FAIL args: --requirements-doc {0!r} contains whitespace "
+                "(the Requirements doc field is a single bare value)".format(
+                    requirements_doc
+                )
+            )
+    elif args.requirements_doc is not None:
+        failures.append(
+            "FAIL args: --requirements-doc is only valid with --command "
+            "{0}".format(GRILL_COMMAND)
+        )
+
     row_ids = [tok.strip() for tok in args.rows.split(",") if tok.strip()]
     if not row_ids:
         failures.append("FAIL args: --rows is empty")
@@ -356,7 +430,16 @@ def main(argv=None):
         posture_count = sum(
             1 for line in body_text.splitlines() if POSTURE_RE.match(line)
         )
-        if posture_count == 0:
+        if grill:
+            if posture_count:
+                failures.append(
+                    "FAIL body: {0} TDD-posture line(s) in an /{1} task "
+                    "body; a grilling session implements nothing, so the "
+                    "stamp would be meaningless -- remove it".format(
+                        posture_count, GRILL_COMMAND
+                    )
+                )
+        elif posture_count == 0:
             failures.append(
                 "FAIL body: no TDD-posture line in the task body; it must "
                 "carry exactly one ({0})".format(POSTURE_LEGAL)
@@ -397,7 +480,8 @@ def main(argv=None):
         body_text.rstrip("\n")
         + "\n\n"
         + orchestration_block(args.state, args.plan, session, args.branch,
-                              row_lines, accumulation_branch)
+                              row_lines, accumulation_branch,
+                              requirements_doc)
     )
     prompt_bytes = prompt_text.encode("utf-8")
 
@@ -416,6 +500,9 @@ def main(argv=None):
         "prompt_path": args.out,
         "prompt_sha256": digest,
     }
+    if grill:
+        manifest["command"] = command
+        manifest["requirements_doc_path"] = requirements_doc
     os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
