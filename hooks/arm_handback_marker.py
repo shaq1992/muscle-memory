@@ -64,6 +64,40 @@ The session-side write in grill_and_implement.md Step 0a item 2 remains in
 place as a FALLBACK for projects whose settings.json predates this hook's
 registration; re-writing the same marker is idempotent and harmless.
 
+GRILL LANE. When the prompt INVOKES /orchestrated_grill, the hook arms the
+grill marker INSTEAD of the one above. The invocation signal is a line that
+STARTS with "/orchestrated_grill" (followed by whitespace or end of line) in
+the literal submitted prompt, or in the segment -- the literal prompt or the
+referenced prompt file -- that yielded the winning block
+(harness/scripts/assemble_dispatch.py inserts the bare "/orchestrated_grill"
+line directly under the prompt file's first H1). Mentions elsewhere, or in
+other referenced files, do not count. The block is found and parsed exactly
+as above (same heading, same Handback field, same plan_name/session_number
+derivation: Branch field first, then the conventional handback path -- which
+agrees with commands/orchestrated_grill.md Step 0a item 2's derivation from
+the handback path whenever both are conventional), and the hook writes
+.claude/grill_handback_session.json:
+
+    {
+      "session_id":            <the UserPromptSubmit event's session_id>,
+      "plan_name":             <plan name, or null>,
+      "session_number":        <NN as a string, or null>,
+      "handback_path":         <verbatim value of the Handback: field>,
+      "requirements_doc_path": <verbatim value of the block's bare-value
+                                "- **Requirements doc:**" field, or null
+                                when absent>
+    }
+
+and does NOT write .claude/handback_session.json -- that marker arms
+enforce_handback.py, which blocks every stop while the handback is OPEN,
+and a grilling session stops on every question. SHARED MARKER CONTRACT: the
+grill marker's path and key set are OWNED by commands/orchestrated_grill.md
+Step 0a item 2 and read by hooks/enforce_grill_handback.py; any change to
+the path, a key name, or a value shape must update those two files and this
+one in lockstep. The session-side write in orchestrated_grill.md Step 0a
+item 2 is the same kind of idempotent fallback as above. Every prompt that
+does not invoke /orchestrated_grill is handled exactly as before.
+
 No "## Orchestration" block, no Handback field, or no usable session_id ->
 exit 0 silently, writing nothing. FAIL SOFT everywhere: this hook must never
 block or delay a prompt, so every parse oddity and every write failure exits
@@ -84,6 +118,13 @@ import tempfile
 HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 CLAUDE_DIR = os.path.dirname(HOOK_DIR)
 MARKER_PATH = os.path.join(CLAUDE_DIR, "handback_session.json")
+# The grill lane's marker (see the docstring's GRILL LANE paragraph); path and
+# key set owned by commands/orchestrated_grill.md Step 0a item 2.
+GRILL_MARKER_PATH = os.path.join(CLAUDE_DIR, "grill_handback_session.json")
+
+# A line-start /orchestrated_grill invocation (the assembler's bare line, or a
+# typed "/orchestrated_grill @docs/prompts/...").
+GRILL_INVOCATION_RE = re.compile(r"^/orchestrated_grill(?=\s|$)", re.MULTILINE)
 
 # The block heading, exactly as commands/orchestrator.md Step 7 fixes it and
 # commands/grill_and_implement.md detects it.
@@ -98,6 +139,11 @@ HANDBACK_FIELD_RE = re.compile(
 )
 BRANCH_FIELD_RE = re.compile(
     r"^-[ \t]*\*\*Branch:\*\*[ \t]*(\S+)[ \t]*$", re.MULTILINE
+)
+# Grill lane only: the bare-value Requirements doc field (field name owned by
+# commands/orchestrator.md Step 7, read by commands/orchestrated_grill.md).
+REQUIREMENTS_DOC_FIELD_RE = re.compile(
+    r"^-[ \t]*\*\*Requirements doc:\*\*[ \t]*(\S+)[ \t]*$", re.MULTILINE
 )
 
 # <plan_name>-session-<NN>, per orchestrator.md Step 7.
@@ -183,11 +229,9 @@ def _read_referenced_files(prompt, base_dir):
     return texts
 
 
-def _parse_orchestration(prompt):
-    """(handback_path, plan_name, session_number) from the prompt's
-    "## Orchestration" block, or None when the prompt carries no block or
-    the block has no Handback field. plan_name/session_number are None when
-    underivable -- the caller still arms on the handback path alone."""
+def _orchestration_block(prompt):
+    """Text of the prompt's "## Orchestration" block (heading excluded, scope
+    ending at the next H2), or None when the prompt carries no block."""
     if not isinstance(prompt, str):
         return None
     heading = BLOCK_HEADING_RE.search(prompt)
@@ -197,6 +241,32 @@ def _parse_orchestration(prompt):
     nxt = NEXT_HEADING_RE.search(block)
     if nxt is not None:
         block = block[:nxt.start()]
+    return block
+
+
+def _requirements_doc_path(prompt):
+    """Verbatim value of the block's "- **Requirements doc:**" field, or
+    None when the block or the field is absent (grill lane only)."""
+    block = _orchestration_block(prompt)
+    if block is None:
+        return None
+    match = REQUIREMENTS_DOC_FIELD_RE.search(block)
+    return match.group(1) if match is not None else None
+
+
+def _invokes_orchestrated_grill(text):
+    """True when text carries a line-start /orchestrated_grill invocation."""
+    return isinstance(text, str) and GRILL_INVOCATION_RE.search(text) is not None
+
+
+def _parse_orchestration(prompt):
+    """(handback_path, plan_name, session_number) from the prompt's
+    "## Orchestration" block, or None when the prompt carries no block or
+    the block has no Handback field. plan_name/session_number are None when
+    underivable -- the caller still arms on the handback path alone."""
+    block = _orchestration_block(prompt)
+    if block is None:
+        return None
 
     handback_match = HANDBACK_FIELD_RE.search(block)
     if handback_match is None:
@@ -219,17 +289,16 @@ def _parse_orchestration(prompt):
     return handback_path, plan_name, session_number
 
 
-def _write_marker_atomically(marker):
-    """Write MARKER_PATH via temp file + os.replace; exceptions propagate
-    to main()'s fail-soft catch."""
-    fd, tmp_path = tempfile.mkstemp(
-        prefix=".handback_session.", suffix=".tmp", dir=CLAUDE_DIR
-    )
+def _write_marker_atomically(marker, marker_path=MARKER_PATH):
+    """Write marker_path (default MARKER_PATH) via temp file + os.replace;
+    exceptions propagate to main()'s fail-soft catch."""
+    prefix = "." + os.path.splitext(os.path.basename(marker_path))[0] + "."
+    fd, tmp_path = tempfile.mkstemp(prefix=prefix, suffix=".tmp", dir=CLAUDE_DIR)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(marker, f, indent=2)
             f.write("\n")
-        os.replace(tmp_path, MARKER_PATH)
+        os.replace(tmp_path, marker_path)
     finally:
         if os.path.exists(tmp_path):
             try:
@@ -256,16 +325,32 @@ def main():
     prompt = payload.get("prompt")
     # Literal prompt first, then each referenced prompt file in order of
     # first mention; the first segment with a usable block wins.
+    segment = prompt
     parsed = _parse_orchestration(prompt)
     if parsed is None:
         for text in _read_referenced_files(prompt, _project_dir(payload)):
             parsed = _parse_orchestration(text)
             if parsed is not None:
+                segment = text
                 break
     if parsed is None:
         sys.exit(0)
 
     handback_path, plan_name, session_number = parsed
+    if _invokes_orchestrated_grill(prompt) or _invokes_orchestrated_grill(segment):
+        # Grill lane: arm the grill marker only, never handback_session.json.
+        _write_marker_atomically(
+            {
+                "session_id": session_id,
+                "plan_name": plan_name,
+                "session_number": session_number,
+                "handback_path": handback_path,
+                "requirements_doc_path": _requirements_doc_path(segment),
+            },
+            GRILL_MARKER_PATH,
+        )
+        sys.exit(0)
+
     _write_marker_atomically(
         {
             "session_id": session_id,
