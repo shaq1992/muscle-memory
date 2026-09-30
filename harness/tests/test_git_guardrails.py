@@ -283,9 +283,17 @@ class TestClosingHookRegistrationFlaggedExtra(GuardrailEnv):
         settings = json.loads(SETTINGS_JSON.read_text(encoding="utf-8"))
         pre_hooks = json.dumps(settings.get("hooks", {}).get("PreToolUse", []))
         stop_hooks = json.dumps(settings.get("hooks", {}).get("Stop", []))
+        prompt_hooks = json.dumps(
+            settings.get("hooks", {}).get("UserPromptSubmit", [])
+        )
+        # every bootstrap Step 6 hook registration must be present
         self.assertIn("git_guardrails.py", pre_hooks)
+        self.assertIn("enforce_orchestrator_isolation.py", pre_hooks)
         self.assertIn("enforce_phase_closing.py", stop_hooks)
-        for blob in (pre_hooks, stop_hooks):
+        self.assertIn("enforce_handback.py", stop_hooks)
+        self.assertIn("enforce_grill_handback.py", stop_hooks)
+        self.assertIn("arm_handback_marker.py", prompt_hooks)
+        for blob in (pre_hooks, stop_hooks, prompt_hooks):
             self.assertIn("python3", blob)
             self.assertNotIn("venv/bin/python", blob)
         deny = json.dumps(settings.get("permissions", {}).get("deny", []))
