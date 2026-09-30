@@ -212,9 +212,11 @@ gate, then in-session implementation on a `quick/<slug>` branch cut from the def
 branch, push + `gh pr create` -- you merge the PR. The brief doubles as the PR body.
 No PRD, no plan, no ledger, no phase apparatus; the no-Claude-path-to-protected-
 branch invariant holds identically. It is also the command that RECEIVES an
-orchestrated session prompt: handed a prompt carrying an `## Orchestration` block it
-switches lanes automatically (see below). Absent that block it behaves exactly as
-described here.
+orchestrated IMPLEMENTATION session prompt: handed a prompt carrying an
+`## Orchestration` block it switches lanes automatically (see below). Requirements-
+grilling dispatches -- whose block carries a `Requirements doc:` field -- go to
+`/orchestrated_grill` instead ("The orchestrated lane", step 3). Absent that block it
+behaves exactly as described here.
 
 ## The orchestrated lane
 
@@ -473,7 +475,7 @@ its words.
 | /grilling_session | Planning any feature or change (mixed / functional / technical) | PRD + plan in docs/ |
 | /write_prompt | Ready to implement a phase | Validated reference-based prompt in docs/prompts/DDMMYY/ |
 | /orchestrator | A plan whose later steps are not knowable up front (init, resume, dispatch, ingest) | State file in docs/orchestration/ + session prompts in docs/prompts/DDMMYY/ |
-| /grill_and_implement | Task too small for a plan -- and the receiver of an orchestrated session prompt | Brief in docs/quick/ + a quick/<slug> PR you merge (orchestrated: a handback, no PR) |
+| /grill_and_implement | Task too small for a plan -- and the receiver of an orchestrated IMPLEMENTATION session prompt (grilling prompts go to /orchestrated_grill) | Brief in docs/quick/ + a quick/<slug> PR you merge (orchestrated: a handback, no PR) |
 | /orchestrated_grill | Receiving an orchestrator-dispatched requirements-grilling prompt (one carrying an `## Orchestration` block and a `Requirements doc:` field) | Requirements doc in docs/orchestration/<plan>/requirements/ + a lean grill handback; no branch, no commits, no PR |
 | /jira_and_status_update | After work lands | Tickets + standup in docs/jira_and_standup/ |
 | /on_board | First-time onboarding after clone-or-unzip | Verified install: scaffolding, preferences, tour, self-check |
