@@ -1,11 +1,11 @@
 # Workflow Harness User Manual
 
 The `.claude/` directory is a portable-by-design, multi-session development workflow
-system for Claude Code: three grilling modes, a reference-based phase compiler, an
-orchestrator for plans that cannot be specified up front, a PR-based
-integration-branch git strategy with a deterministic guardrail hook (every plan ends
-in a pull request merged by the USER), a rolling per-plan learnings ledger, a slim
-per-turn CLAUDE.md, and a two-surface glossary. Commands plan, implement, and track
+system for Claude Code: an orchestrator that drives plans from one durable state
+file (the primary flow), three grilling modes, a reference-based phase compiler, a
+PR-based integration-branch git strategy with a deterministic guardrail hook (every
+plan ends in a pull request merged by the USER), a rolling per-plan learnings ledger,
+a slim per-turn CLAUDE.md, and a two-surface glossary. Commands plan, implement, and track
 work across sessions -- most non-trivial tasks cannot finish inside one context
 window.
 
@@ -123,7 +123,39 @@ reports the installed version; README states the current one.
 
 ## The workflow (typical arc)
 
-### 1. Plan with /grilling_session
+Three lanes, picked at plan start. The orchestrated loop is the primary flow; the
+phased-plan lane is the alternative for plans that can be fully specified up front;
+standalone `/grill_and_implement` is the quick lane for small tasks.
+
+### The primary flow: /orchestrator
+
+```
+/orchestrator <plan_name> [additional text]
+```
+
+The harness's primary flow for plans: work driven from one durable state file, one
+session at a time -- including work whose later steps are NOT knowable in advance,
+that pivots mid-flight, and that runs across many sessions. The loop: the same
+invocation initialises or resumes the plan -> on your "dispatch" it writes a session
+prompt -> you open a fresh session and paste it into `/grill_and_implement` (an
+implementation session) or into `/orchestrated_grill` (a requirements-grilling
+dispatch, whose `## Orchestration` block carries a `Requirements doc:` field) -> the
+session does the work and writes a handback -> back in the orchestrator, you say the
+session came back and it ingests the handback -> repeat. Implementation sessions merge
+into the plan's accumulation branch (`integration/<plan_name>` by default) and open
+no PR; grilling sessions write a requirements doc and touch no branch. When you
+declare the plan done, the orchestrator pushes the accumulation branch and opens ONE
+pull request that YOU merge. Full detail: "The orchestrated lane" below.
+
+### The phased-plan lane (alternative)
+
+For a plan whose phases are all knowable up front and which needs a
+stakeholder-readable spec -- a PRD plus a multi-phase plan is the only path that
+produces one. `/grilling_session` writes the PRD + phased plan, `/write_prompt`
+compiles each phase prompt, and each phase is implemented in a fresh session; the
+plan also ends in a PR you merge.
+
+#### 1. Plan with /grilling_session
 
 ```
 /grilling_session <plan_name> [functional | technical]
@@ -155,7 +187,7 @@ block and what each tests), (2) decision log + phase table, with glossary and
 self-diagnosis one-liners appended, all under your single confirmation (the final
 gate), (3) write documents. Functional mode skips step 1.
 
-### 2. Generate a session prompt with /write_prompt
+#### 2. Generate a session prompt with /write_prompt
 
 ```
 /write_prompt <plan_name> <phase_number>
@@ -171,7 +203,7 @@ Before reporting done it runs `harness/scripts/validate_prompt.py` (at-refs reso
 no placeholder residue, required sections present, branch-name sanity) and fixes to
 green.
 
-### 3. Implement in a fresh session
+#### 3. Implement in a fresh session
 
 Open a new session in "accept edits" mode and paste the generated prompt. Claude
 implements the deliverables (writing any contracted behavioral tests FIRST and
@@ -180,25 +212,7 @@ running them RED before implementing to green), then runs the closing sequence
 marker + learnings file to `docs/learnings/DDMMYY/`, ledger merge + stamp, user-gated
 document reconciliation, commit, and the autonomous git close.
 
-### 4. Track with /jira_and_status_update
-
-`/jira_and_status_update [DDMMYY]` -- Jira tickets + standup from the git log
-(discovers branches via the learnings files' `**Branch:**` lines). Output in
-`docs/jira_and_standup/DDMMYY/`.
-
-### Long-running plans: /orchestrator
-
-```
-/orchestrator <plan_name> [additional text]
-```
-
-The third lane, for plans whose later steps are NOT knowable in advance. It replaces
-steps 1-2 above with a single durable state file and dispatches one session at a time
--- see "The orchestrated lane" below. It does not replace the canonical arc: a plan
-that can genuinely be specified up front should still be run as a PRD plus a phased
-plan, which is the only path that produces a stakeholder-readable spec.
-
-### Small tasks: /grill_and_implement
+### The quick lane: /grill_and_implement
 
 ```
 /grill_and_implement <slug> <task>
@@ -218,13 +232,19 @@ grilling dispatches -- whose block carries a `Requirements doc:` field -- go to
 `/orchestrated_grill` instead ("The orchestrated lane", step 3). Absent that block it
 behaves exactly as described here.
 
+### Track with /jira_and_status_update
+
+`/jira_and_status_update [DDMMYY]` -- Jira tickets + standup from the git log
+(discovers branches via the learnings files' `**Branch:**` lines). Output in
+`docs/jira_and_standup/DDMMYY/`.
+
 ## The orchestrated lane
 
 `/orchestrator <plan_name>` drives a plan from ONE document:
 `docs/orchestration/<plan_name>_state.md`. For a plan run this way that file REPLACES
 the PRD, the multi-phase plan, the learnings ledger and the per-phase learnings files
-entirely. The canonical arc and its ledger enforcement are untouched and keep serving
-canonical plans exactly as before.
+entirely. It is the harness's primary flow; the phased-plan lane and its ledger
+enforcement are untouched and keep serving phased plans exactly as before.
 
 Why a file rather than the conversation: context is a cache, and a cache can be
 silently dropped by compaction. Every decision is written THROUGH to state before the
@@ -344,7 +364,7 @@ block.
 
 - **Unified integration-branch strategy.** A plan cuts `integration/<plan_name>` from
   the default branch in its first WORK UNIT; work-unit branches branch from it and
-  merge back into it -- `<plan_name>-phase-NN` for a canonical phase,
+  merge back into it -- `<plan_name>-phase-NN` for a phased-plan phase,
   `<plan_name>-session-NN` for an orchestrated session, zero-padded either way. The
   protected branch is never touched by Claude. An orchestrated plan may instead
   declare a pre-existing accumulation branch (e.g. `fix/<name>` cut from a team
@@ -422,7 +442,7 @@ and the plan ledger's `Last merged: phase NN` stamp matches the marker's phase, 
 the hook self-deletes the marker and allows. Each block reason names the specific
 failed check. Full mechanics: `closing_sequence.md` steps 4-5.
 
-This hook serves CANONICAL phases only. Its orchestrated counterpart is
+This hook serves PHASED-PLAN phases only. Its orchestrated counterpart is
 `enforce_handback.py`, which enforces the handback obligation instead; the two are
 mutually exclusive by construction because they read different marker files
 (`phase_closing.json` vs `handback_session.json`) and neither honors the other's. A
@@ -472,11 +492,11 @@ its words.
 
 | Command | When to use | Key outputs |
 |---------|-------------|-------------|
-| /grilling_session | Planning any feature or change (mixed / functional / technical) | PRD + plan in docs/ |
-| /write_prompt | Ready to implement a phase | Validated reference-based prompt in docs/prompts/DDMMYY/ |
-| /orchestrator | A plan whose later steps are not knowable up front (init, resume, dispatch, ingest) | State file in docs/orchestration/ + session prompts in docs/prompts/DDMMYY/ |
+| /orchestrator | The primary flow for a plan -- including one whose later steps are not knowable up front (init, resume, dispatch, ingest) | State file in docs/orchestration/ + session prompts in docs/prompts/DDMMYY/ + one plan-end PR you merge |
 | /grill_and_implement | Task too small for a plan -- and the receiver of an orchestrated IMPLEMENTATION session prompt (grilling prompts go to /orchestrated_grill) | Brief in docs/quick/ + a quick/<slug> PR you merge (orchestrated: a handback, no PR) |
 | /orchestrated_grill | Receiving an orchestrator-dispatched requirements-grilling prompt (one carrying an `## Orchestration` block and a `Requirements doc:` field) | Requirements doc in docs/orchestration/<plan>/requirements/ + a lean grill handback; no branch, no commits, no PR |
+| /grilling_session | Phased-plan lane: planning a plan whose phases are all knowable up front (mixed / functional / technical) | PRD + plan in docs/ |
+| /write_prompt | Phased-plan lane: ready to implement a phase | Validated reference-based prompt in docs/prompts/DDMMYY/ |
 | /jira_and_status_update | After work lands | Tickets + standup in docs/jira_and_standup/ |
 | /on_board | First-time onboarding after clone-or-unzip | Verified install: scaffolding, preferences, tour, self-check |
 | /bootstrap_to_custom_commands | In-place scaffolding generation / post-upgrade re-run | Fresh per-project scaffolding (never overwrites yours) |
