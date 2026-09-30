@@ -142,7 +142,7 @@ others). Never silently auto-fill -- every written line is user-confirmed.
   e.g. "Role and Hard constraints are re-read every turn: they are what keeps
   sessions on-rails when context runs long."
 - **If the project has code or docs** (a README, docs/ content, an existing
-  codebase): derive grilling-session-style SUGGESTIONS from them ("From your README
+  codebase): derive interview-style SUGGESTIONS from them ("From your README
   this looks like a payments API in Go -- shall I put that in Project purpose?").
   Suggestions are proposals the user confirms or edits -- never written silently.
 - **If starting purely from scratch:** ask 1-line-answer questions per section,
@@ -160,24 +160,24 @@ A short (~15 line) tour, novice-appropriate:
   `hooks/`, and `harness/` is portable LAW -- shipped verbatim, evolved upstream via
   the self-improver. `preferences.md`, `settings.json`, and your root CLAUDE.md are
   YOUR project's OPINION -- generated from templates, edited only by you.
-- **The workflow arc:** `/grilling_session <plan>` interviews you and writes a PRD +
-  phased plan -> `/write_prompt <plan> <N>` compiles a phase prompt -> paste it into
-  a fresh session to implement -> every plan ends in a GitHub PR that YOU merge
-  (Claude has no path to your protected branch -- enforced by the hooks verified in
-  Step 7).
-- **The orchestrated lane:** `/orchestrator <plan_name>` for a plan whose later steps
-  are NOT knowable up front -- one durable state file instead of a PRD and a plan, one
-  dispatched session at a time on your word, each returning a handback the orchestrator
-  ingests. It coexists with the canonical arc; pick the lane at plan start. A
-  requirements-grilling dispatch -- its `## Orchestration` block carries a
-  `Requirements doc:` field, and its first line under the title is `/orchestrated_grill`
-  -- is pasted into `/orchestrated_grill` instead: it grills until you say "stop asking
-  questions", writes a requirements doc and a lean handback, and opens no branch,
-  commit or PR.
-- **The quick lane:** `/grill_and_implement <slug> <task>` for tasks too small for a
-  full plan. It is also what you paste an orchestrated IMPLEMENTATION session prompt
-  into -- it switches lanes on its own when the prompt carries an `## Orchestration`
-  block (grilling prompts go to `/orchestrated_grill`, above).
+- **The workflow arc:** `/orchestrator <plan_name>` starts (or resumes) a plan kept
+  in one state file. The loop: on your word it writes a session prompt -> open a fresh
+  session and paste it into `/grill_and_implement` -- or into `/orchestrated_grill` if
+  it is a requirements-grilling dispatch (its `## Orchestration` block carries a
+  `Requirements doc:` field; its first line under the title is `/orchestrated_grill`)
+  -> the session does the work and writes a handback -> back in the orchestrator, it
+  ingests the handback and proposes the next session -> repeat. Implementation
+  sessions merge into the plan's accumulation branch (`integration/<plan_name>` by
+  default) and open no PR; grilling sessions write a requirements doc and touch no
+  branch. When you declare the plan done, the orchestrator pushes the accumulation
+  branch and opens ONE pull request that YOU merge (Claude has no path to your
+  protected branch -- enforced by the hooks verified in Step 7).
+- **The phased-plan lane (alternative):** for a plan whose phases are all knowable up
+  front -- `/grilling_session <plan>` writes a PRD + phased plan -> `/write_prompt
+  <plan> <N>` compiles each phase prompt -> paste it into a fresh session; it also
+  ends in a PR you merge, and yields a stakeholder-readable spec.
+- **The quick lane:** `/grill_and_implement <slug> <task>` on its own, for tasks too
+  small for a plan; it opens its own PR.
 - **Where to read more:** README.md (pitch + install paths) -> harness/INSTALL.md
   (install detail) -> harness/USER_MANUAL.md (deep reference).
 
@@ -191,5 +191,5 @@ A short (~15 line) tour, novice-appropriate:
 2. Read `.claude/VERSION` and close with the install report:
    "harness v<VERSION> installed" -- plus the tier (clone/zip), the interpreter
    wired into the hooks, preferences.md state (elicited / kept / placeholders),
-   CLAUDE.md state, and the suggested first step: run `/grilling_session
-   <plan_name>` when ready to plan your first piece of work.
+   CLAUDE.md state, and the suggested first step: run `/orchestrator <plan_name>`
+   when ready to start your first piece of work.
