@@ -255,7 +255,11 @@ Schemas: `harness/templates/state_schema.md` (state) and
    by the closing hook -- works on
    `<plan_name>-session-<NN>` cut from the plan's accumulation branch
    (`integration/<plan_name>` by default, or a declared branch such as `fix/<name>`),
-   merges back into it, and opens NO PR of its own.
+   merges back into it, and opens NO PR of its own. A grilling dispatch
+   (`--command orchestrated_grill`) is received by `/orchestrated_grill` instead of
+   `/grill_and_implement`: it holds no tree, grills with no question cap until you say
+   "stop asking questions", then writes the requirements doc at the block's
+   `Requirements doc:` path and a lean handback, which the orchestrator ingests by hand.
 4. **You tell the orchestrator the session came back.** Ingest is mechanical: the
    handback's `## Delta` rows arrive pre-formatted in the state file's own table shape,
    and the ingest script (`harness/scripts/ingest_handback.py`, the orchestrator's pen)
@@ -470,6 +474,7 @@ its words.
 | /write_prompt | Ready to implement a phase | Validated reference-based prompt in docs/prompts/DDMMYY/ |
 | /orchestrator | A plan whose later steps are not knowable up front (init, resume, dispatch, ingest) | State file in docs/orchestration/ + session prompts in docs/prompts/DDMMYY/ |
 | /grill_and_implement | Task too small for a plan -- and the receiver of an orchestrated session prompt | Brief in docs/quick/ + a quick/<slug> PR you merge (orchestrated: a handback, no PR) |
+| /orchestrated_grill | Receiving an orchestrator-dispatched requirements-grilling prompt (one carrying an `## Orchestration` block and a `Requirements doc:` field) | Requirements doc in docs/orchestration/<plan>/requirements/ + a lean grill handback; no branch, no commits, no PR |
 | /jira_and_status_update | After work lands | Tickets + standup in docs/jira_and_standup/ |
 | /on_board | First-time onboarding after clone-or-unzip | Verified install: scaffolding, preferences, tour, self-check |
 | /bootstrap_to_custom_commands | In-place scaffolding generation / post-upgrade re-run | Fresh per-project scaffolding (never overwrites yours) |
