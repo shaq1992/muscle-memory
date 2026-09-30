@@ -36,6 +36,15 @@ that happens to exist, not the user saying the work belongs to a plan.
   re-invoke this command and do not read it as part of the task. The orchestrated
   additions are listed inline below, each marked ORCHESTRATED ONLY.
 
+**Refuse a requirements-grilling dispatch.** A grilling dispatch carries the same
+`## Orchestration` heading, so after detecting the block, check it: if the block carries a
+`Requirements doc:` field, or the line directly under the first H1 is `/orchestrated_grill`,
+this is not an implementation session. Reply in exactly one line -- "This is a
+requirements-grilling dispatch -- paste it into /orchestrated_grill instead." -- and STOP,
+before cutting any branch, arming or writing any marker, or writing any file. Both signals
+are OWNED by `commands/orchestrator.md` Step 7 (written by
+`harness/scripts/assemble_dispatch.py`'s `--command orchestrated_grill` lane).
+
 The heading string `## Orchestration`, those five bolded field names, and the convention
 that a field's value is BARE (the value on its own line, annotations on continuation
 lines) are all OWNED by `commands/orchestrator.md` Step 7 item 3, which writes them. Any
@@ -319,6 +328,6 @@ Do NOT append to `docs/observations.md` yourself in this mode -- the orchestrato
 ingest copies those lines across when it ingests the handback, and appending here would
 double every entry.
 
-The handback REPLACES the canonical end-of-phase apparatus entirely: NO phase-closing
+The handback REPLACES the phased-plan lane's end-of-phase apparatus entirely: NO phase-closing
 marker, NO per-phase learnings file, NO ledger merge and no `Last merged` stamp. It is the
 session's whole durable output.

@@ -64,14 +64,34 @@ The session-side write in grill_and_implement.md Step 0a item 2 remains in
 place as a FALLBACK for projects whose settings.json predates this hook's
 registration; re-writing the same marker is idempotent and harmless.
 
-GRILL LANE. When the prompt INVOKES /orchestrated_grill, the hook arms the
-grill marker INSTEAD of the one above. The invocation signal is a line that
-STARTS with "/orchestrated_grill" (followed by whitespace or end of line) in
-the literal submitted prompt, or in the segment -- the literal prompt or the
-referenced prompt file -- that yielded the winning block
-(harness/scripts/assemble_dispatch.py inserts the bare "/orchestrated_grill"
-line directly under the prompt file's first H1). Mentions elsewhere, or in
-other referenced files, do not count. The block is found and parsed exactly
+GRILL LANE. When the dispatch is a requirements-GRILLING one, the hook arms
+the grill marker INSTEAD of the one above. A dispatch is grilling when EITHER
+signal is present (both are owned by commands/orchestrator.md Step 7 and
+written by harness/scripts/assemble_dispatch.py's orchestrated_grill lane):
+(1) the INVOCATION signal -- a line that STARTS with "/orchestrated_grill"
+(followed by whitespace or end of line) in the literal submitted prompt, or
+in the segment -- the literal prompt or the referenced prompt file -- that
+yielded the winning block (the assembler inserts the bare
+"/orchestrated_grill" line directly under the prompt file's first H1);
+mentions elsewhere, or in other referenced files, do not count; or (2) the
+FIELD signal -- the winning block carries a bare-value
+"- **Requirements doc:**" field (only the grill lane emits it), so a grilling
+prompt whose invocation line was lost or hand-deleted still lands in the
+grill lane rather than arming enforce_handback.py.
+
+EXCEPTION -- a grilling dispatch TYPED into /grill_and_implement arms NO
+marker at all. When the literal submitted prompt carries a line that STARTS
+with "/grill_and_implement" (followed by whitespace or end of line) and the
+dispatch is grilling by either signal above, the hook writes nothing and
+exits 0: commands/grill_and_implement.md Step 0 refuses a grilling dispatch
+in one line and stops without writing any file or marker, and an armed grill
+marker would make hooks/enforce_grill_handback.py block that refusal's stop
+for want of a handback stub. That Step 0 refusal check is this rule's
+LOCKSTEP PARTNER: a change to either the refusal's trigger signals or this
+no-arm rule must update the other. A non-grilling dispatch typed into
+/grill_and_implement arms the implementation marker exactly as before.
+
+Otherwise the grilling dispatch's block is found and parsed exactly
 as above (same heading, same Handback field, same plan_name/session_number
 derivation: Branch field first, then the conventional handback path -- which
 agrees with commands/orchestrated_grill.md Step 0a item 2's derivation from
@@ -95,8 +115,8 @@ grill marker's path and key set are OWNED by commands/orchestrated_grill.md
 Step 0a item 2 and read by hooks/enforce_grill_handback.py; any change to
 the path, a key name, or a value shape must update those two files and this
 one in lockstep. The session-side write in orchestrated_grill.md Step 0a
-item 2 is the same kind of idempotent fallback as above. Every prompt that
-does not invoke /orchestrated_grill is handled exactly as before.
+item 2 is the same kind of idempotent fallback as above. Every non-grilling
+dispatch (neither signal present) is handled exactly as before.
 
 No "## Orchestration" block, no Handback field, or no usable session_id ->
 exit 0 silently, writing nothing. FAIL SOFT everywhere: this hook must never
@@ -125,6 +145,12 @@ GRILL_MARKER_PATH = os.path.join(CLAUDE_DIR, "grill_handback_session.json")
 # A line-start /orchestrated_grill invocation (the assembler's bare line, or a
 # typed "/orchestrated_grill @docs/prompts/...").
 GRILL_INVOCATION_RE = re.compile(r"^/orchestrated_grill(?=\s|$)", re.MULTILINE)
+# A line-start /grill_and_implement invocation in the TYPED prompt; with a
+# grilling dispatch it means "arm nothing" (grill_and_implement.md Step 0
+# refuses such a dispatch without writing any marker -- lockstep partner).
+IMPLEMENT_INVOCATION_RE = re.compile(
+    r"^/grill_and_implement(?=\s|$)", re.MULTILINE
+)
 
 # The block heading, exactly as commands/orchestrator.md Step 7 fixes it and
 # commands/grill_and_implement.md detects it.
@@ -259,6 +285,14 @@ def _invokes_orchestrated_grill(text):
     return isinstance(text, str) and GRILL_INVOCATION_RE.search(text) is not None
 
 
+def _invokes_grill_and_implement(text):
+    """True when text carries a line-start /grill_and_implement invocation."""
+    return (
+        isinstance(text, str)
+        and IMPLEMENT_INVOCATION_RE.search(text) is not None
+    )
+
+
 def _parse_orchestration(prompt):
     """(handback_path, plan_name, session_number) from the prompt's
     "## Orchestration" block, or None when the prompt carries no block or
@@ -337,7 +371,18 @@ def main():
         sys.exit(0)
 
     handback_path, plan_name, session_number = parsed
-    if _invokes_orchestrated_grill(prompt) or _invokes_orchestrated_grill(segment):
+    requirements_doc_path = _requirements_doc_path(segment)
+    is_grilling = (
+        _invokes_orchestrated_grill(prompt)
+        or _invokes_orchestrated_grill(segment)
+        or requirements_doc_path is not None
+    )
+    if is_grilling:
+        if _invokes_grill_and_implement(prompt):
+            # Typed into /grill_and_implement: its Step 0 refuses and stops
+            # without a handback stub, so arming either marker would block
+            # that refusal's stop. Arm nothing.
+            sys.exit(0)
         # Grill lane: arm the grill marker only, never handback_session.json.
         _write_marker_atomically(
             {
@@ -345,7 +390,7 @@ def main():
                 "plan_name": plan_name,
                 "session_number": session_number,
                 "handback_path": handback_path,
-                "requirements_doc_path": _requirements_doc_path(segment),
+                "requirements_doc_path": requirements_doc_path,
             },
             GRILL_MARKER_PATH,
         )

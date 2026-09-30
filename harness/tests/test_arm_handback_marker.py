@@ -37,6 +37,18 @@ Cases and the failures they prevent:
    of enforce_handback.py (blocks a missing handback for the same
    session_id), proving the writer and the reader agree on the schema.
 
+6. grill-lane routing -- a requirements-GRILLING dispatch (the
+   "/orchestrated_grill" line under the first H1, OR a "- **Requirements
+   doc:**" field in the block) must arm ONLY the grill marker, even when
+   the invocation line is missing (else enforce_handback.py wrongly blocks
+   every question stop); and a grilling dispatch TYPED into
+   /grill_and_implement, file-referenced or pasted inline, must arm NO
+   marker at all (grill_and_implement.md Step 0 refuses it in one line
+   without a handback stub, and an armed grill marker would make
+   enforce_grill_handback.py block that refusal). An implementation
+   dispatch typed into /grill_and_implement still arms the implementation
+   marker only.
+
 Also pinned as ACTUAL implemented behavior: the hook overwrites an
 existing marker unconditionally (there is no not-clobber rule), and the
 block's scope ends at the next H2 heading.
@@ -124,6 +136,32 @@ def dispatched_prompt(branch=BRANCH):
     return BODY_TEXT + assembled_block(branch)
 
 
+REQUIREMENTS_DOC_REL = "docs/prds/{0}_session_{1}_requirements.md".format(
+    PLAN_NAME, SESSION_NUMBER
+)
+
+GRILL_KEYS = MARKER_KEYS | {"requirements_doc_path"}
+
+
+def grilling_prompt(invocation_line=True):
+    """A grilling dispatch as assemble_dispatch.py's orchestrated_grill lane
+    lays it out: the bare "/orchestrated_grill" line directly under the
+    first H1 (omitted when invocation_line is False), and a block carrying
+    the Requirements doc field."""
+    head = "# Session {0}: grill the thing\n\n".format(SESSION_NUMBER)
+    if invocation_line:
+        head += "/orchestrated_grill\n\n"
+    body = head + "## Context\n\nGrill the requirements for the thing.\n\n"
+    return body + orchestration_block(
+        "docs/orchestration/{0}_state.md".format(PLAN_NAME),
+        PLAN_NAME,
+        SESSION_NUMBER,
+        BRANCH,
+        ROW_LINES,
+        requirements_doc=REQUIREMENTS_DOC_REL,
+    )
+
+
 class ArmHookEnv(unittest.TestCase):
     """Fixture running a COPY of arm_handback_marker.py in a temp tree."""
 
@@ -140,6 +178,9 @@ class ArmHookEnv(unittest.TestCase):
         self.hook_copy = hooks_dir / "arm_handback_marker.py"
         shutil.copyfile(str(ARM_HOOK), str(self.hook_copy))
         self.marker_path = self.proj / ".claude" / "handback_session.json"
+        self.grill_marker_path = (
+            self.proj / ".claude" / "grill_handback_session.json"
+        )
 
     def isolated_env(self):
         """Subprocess env pinning CLAUDE_PROJECT_DIR to the temp project.
@@ -293,6 +334,136 @@ class TestReferencedPromptFile(ArmHookEnv):
             self.marker_path.exists(),
             "a missing @-referenced file must not arm a marker",
         )
+
+
+class TestGrillLaneRouting(ArmHookEnv):
+    """Grilling dispatches: grill marker only, or no marker at all when
+    typed into /grill_and_implement (its Step 0 refuses them)."""
+
+    PROMPT_REL = "docs/prompts/150926/{0}_session_{1}_grill_prompt.md".format(
+        PLAN_NAME, SESSION_NUMBER
+    )
+
+    def _write_prompt_file(self, text):
+        prompt_file = self.proj / self.PROMPT_REL
+        prompt_file.parent.mkdir(parents=True)
+        prompt_file.write_text(text, encoding="utf-8")
+
+    def _submit(self, prompt):
+        self.run_arm(
+            json.dumps(
+                {
+                    "session_id": self.SESSION,
+                    "cwd": str(self.proj),
+                    "prompt": prompt,
+                }
+            ),
+            env=self.isolated_env(),
+        )
+
+    def _assert_no_markers(self):
+        self.assertFalse(
+            self.marker_path.exists(),
+            "implementation marker must not be armed",
+        )
+        self.assertFalse(
+            self.grill_marker_path.exists(),
+            "grill marker must not be armed",
+        )
+
+    def _assert_grill_marker_only(self):
+        self.assertFalse(
+            self.marker_path.exists(),
+            "a grilling dispatch must never arm handback_session.json",
+        )
+        self.assertTrue(
+            self.grill_marker_path.exists(), "grill marker was not armed"
+        )
+        marker = json.loads(
+            self.grill_marker_path.read_text(encoding="utf-8")
+        )
+        self.assertEqual(GRILL_KEYS, set(marker))
+        self.assertEqual(self.SESSION, marker["session_id"])
+        self.assertEqual(PLAN_NAME, marker["plan_name"])
+        self.assertEqual(SESSION_NUMBER, marker["session_number"])
+        self.assertEqual(HANDBACK_REL, marker["handback_path"])
+        self.assertEqual(
+            REQUIREMENTS_DOC_REL, marker["requirements_doc_path"]
+        )
+
+    def test_grill_and_implement_with_referenced_grilling_file_arms_nothing(
+        self,
+    ):
+        # Prevents: /grill_and_implement's one-line Step 0 refusal being
+        # blocked at Stop by enforce_grill_handback.py because the hook
+        # armed the grill marker off the referenced file's invocation line.
+        self._write_prompt_file(grilling_prompt())
+        self._submit("/grill_and_implement @{0}".format(self.PROMPT_REL))
+        self._assert_no_markers()
+
+    def test_grill_and_implement_with_inline_grilling_prompt_arms_nothing(
+        self,
+    ):
+        # Prevents: the same refusal block when the grilling prompt is
+        # pasted inline after the typed /grill_and_implement.
+        self._submit("/grill_and_implement\n\n" + grilling_prompt())
+        self._assert_no_markers()
+
+    def test_grill_and_implement_with_field_only_grilling_file_arms_nothing(
+        self,
+    ):
+        # Prevents: the no-arm rule keying on the invocation line alone --
+        # Step 0 refuses on the Requirements doc field too.
+        self._write_prompt_file(grilling_prompt(invocation_line=False))
+        self._submit("/grill_and_implement @{0}".format(self.PROMPT_REL))
+        self._assert_no_markers()
+
+    def test_orchestrated_grill_with_field_only_prompt_arms_grill_marker(self):
+        # Prevents: a grilling prompt lacking its /orchestrated_grill line
+        # (only the Requirements doc field) arming the implementation
+        # marker, which enforce_handback.py then uses to block every
+        # question stop.
+        self._write_prompt_file(grilling_prompt(invocation_line=False))
+        self._submit("/orchestrated_grill @{0}".format(self.PROMPT_REL))
+        self._assert_grill_marker_only()
+
+    def test_plain_field_only_prompt_arms_grill_marker(self):
+        # Prevents: grill detection depending on ANY invocation line -- the
+        # Requirements doc field alone routes to the grill lane even when
+        # the prompt is pasted with no command at all.
+        self._submit(grilling_prompt(invocation_line=False))
+        self._assert_grill_marker_only()
+
+    def test_orchestrated_grill_with_full_grilling_file_arms_grill_marker(
+        self,
+    ):
+        # Pins: the canonical grill dispatch still arms the grill marker
+        # only.
+        self._write_prompt_file(grilling_prompt())
+        self._submit("/orchestrated_grill @{0}".format(self.PROMPT_REL))
+        self._assert_grill_marker_only()
+
+    def test_grill_and_implement_implementation_dispatch_unchanged(self):
+        # Prevents: the no-arm rule leaking onto ordinary implementation
+        # dispatches -- file-referenced and inline, they still arm the
+        # implementation marker only.
+        prompt_file = self.proj / "docs" / "prompts" / "impl.md"
+        prompt_file.parent.mkdir(parents=True)
+        prompt_file.write_text(dispatched_prompt(), encoding="utf-8")
+        for label, prompt in [
+            ("file-referenced", "/grill_and_implement @docs/prompts/impl.md"),
+            ("inline", dispatched_prompt()),
+        ]:
+            with self.subTest(case=label):
+                if self.marker_path.exists():
+                    self.marker_path.unlink()
+                self._submit(prompt)
+                self.assertTrue(self.marker_path.exists())
+                self.assertEqual(MARKER_KEYS, set(self.read_marker()))
+                self.assertEqual(
+                    HANDBACK_REL, self.read_marker()["handback_path"]
+                )
+                self.assertFalse(self.grill_marker_path.exists())
 
 
 class TestBranchlessFallback(ArmHookEnv):
