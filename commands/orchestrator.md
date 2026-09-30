@@ -5,12 +5,13 @@ argument-hint: <plan_name> [additional text]
 
 Orchestrate the plan named in $ARGUMENTS.
 
-This command serves the plan shape the canonical arc handles poorly: work whose
-later steps are not knowable in advance, that pivots mid-flight, and that runs
-across many sessions. It is not a replacement for the canonical arc -- a plan
-that can genuinely be specified up front should still be run as a PRD plus a
-multi-phase plan, which is the only path that produces a stakeholder-readable
-spec.
+This command is the harness's primary flow for plans: work driven from one
+durable state file, one session at a time, including work whose later steps are
+not knowable in advance, that pivots mid-flight, and that runs across many
+sessions. The alternative is the phased-plan lane (`/grilling_session` ->
+`/write_prompt`), for a plan whose phases are all knowable up front and which
+needs a stakeholder-readable spec -- a PRD plus a multi-phase plan is the only
+path that produces one.
 
 An orchestrated plan has exactly ONE document: its state file. The structure of
 that file, everything it subsumes, and the one-writer rule are defined in
@@ -709,7 +710,7 @@ lives with the actor who can violate it.
 
 - **It emits no PRD, and ships no render subcommand.** A section kept current
   for a reader who is usually absent is write-only ceremony. When a plan needs a
-  stakeholder-readable spec, that is what the canonical arc is for.
+  stakeholder-readable spec, that is what the phased-plan lane is for.
 - **The Edit/Write allowlist is an ANTI-DRIFT GUARDRAIL, not a sandbox.** While
   the orchestrator session marker is in place, a hook blocks Edit / Write /
   NotebookEdit outside the state file, `docs/orchestration/`, `docs/prompts/`,
