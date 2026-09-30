@@ -32,8 +32,8 @@ self-improver flow (or upstream releases):
   agents/         -- workflow agents (self-improver, investigator, experimenter,
                      garbage_collector, jira_agent)
   hooks/          -- deterministic hooks: git_guardrails.py, enforce_phase_closing.py,
-                     enforce_handback.py, arm_handback_marker.py,
-                     enforce_orchestrator_isolation.py
+                     enforce_handback.py, enforce_grill_handback.py,
+                     arm_handback_marker.py, enforce_orchestrator_isolation.py
   harness/        -- read-only-in-daily-use machinery
     USER_MANUAL.md         -- this file
     INSTALL.md             -- recipient install guide (clone or zip, then /on_board)
@@ -287,7 +287,15 @@ deterministically by the companion UserPromptSubmit hook
 `hooks/arm_handback_marker.py` the moment a dispatched prompt carrying an
 `## Orchestration` block is submitted; `enforce_handback.py` reads it. The
 session-side marker write in `/grill_and_implement`'s Step 0a remains as a
-fallback for settings.json files predating the UserPromptSubmit registration. `.claude/hooks/enforce_orchestrator_isolation.py` (PreToolUse on
+fallback for settings.json files predating the UserPromptSubmit registration. Its
+grilling sibling, `hooks/enforce_grill_handback.py` (Stop), enforces an orchestrated
+grilling session's (`/orchestrated_grill`) lean handback
+(`harness/templates/grill_handback_schema.md`): it reads its own marker,
+`.claude/grill_handback_session.json` (armed by the same UserPromptSubmit hook, never
+`handback_session.json`), ALLOWS every stop while the handback is `Status: OPEN` --
+a grilling session stops on every question -- and applies the shape and
+requirements-doc checks only once the status is terminal; bootstrap Step 6 registers
+it as the third Stop entry. `.claude/hooks/enforce_orchestrator_isolation.py` (PreToolUse on
 Edit/Write/NotebookEdit) keeps an orchestrator session out of the implementation work --
 an anti-drift guardrail, not a sandbox: a Bash heredoc bypasses it entirely, and it is
 documented that way on purpose. Orchestrator markers are PER-PLAN
@@ -412,7 +420,9 @@ This hook serves CANONICAL phases only. Its orchestrated counterpart is
 `enforce_handback.py`, which enforces the handback obligation instead; the two are
 mutually exclusive by construction because they read different marker files
 (`phase_closing.json` vs `handback_session.json`) and neither honors the other's. A
-session writes one marker or the other, never both.
+session writes one marker or the other, never both. The third Stop hook,
+`enforce_grill_handback.py`, serves orchestrated GRILLING sessions on its own marker
+(`grill_handback_session.json`) and is exclusive with both in the same way.
 
 ## Glossaries
 
