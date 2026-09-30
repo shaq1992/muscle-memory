@@ -48,9 +48,15 @@ this command and do not read it as part of the task.
 **Lockstep contract.** The heading string `## Orchestration`, the bolded field names
 (including `Requirements doc:`), and the bare-value convention are OWNED by
 `commands/orchestrator.md` Step 7 and EMITTED by `harness/scripts/assemble_dispatch.py`.
-Any change to the heading, a field name, or the value convention must land in those files
-and in this one in lockstep -- a one-sided rename makes this command refuse a genuinely
-orchestrated prompt, or read an empty path.
+The `Requirements doc:` field and its `/orchestrated_grill` routing signal are also READ
+by `hooks/arm_handback_marker.py` (grill-marker arming) and `commands/grill_and_implement.md`
+Step 0 (which refuses grilling dispatches on that signal), and NAMED by
+`harness/templates/grill_handback_schema.md`, `commands/on_board.md` Step 6 (the guided
+tour), and `harness/USER_MANUAL.md` (the Commands reference row, "The orchestrated lane"
+step 3, and the /grill_and_implement section). Any change to the heading, a field name,
+the routing signal, or the value convention must land in all of those files and in this
+one in lockstep -- a one-sided rename makes this command refuse a genuinely orchestrated
+prompt, or read an empty path.
 
 State in a one-line notice that the session is running in the orchestrated grilling lane.
 
