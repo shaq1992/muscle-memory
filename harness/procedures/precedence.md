@@ -1,7 +1,7 @@
 # Procedure: Instruction Precedence
 
 One ladder for every layer that injects rules into a session -- an
-orchestrator, a dispatched orchestrated session, or a canonical phase alike.
+orchestrator, a dispatched orchestrated session, or a phased-plan phase alike.
 Before this file, precedence existed only as fragments scattered through the
 corpus (each cited below as an instance of the general rule). This file
 generalises them; it does not retire them -- each rule still lives with the

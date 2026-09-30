@@ -300,13 +300,13 @@ tightening of the standard.
 
 ## What the handback replaces
 
-For an orchestrated session the handback REPLACES the canonical end-of-phase
+For an orchestrated session the handback REPLACES the phased-plan end-of-phase
 apparatus ENTIRELY:
 
 - NO phase-closing marker,
 - NO per-phase learnings file,
 - NO ledger merge and no `Last merged` stamp.
 
-The handback is the session's whole durable output. The canonical closing
+The handback is the session's whole durable output. The phased-plan closing
 sequence and its ledger enforcement are untouched and continue to serve
-canonical multi-phase plans unchanged.
+phased multi-phase plans unchanged.

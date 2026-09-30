@@ -1,6 +1,6 @@
 # Procedure: End-of-Phase Closing Sequence
 
-The canonical closing sequence every phase implementation session runs once all
+The phased-plan closing sequence every phase implementation session runs once all
 deliverables are complete, tests pass, and the phase's verification section has
 passed (and any gate decision has been confirmed by the user). Generated prompts
 reference this file instead of restating it; the prompt supplies the resolved

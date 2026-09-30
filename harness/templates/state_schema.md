@@ -54,11 +54,11 @@ For an orchestrated plan, the state file REPLACES, in full:
 - the learnings ledger,
 - the per-phase learnings files.
 
-The canonical apparatus is untouched and continues to serve canonical
+The phased-plan apparatus is untouched and continues to serve phased
 multi-phase plans: the ledger, its Stop-hook enforcement and the closing
 sequence all behave exactly as before, and the prompt-writer command still
 reads the ledger and only the ledger for accumulated learnings. Nothing in this
-schema changes how a canonical plan closes.
+schema changes how a phased plan closes.
 
 ## Structure
 
@@ -220,7 +220,7 @@ Write a condition, not a date: "if the vendor changes the rate limit", not
 
 **No-contradiction law.** `## Established` may NEVER hold two rows that
 contradict each other on the same subject. This law is carried over unchanged
-from the canonical learnings ledger, and it is the reason a single table was
+from the phased-plan learnings ledger, and it is the reason a single table was
 chosen over six lists.
 
 When two rows clash:

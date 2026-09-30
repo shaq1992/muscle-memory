@@ -1,6 +1,6 @@
 # Procedure: Unified Git Strategy (PR law)
 
-Portable law for every plan -- canonical multi-phase plans and orchestrated
+Portable law for every plan -- phased multi-phase plans and orchestrated
 plans alike. Project-specific parameters are read from the key block of
 `.claude/preferences.md`; if that file is absent, the defaults stated inline
 below apply.
@@ -25,7 +25,7 @@ applies.
 ## Branch model
 
 Stated in terms of WORK UNITS so that one model serves both plan shapes: a
-canonical multi-phase plan, whose work unit is a phase, and an orchestrated
+phased (multi-phase) plan, whose work unit is a phase, and an orchestrated
 plan, whose work unit is a dispatched session. There is no second set of
 branch rules for orchestrated work.
 
@@ -40,12 +40,12 @@ branch rules for orchestrated work.
   and its base. It takes every role the integration branch has in this procedure; the
   orchestrator passes it on each dispatch through the `## Orchestration` block's
   `Accumulation branch:` field. Claude never creates a declared branch: a session STOPS if
-  it is missing on origin. Canonical multi-phase plans always use `integration/<plan_name>`.
+  it is missing on origin. Phased multi-phase plans always use `integration/<plan_name>`.
   "Accumulation branch" below means whichever of the two is in force.
 - **Work-unit branches**, always cut from the plan's accumulation branch and
   merged back into it:
   - **Phase branches:** `<plan_name>-phase-<NN>` -- one per phase of a
-    canonical multi-phase plan. Example: `example-plan-phase-04`.
+    phased (multi-phase) plan. Example: `example-plan-phase-04`.
   - **Session branches:** `<plan_name>-session-<NN>` -- one per session
     dispatched by an orchestrated plan. Example: `example-plan-session-07`.
 
