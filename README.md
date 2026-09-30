@@ -4,19 +4,28 @@ A portable, self-installing workflow system for Claude Code -- built for real
 multi-session engineering work, by someone who runs it every day.
 
 Claude Code out of the box is a brilliant single session. This harness makes it a
-**system**: structured planning interviews that write PRDs and phased plans, compiled
-phase prompts so every implementation session starts sharp, deterministic git
-guardrails that make destructive operations and protected-branch pushes mechanically
-impossible, and a closing sequence that carries learnings forward so session N+1 is
-smarter than session N. Three properties do the heavy lifting:
+**system**. Its primary flow is `/orchestrator <plan_name>`: one durable state file
+drives the plan, one session at a time is dispatched and handed back, each handback
+is ingested before the next move, and the whole plan ends in one PR you merge -- even
+when later steps can't be known in advance. For plans whose phases are all knowable
+up front, the alternative lane runs structured planning interviews that write PRDs
+and phased plans, then compiled phase prompts so every implementation session starts
+sharp. Underneath both: deterministic git guardrails that make destructive operations
+and protected-branch pushes mechanically impossible, and a closing sequence that
+carries learnings forward so session N+1 is smarter than session N. Three properties
+do the heavy lifting:
 
 - **Self-improving.** Structural friction discovered mid-session routes through a
   self-improver agent that edits the harness's own command files -- one reviewed,
   committed change at a time. The system you use next month is better than the one
   you installed.
-- **Self-reconciling.** Phase closes merge learnings into a current-truth ledger and
-  gate PRD/plan amendments through you -- documents stay TRUE at every session start
-  instead of silently drifting from reality.
+- **Self-reconciling.** The orchestrator's state file is reconciled on every
+  handback ingest: the session's delta rows are applied verbatim, duplicates and
+  contradictions are flagged rather than silently kept, and the dispatch and
+  next-session sections are brought current. In the phased-plan lane, phase closes
+  merge learnings into a current-truth ledger and gate PRD/plan amendments through
+  you. Either way, documents stay TRUE at every session start instead of silently
+  drifting from reality.
 - **Self-installing.** One command, `/on_board`, takes you from clone-or-unzip to a
   verified install: prerequisites checked, hooks wired to an interpreter that exists
   on your machine, preferences elicited, and the guardrail test suite run green on
