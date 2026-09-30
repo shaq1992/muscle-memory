@@ -174,5 +174,5 @@ Report a summary:
 - Directories created; .gitignore result; settings.json result.
 - Next step: "Run /on_board for the guided setup (preferences elicitation, CLAUDE.md
   assist, tour, self-check) -- or, if you have already onboarded, fill in CLAUDE.md
-  and .claude/preferences.md, then run /grilling_session to start your first planning
-  session."
+  and .claude/preferences.md, then run /orchestrator <plan_name> to start your first
+  piece of work."
