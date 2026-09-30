@@ -168,10 +168,16 @@ A short (~15 line) tour, novice-appropriate:
 - **The orchestrated lane:** `/orchestrator <plan_name>` for a plan whose later steps
   are NOT knowable up front -- one durable state file instead of a PRD and a plan, one
   dispatched session at a time on your word, each returning a handback the orchestrator
-  ingests. It coexists with the canonical arc; pick the lane at plan start.
+  ingests. It coexists with the canonical arc; pick the lane at plan start. A
+  requirements-grilling dispatch -- its `## Orchestration` block carries a
+  `Requirements doc:` field, and its first line under the title is `/orchestrated_grill`
+  -- is pasted into `/orchestrated_grill` instead: it grills until you say "stop asking
+  questions", writes a requirements doc and a lean handback, and opens no branch,
+  commit or PR.
 - **The quick lane:** `/grill_and_implement <slug> <task>` for tasks too small for a
-  full plan. It is also what you paste an orchestrated session prompt into -- it
-  switches lanes on its own when the prompt carries an `## Orchestration` block.
+  full plan. It is also what you paste an orchestrated IMPLEMENTATION session prompt
+  into -- it switches lanes on its own when the prompt carries an `## Orchestration`
+  block (grilling prompts go to `/orchestrated_grill`, above).
 - **Where to read more:** README.md (pitch + install paths) -> harness/INSTALL.md
   (install detail) -> harness/USER_MANUAL.md (deep reference).
 
