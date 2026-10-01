@@ -101,6 +101,7 @@ the intended behavior, not a runaway loop.
 
 import json
 import os
+import time
 import re
 import sys
 
@@ -194,6 +195,22 @@ def _consume_pause_declaration(session_id):
     if not isinstance(declaration, dict):
         return False
     if declaration.get("session_id") != session_id:
+        return False
+    # A session waiting on a long background job may declare a STANDING pause with
+    # "until": <unix epoch seconds>. It is honoured on every Stop until it expires and is
+    # not consumed; an expired one is removed and the normal check runs.
+    until = declaration.get("until")
+    if until is not None:
+        try:
+            until = float(until)
+        except (TypeError, ValueError):
+            return False
+        if time.time() < until:
+            return True
+        try:
+            os.remove(PAUSE_MARKER_PATH)
+        except OSError:
+            pass
         return False
     try:
         os.remove(PAUSE_MARKER_PATH)
