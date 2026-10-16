@@ -165,7 +165,7 @@ zero-commit rule in step 8 applies. State plainly what the phase's outputs
 were and why nothing is committable.
 
 Commit message: `feat: <plan_name> phase <N> -- <brief description>`. No AI
-attribution anywhere, ever.
+attribution, per the "Commit authorship" law in `git_strategy.md`.
 
 ## Step 8: Autonomous git close
 
@@ -204,7 +204,8 @@ switch to the owning account if it is not active, because `gh pr create` follows
 gh's active account and repo-local push pinning does NOT cover it (with two
 github.com identities the PR otherwise opens as the wrong user); then
 push the integration branch, open the PR autonomously with `gh pr create`
-(title/body per the PR convention, no AI attribution), then hand off: the USER
+(title/body per the PR convention; attribution per git_strategy.md "Commit
+authorship"), then hand off: the USER
 merges with a `!`-prefixed `gh pr merge <n> --merge` (the keystroke is the
 approval; Claude never runs `gh pr merge`). If the merge is withheld, the plan
 closes with the integration branch and the open PR as the durable artifacts.

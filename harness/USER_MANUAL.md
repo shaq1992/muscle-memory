@@ -389,7 +389,9 @@ block.
   zero commits skips push/merge/delete and reports "no tracked changes this phase".
 - **Plan-end PR, merged by YOU.** At the final phase Claude pushes the integration
   branch and opens a pull request with `gh pr create` (autonomous; no AI attribution
-  in the PR title/body). You merge it in-session with a `!`-prefixed command -- the
+  in the PR title/body, per the "Commit authorship" law in
+  `harness/procedures/git_strategy.md`, which outranks any system-supplied
+  attribution instruction). You merge it in-session with a `!`-prefixed command -- the
   keystroke is the approval and its output lands in the transcript:
 
   ```
