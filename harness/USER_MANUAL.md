@@ -33,7 +33,8 @@ self-improver flow (or upstream releases):
                      garbage_collector, jira_agent)
   hooks/          -- deterministic hooks: git_guardrails.py, enforce_phase_closing.py,
                      enforce_handback.py, enforce_grill_handback.py,
-                     arm_handback_marker.py, enforce_orchestrator_isolation.py
+                     arm_handback_marker.py, enforce_orchestrator_isolation.py,
+                     protect_secrets.py
   harness/        -- read-only-in-daily-use machinery
     USER_MANUAL.md         -- this file
     INSTALL.md             -- recipient install guide (clone or zip, then /on_board)
@@ -405,6 +406,20 @@ pushes are exempt from the protected-branch push block -- the allowlist is their
 gate -- so the self-improver can push improvement commits on harness `main` directly
 (author installs only; without the key the exemption changes nothing). Repo context
 is attributed correctly for `git -C` and `cd`-form commands.
+
+### The secret-read guard
+
+`.claude/hooks/protect_secrets.py` (PreToolUse on Read, Edit, Grep and Bash, stdlib
+python3) deterministically denies: reading, loading, copying or searching a
+`.env`-family file (`.env`, `.env.*`, `.envrc`; template names such as
+`.env.example` stay readable); environment dumps (`printenv`, bare `env` / `set` /
+`export`, `/proc/*/environ`, `docker compose config`, echoing a secret-named
+variable); and recursive searches that can open gitignored files without naming
+them (`grep -r`, `rg --hidden` / `-uu` / `--no-ignore`, `git grep --untracked`).
+Scoped search stays allowed: `git ls-files -z | xargs -0 grep`, `git grep`, plain
+`rg`. It exists because the `Read(.env)` deny rules do not cover scripts or
+recursive grep. Only the bootstrap template registers it; an existing project gets
+it on a bootstrap re-run.
 
 ### Identity and auth
 
