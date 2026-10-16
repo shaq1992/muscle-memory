@@ -256,13 +256,27 @@ edit the two in lockstep.
 | Tag | Means |
 |---|---|
 | `prompt-underspecified` | The dispatched prompt did not carry enough to do the work. |
-| `session-split` | The dispatched scope should have been two sessions. |
+| `session-split` | The dispatched scope should have been two sessions, and that was knowable at dispatch time (a split forced by a mid-session change is `scope-drift`). |
 | `gate-leaked` | A gate was passed without the approval it required. |
 | `greenlist-wrong` | A do-not-re-validate entry turned out not to hold. |
 | `invariant-moved` | A pinned invariant is no longer true. |
-| `handback-thin` | An earlier handback did not carry what this session needed. |
 | `isolation-breached` | The session wrote, or nearly wrote, outside its allowed paths. |
+| `hook-friction` | An enforcement hook blocked or burdened legitimate live work (a background wait, an interactive turn, failures surfaced one at a time). |
+| `scope-drift` | Scope or a gate changed mid-session with no path to record it or re-gate. |
+| `sources-conflict` | Two governing sources prescribe incompatible actions, with no precedence rule. |
+| `step-unexecutable` | A mandated step cannot run in the session's environment. |
+| `step-misbehaves` | A prescribed step runs but silently does the wrong or an unsafe thing. |
+| `mode-missing` | A command or procedure lacks a mode or step the situation needed. |
+| `marker-misarmed` | A session marker was not armed, was armed for the wrong session or plan, or vanished. |
+| `lockstep-missed` | A change shipped to one holder while a dependent listing, template or doc was not updated. |
 | `other` | Anything else -- REQUIRES one free-text line saying what. |
+
+The tag `handback-thin` is RETIRED (never used): an earlier handback that did
+not carry what a session needed is `prompt-underspecified` for the session
+that relied on it. The word `disposition` is RESERVED for the closing line
+below and is not a tag -- a handback carrying it fails closed, so a closing
+line can never arrive through a handback. Retirement is forward-only: lines
+already in `docs/observations.md` keep the tag they were written with.
 
 Write `none` when there is nothing to report. Do not fabricate an observation
 to fill the section.
@@ -276,15 +290,18 @@ frozen at what was guessed when it was written.
 
 Structural observations accumulate in ONE project-level file,
 `docs/observations.md`. It is APPEND-ONLY: entries are added at the end and
-never edited, reordered or deleted. Dispositioning an entry is itself an
-append, not an edit.
+never edited, reordered or deleted (no line is ever retagged).
+Dispositioning an entry is itself an append, not an edit: the closing line
+below.
 
-Two writers append to it:
+Three writers append to it:
 
 1. orchestrated handback ingestion -- the orchestrator copies each observation
    line across when it ingests a handback;
 2. a standalone quick-lane close -- a single appended line at the end of the
-   run.
+   run;
+3. `harness/scripts/close_observations.py` -- the closing lines, and nothing
+   else.
 
 One line per observation, in this fixed shape, so the file stays greppable:
 
@@ -298,6 +315,38 @@ occurrences of a tag MECHANICALLY, across the WHOLE file -- the same defect
 appearing in two unrelated plans is stronger evidence of a pattern than the
 same defect twice in one plan. The fixed line shape exists to make that count
 mechanical rather than a judgement call, which is what keeps the loop cheap.
+
+### Closing lines (dispositions)
+
+An observation that has been handled -- fixed, judged not worth fixing, a
+duplicate, or not structural after all -- is CLOSED by appending one line in
+the SAME five-field shape, with the reserved word `disposition` in the tag
+slot:
+
+```
+YYYY-MM-DD | <plan_name> | <NN or -> | disposition | L<n>[,L<n>...] <verdict>: <one-line note>
+```
+
+- `L<n>` is the 1-based line number of an earlier observation line in this
+  file -- stable, because the file is append-only. One closing line may close
+  several.
+- `<verdict>` is one of `fixed`, `wontfix`, `duplicate`, `not-structural`.
+- `<plan_name>` / `<NN or ->` name the plan (and session, if any) that did
+  the work or made the call; the note says what, e.g. a commit hash.
+
+Example:
+
+```
+2026-10-20 | harness-improv-v7 | 03 | disposition | L5,L7 fixed: every OPEN stop now allowed (229fe0b)
+```
+
+The orchestrator writes a closing line ONLY through
+`harness/scripts/close_observations.py` (its isolation hook does not let it
+Edit this file); the script refuses a ref that is out of range, names a
+closing line, or names an already-closed observation, and appends nothing on
+any refusal. The tag count above SKIPS closing lines and every observation a
+closing line names: `close_observations.py --count` prints that count of
+OPEN observations per tag.
 
 ## The legible end states
 

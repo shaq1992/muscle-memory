@@ -570,7 +570,12 @@ All five happen before replying (write-through trigger (a)).
 ## Step 10 -- The two-strikes notice
 
 After ingesting, count occurrences of each observation tag ACROSS THE WHOLE of
-`docs/observations.md` -- not just this plan's lines. The same defect showing up
+`docs/observations.md` -- not just this plan's lines -- by running
+`python3 .claude/harness/scripts/close_observations.py --count`. The count
+covers OPEN observations only: it SKIPS closing (`disposition`) lines, and
+every observation a closing line names, so a fixed defect stops counting
+toward the notice. (Closing lines: `harness/templates/handback_schema.md`,
+"Closing lines".) The same defect showing up
 in two unrelated plans is stronger evidence of a pattern than the same defect
 twice in one plan.
 
@@ -656,8 +661,21 @@ ask is the whole gate.
 4. **Observations-driven passes start from `docs/observations.md`.** When the
    user asks for a pass over accumulated observations, read the file, count
    the tags mechanically, and compose the brief from what is actually there.
-   Handled items are dispositioned by APPENDED lines, as before -- the file
-   is append-only.
+   Handled items are dispositioned by APPENDED closing lines, never edits --
+   the file is append-only. Once a pass lands (or the user rules an item
+   wontfix, duplicate or not-structural), close each item it handled with
+   ONE call per verdict:
+
+   ```
+   python3 .claude/harness/scripts/close_observations.py \
+     --observations docs/observations.md --plan <plan_name> \
+     --session <NN or -> --refs <line>,<line> --verdict fixed \
+     --note "<what landed, e.g. the commit hash>"
+   ```
+
+   The refs are the observation lines' 1-based line numbers; surface the
+   script's OK / FAIL output verbatim. The closing-line shape is defined in
+   `harness/templates/handback_schema.md` ("Closing lines").
 5. **No marker, no fresh session, no checkout.** There is no
    `improve_session.json` and no fresh-session requirement. The standing
    restriction is unchanged: never `git checkout` or `git switch` in the

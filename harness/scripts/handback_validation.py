@@ -44,14 +44,25 @@ shape) must update BOTH.
 
 import re
 
+# The closed vocabulary (definitions: harness/templates/handback_schema.md).
+# "handback-thin" was retired in harness-improv-v7 (never used); the word
+# "disposition" is RESERVED for the closing line close_observations.py
+# writes (its DISPOSITION_TAG) and is deliberately not a tag, so a handback cannot carry one.
 OBSERVATION_TAGS = (
     "prompt-underspecified",
     "session-split",
     "gate-leaked",
     "greenlist-wrong",
     "invariant-moved",
-    "handback-thin",
     "isolation-breached",
+    "hook-friction",
+    "scope-drift",
+    "sources-conflict",
+    "step-unexecutable",
+    "step-misbehaves",
+    "mode-missing",
+    "marker-misarmed",
+    "lockstep-missed",
     "other",
 )
 

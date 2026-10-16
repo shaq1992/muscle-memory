@@ -352,7 +352,9 @@ your project's logic) under a closed tag vocabulary; they accumulate in one appe
 file, the orchestrator emits ONE line saying so. You then ask the live orchestrator to
 spawn a self-improver pass over them (the `/orchestrator improve` subcommand is retired):
 it composes the brief from the file and hands it to the existing self-improver flow
-unchanged, and handled items are dispositioned by appended lines. Sessions report, the
+unchanged, and handled items are closed by appended closing lines
+(`harness/scripts/close_observations.py`, shape in the handback schema), which the
+two-occurrence count then skips. Sessions report, the
 orchestrator counts, and improvement runs only on your ask.
 
 **Delegation.** Long reads and corpus searches go to the `investigator` sub-agent, whose

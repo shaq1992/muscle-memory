@@ -385,6 +385,32 @@ class TestObservations(IngestEnv):
         obs = "- bogus-tag | not a real tag"
         self.assert_failed_untouched(self.run_ingest(handback_text(obs=obs)))
 
+    def test_new_tags_accepted(self):
+        # Prevents: the E024 vocabulary failing ingest closed -- every one of
+        # these lines would otherwise have to be filed as `other`.
+        tags = ["hook-friction", "scope-drift", "sources-conflict",
+                "step-unexecutable", "step-misbehaves", "mode-missing",
+                "marker-misarmed", "lockstep-missed", "gate-leaked",
+                "session-split"]
+        obs = "\n".join("- {0} | example".format(t) for t in tags)
+        r = self.run_ingest(handback_text(obs=obs))
+        self.assert_ok(r)
+        for t in tags:
+            self.assertIn("| 03 | {0} | example\n".format(t), self.obs_text())
+
+    def test_retired_and_reserved_tags_fail_closed(self):
+        # Prevents: the retired handback-thin tag coming back, and a closing
+        # line smuggled into the observations file through a handback
+        # (`disposition` is written only by close_observations.py).
+        for tag in ["handback-thin", "disposition"]:
+            with self.subTest(tag=tag):
+                self.state.write_text(STATE_DOC, encoding="utf-8")
+                self.observations.write_text(OBSERVATIONS_SEED,
+                                             encoding="utf-8")
+                obs = "- {0} | x".format(tag)
+                self.assert_failed_untouched(
+                    self.run_ingest(handback_text(obs=obs)))
+
 
 class TestDispatchedTransitions(IngestEnv):
 

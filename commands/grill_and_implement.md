@@ -336,6 +336,8 @@ MACHINERY this session ran under, never defects in the project's domain logic --
 vocabulary defined in `harness/templates/handback_schema.md`, with `-` in the session-number
 field. The file is APPEND-ONLY: never edit, reorder or delete an existing line. If there is
 nothing to report, append nothing; do not fabricate an observation to fill the file.
+Never write a closing (`disposition`) line here -- only
+`harness/scripts/close_observations.py` writes those.
 
 This is a ONE-LINE WRITE, not a self-improvement step. Do not compose a brief, spawn a
 sub-agent, review a diff or propose an edit to the harness. The observation is evidence
