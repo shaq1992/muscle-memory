@@ -234,6 +234,7 @@ Step 8 clears.
      --body <task_body_file> --plan <plan_name> --session <NN> \
      --branch <plan_name>-session-<NN> --rows E006,E007,... \
      --accumulation-branch <branch> \
+     [--repo-root <worktree>] [--new-path <path> ...] \
      [--command none | --command orchestrated_grill [--requirements-doc <path>]] \
      --out "docs/prompts/$(date +%d%m%y)/<plan_name>_session_<NN>_prompt.md"
    ```
@@ -242,6 +243,29 @@ Step 8 clears.
    and passed on EVERY dispatch when the state file carries a settled
    accumulation-branch row -- a dispatch that forgets it silently builds on the
    wrong branch.
+
+   The script also checks the authored body before writing anything (its
+   docstring's BODY CHECKS paragraph is the full rule): every E-ID the body
+   mentions must be a live `## Established` row (a retired or mistyped one
+   FAILS; one above the counter only WARNS) AND must be in `--rows`; `--rows`
+   carries no duplicate; every path the body cites (an `@` reference, or a
+   backticked token with a `/` and a file extension or a trailing `/`) must
+   exist; and `--branch` must be exactly `<plan_name>-session-<NN>`. Mark a
+   file the session will create with `(new)` right after it, or pass
+   `--new-path <path>`. Paths are checked under the working directory and
+   under `--repo-root`: when the state file carries a settled worktree row
+   (code edited in a git worktree outside the project), pass
+   `--repo-root <worktree path>` on EVERY dispatch, or every cited code path
+   FAILS.
+
+   **Authoring checklist** (what the script cannot check -- read the body
+   once against it before running the assembler):
+
+   - **No contradictions.** The body must not prescribe two incompatible
+     actions -- against itself, against a handed row, or against a harness
+     procedure it points at (for example a foreground wait where
+     `harness/procedures/monitoring.md` mandates background plus Monitor).
+     Where two sources really do differ, say which one wins.
 
    The script also ensures the written body carries exactly ONE
    `/grill_and_implement` invocation line -- the `## Orchestration` block alone
