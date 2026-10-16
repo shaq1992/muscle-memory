@@ -312,10 +312,13 @@ protected-branch invariant of `harness/procedures/git_strategy.md` holds identic
    "Parse arguments" above.
 2. Implement and commit on it exactly as above (same commit rules, same no-attribution
    law).
-3. Close by merging into the accumulation branch and stop there: push the session branch,
-   check out the accumulation branch, merge with git defaults and an explicit
-   `-m "merge: ..."` message, push the accumulation branch, delete the session branch
-   remote and local with `git branch -d` (never `-D`).
+3. Close by merging into the accumulation branch and stop there, following step 4
+   (4a-4f) of the per-work-unit flow in `harness/procedures/git_strategy.md`: push the
+   session branch, land on a current accumulation branch, merge with git defaults and an
+   explicit `-m "merge: ..."` message, push the accumulation branch, verify it landed,
+   then delete the session branch remote and local with `git branch -d` (never `-D`).
+   Each is its own Bash call, checked before the next; if one fails, stop there as that
+   step says -- never reset, never delete to clean up -- and report it in the handback.
 4. **Open NO pull request.** Only the PLAN opens a PR -- from the accumulation branch, by
    the orchestrator, on the user's word. If every session opened its own PR the review
    queue would flood and the accumulation branch would stop being the plan's single
