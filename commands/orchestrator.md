@@ -398,9 +398,11 @@ turn except the one the user gives it, and while a dispatched session is running
 there may be no orchestrator session alive at all. The other entry point is
 RESUME -- an outstanding row in `## Dispatched` is a standing instruction to look
 at that handback path on disk before doing anything else, and what is found there
-is the answer: a finalized handback gets ingested, a stub still at `OPEN` is
-positive evidence the session died, and no file at all means the session was
-never run. (A grilling session's `OPEN` stub is the exception -- see below.)
+is the answer: a finalized handback gets ingested, no file at all means the
+session was never run, and a stub still at `OPEN` means the session either
+died or is still working -- the Stop hooks of both lanes allow every stop
+while the handback is `OPEN`, so ASK THE USER which, never infer a death from
+the status alone.
 
 **Grill handbacks are ingested MANUALLY.** A handback from a requirements-
 grilling session follows @.claude/harness/templates/grill_handback_schema.md,
@@ -420,9 +422,9 @@ replying (write-through trigger (a)):
   only.
 - **Update the `## Dispatched` row per the handback's `Status`**, exactly as
   action 4 below describes, and refill or empty `## Next` per action 5.
-- **An `OPEN` stub means "died, or still grilling"** -- a grilling session
-  stops on every question -- so ASK THE USER which, never infer a death from
-  the status alone.
+- **An `OPEN` stub means "died, or still grilling"** -- the same rule as
+  for an implementation session above -- so ASK THE USER which, never infer a
+  death from the status alone.
 
 **The requirements doc is read FREELY.** The orchestrator is ALLOWED and
 ENCOURAGED to read a grilling session's requirements doc -- in full or in

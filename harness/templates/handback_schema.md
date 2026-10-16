@@ -30,7 +30,7 @@ finalizes it at close.
 
 This ordering is deliberate and is not negotiable: a file written only at the
 end is absent when a session dies, and an absent file is indistinguishable from
-a session that was never dispatched. See "The three legible terminal states".
+a session that was never dispatched. See "The legible end states".
 
 ## The read receipt
 
@@ -52,14 +52,14 @@ receipt):**`, exactly TWO lines derived from the dispatched prompt:
   `harness/scripts/assemble_dispatch.py` in the same run that wrote the
   prompt, so manifest and prompt match by construction).
 
-This is a READ RECEIPT. Its value is timing: it catches a session that never
-registered its isolation clauses IN MINUTE ONE, while the session can still
-be corrected, rather than in a post-mortem after the clause was already
-breached. `hooks/enforce_handback.py` VERIFIES the receipt against the
-dispatch manifest -- row-ID set equality plus case-insensitive hash equality
--- on every Stop evaluation except an ABANDONED close, question pauses
-included, and also offers the same verification manually as
-`--check-receipt <handback> [--manifest <path>]`. When NO manifest exists at
+This is a READ RECEIPT. It proves the session registered the rows it was
+handed, against the exact prompt it was handed. `hooks/enforce_handback.py`
+VERIFIES the receipt against the dispatch manifest -- row-ID set equality
+plus case-insensitive hash equality -- when the handback carries `PARTIAL`
+or `COMPLETE`; it is never checked while the handback is `OPEN` (every such
+stop is allowed, so a bad receipt can never turn waits into a block loop)
+and never at an `ABANDONED` close. The hook also offers the same
+verification manually as `--check-receipt <handback> [--manifest <path>]`. When NO manifest exists at
 the conventional path, the hook skips verification (the manifest is the
 orchestrator's artifact; a session cannot legitimately create it), while the
 manual mode fails loudly -- its caller is the orchestrator, the manifest's
@@ -112,13 +112,14 @@ optional section.
 | `COMPLETE` | The dispatched scope was finished. |
 
 All four are the FILE-level vocabulary, but only `PARTIAL`, `ABANDONED` and
-`COMPLETE` are TERMINAL states: `OPEN` is the stub written at session start,
-it is not a state a live session may close in, and the enforcing Stop hook
-blocks a closing turn still carrying it. A session that reaches its Stop hook
-is by definition alive, and `OPEN` is reserved as positive evidence that a
-session DIED (see "The three legible terminal states"); accepting it would
-make the hook vacuous, since it would demand a file the session already wrote
-in minute one.
+`COMPLETE` are TERMINAL states: `OPEN` is the stub written at session start.
+A live session stops for many reasons that are not a close -- waiting on a
+background job, pausing, asking the user a question -- so the enforcing Stop
+hook ALLOWS every stop while the handback is `OPEN`, and runs its checks only
+once the status is terminal. The accepted cost: a session that stops for good
+without finalizing is not blocked. Its `OPEN` stub surfaces it instead, and
+an `OPEN` stub found at ingest means "died, or still working" (see "The
+legible end states").
 
 ### `## Delta`
 
@@ -254,16 +255,19 @@ appearing in two unrelated plans is stronger evidence of a pattern than the
 same defect twice in one plan. The fixed line shape exists to make that count
 mechanical rather than a judgement call, which is what keeps the loop cheap.
 
-## The three legible terminal states
+## The legible end states
 
-Three distinguishable end states are the POINT of writing the stub early:
+Distinguishable end states are the POINT of writing the stub early:
 
-1. **`OPEN` on a stub that was never advanced** is POSITIVE EVIDENCE that the
-   session died -- it was dispatched, it read its prompt, and it never came
-   back.
+1. **`OPEN` on a stub that was never advanced** means the session either
+   DIED or is STILL WORKING -- it was dispatched and read its prompt, but has
+   not finalized. The file alone cannot tell the two apart (the hook allows
+   every `OPEN` stop), so the orchestrator ASKS THE USER which, never
+   inferring a death from the status alone.
 2. **`PARTIAL` or `ABANDONED`** is an honest early exit, with whatever real
    work landed captured in `## Delta`.
 3. **`COMPLETE`** is a real close.
+4. **No file at all** means the session was never run.
 
 A design that writes the handback only at the end cannot achieve this: a dead
 session and a never-dispatched session both leave no file, so the failure is
@@ -294,7 +298,7 @@ it to guess again.
 If the escape hatch cannot be kept this cheap, the enforcement has degraded
 into ceremony and the design is wrong. An expensive escape hatch does not
 produce better handbacks -- it produces sessions that abandon silently, which
-is the exact failure the three legible terminal states exist to eliminate.
+is the exact failure the legible end states exist to eliminate.
 Treat any change that raises this cost as a defect in the change, not as a
 tightening of the standard.
 

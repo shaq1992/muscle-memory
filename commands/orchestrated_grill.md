@@ -92,9 +92,10 @@ only at the end is absent when a session dies.
    `hooks/arm_handback_marker.py` and `hooks/enforce_grill_handback.py`: any change to it
    must update all three files in lockstep.
 3. **NEVER write `.claude/handback_session.json`.** That marker arms
-   `hooks/enforce_handback.py`, which blocks every stop while the handback is `OPEN` --
-   and a grilling session stops on every question; that stall is the observed defect the
-   grill marker exists to remove (schema: "Stops while `OPEN` are allowed"). If
+   `hooks/enforce_handback.py`, whose terminal checks demand the implementation
+   handback's shape (`## Delta` and its siblings), which a lean grill handback never
+   carries; the grill marker arms the grill-shaped checks instead (schema: "Stops while
+   `OPEN` are allowed"). If
    `.claude/handback_session.json` already exists AND its `session_id` equals THIS
    session's id (the UserPromptSubmit hook can arm it before it knows which command the
    prompt names), delete it. A marker naming a different session is not yours: leave it.

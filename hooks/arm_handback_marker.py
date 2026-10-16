@@ -109,8 +109,9 @@ the handback path whenever both are conventional), and the hook writes
     }
 
 and does NOT write .claude/handback_session.json -- that marker arms
-enforce_handback.py, which blocks every stop while the handback is OPEN,
-and a grilling session stops on every question. SHARED MARKER CONTRACT: the
+enforce_handback.py, whose terminal checks demand the implementation
+handback's "## Delta" shape, which a lean grill handback never carries.
+SHARED MARKER CONTRACT: the
 grill marker's path and key set are OWNED by commands/orchestrated_grill.md
 Step 0a item 2 and read by hooks/enforce_grill_handback.py; any change to
 the path, a key name, or a value shape must update those two files and this

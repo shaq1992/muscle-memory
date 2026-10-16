@@ -228,11 +228,12 @@ class HandbackHookEnv(unittest.TestCase):
         )
         return path
 
-    def declare_pause(self, session=None):
-        (self.proj / ".claude" / "handback_pause.json").write_text(
-            json.dumps({"session_id": session or self.SESSION}),
-            encoding="utf-8",
-        )
+    def write_stale_pause_file(self, declaration):
+        # The retired question-pause file. Written only to prove the hook no
+        # longer reads, honours or deletes it.
+        path = self.proj / ".claude" / "handback_pause.json"
+        path.write_text(json.dumps(declaration), encoding="utf-8")
+        return path
 
     # -- hook drivers ------------------------------------------------------
 
@@ -323,16 +324,28 @@ class TestBadStatusBlocks(HandbackHookEnv):
                 self.assertIn(ABANDON_MINIMUM, reason)
                 self.assertTrue(self.marker_path.exists())
 
-    def test_open_stub_is_not_a_terminal_state(self):
-        # OPEN is in the file-level vocabulary but is NOT a terminal state.
-        # The stub is written at session start, so accepting OPEN here would
-        # make the hook vacuous -- it would demand a file the session already
-        # wrote in minute one. A session that reaches its Stop hook is alive,
-        # and OPEN is reserved as positive evidence that a session died.
+
+
+class TestOpenStubAllows(HandbackHookEnv):
+    def test_open_stub_allows_and_keeps_marker(self):
+        # Prevents: a session waiting on a background job, or pausing to ask
+        # a question, being blocked on every stop (the stuck loops of E007).
+        # Every stop while OPEN is allowed; the marker stays so the checks
+        # still run once the status turns terminal.
         self.write_marker()
         self.write_handback(STUB_HANDBACK)
-        reason = self.assert_blocked(reason_contains="OPEN")
-        self.assertIn(ABANDON_MINIMUM, reason)
+        for _ in range(3):
+            self.assert_allowed_stop()
+            self.assertTrue(self.marker_path.exists())
+
+    def test_open_with_bad_receipt_allows(self):
+        # Prevents: a receipt mismatch at OPEN turning every wait into a
+        # block loop the session can only leave by abandoning. The receipt
+        # is checked at the terminal close instead.
+        self.write_marker()
+        self.write_manifest(sha=OTHER_SHA)
+        self.write_handback(ID_RECEIPT_STUB)
+        self.assert_allowed_stop()
         self.assertTrue(self.marker_path.exists())
 
 
@@ -447,15 +460,19 @@ class TestBlockMessageStatesUnblockingContent(HandbackHookEnv):
         self.write_handback("Status: FINISHED\n\nA sentence.\n")
         reasons.append(self.assert_blocked())
 
-        # Status OPEN.
+        # Status OPEN is no longer a block at all.
         self.write_handback(STUB_HANDBACK)
-        reasons.append(self.assert_blocked())
+        self.assert_allowed_stop()
 
         # PARTIAL missing a required section.
         self.write_handback(
             COMPLETE_HANDBACK.replace("Status: COMPLETE", "Status: PARTIAL")
             .replace("## Delta\n", "")
         )
+        reasons.append(self.assert_blocked())
+
+        # COMPLETE with a malformed Delta.
+        self.write_handback(MALFORMED_DELTA_HANDBACK)
         reasons.append(self.assert_blocked())
 
         for i, reason in enumerate(reasons):
@@ -465,6 +482,10 @@ class TestBlockMessageStatesUnblockingContent(HandbackHookEnv):
                     "block reason {0} omits the verbatim unblocking "
                     "content: {1!r}".format(i, reason),
                 )
+                # Prevents: block messages still telling a session to write
+                # the retired pause file that nothing reads any more.
+                self.assertNotIn("handback_pause", reason)
+                self.assertNotIn("pause", reason.lower())
 
 
 class TestReceiptVerification(HandbackHookEnv):
@@ -519,33 +540,16 @@ class TestReceiptVerification(HandbackHookEnv):
         self.assert_allowed_stop()
         self.assertFalse(self.marker_path.exists())
 
-    def test_pause_with_bad_receipt_blocks(self):
-        # Prevents: the minute-one signal being skippable via a question
-        # pause -- the FIRST pause of a dispatched session is exactly the
-        # moment the verification is for.
+    def test_terminal_partial_bad_receipt_blocks(self):
+        # Prevents: moving the receipt check to terminal-only silently
+        # dropping it for PARTIAL, the other status that claims work landed.
         self.write_marker()
         self.write_manifest(sha=OTHER_SHA)
-        self.write_handback(ID_RECEIPT_STUB)
-        self.declare_pause()
+        self.write_handback(
+            ID_RECEIPT_COMPLETE.replace("Status: COMPLETE", "Status: PARTIAL")
+        )
         reason = self.assert_blocked(reason_contains="SHA256")
         self.assertIn(ABANDON_MINIMUM, reason)
-        # The pause declaration is NOT consumed by a receipt block: once the
-        # receipt is fixed, the already-declared pause still lets the
-        # question turn close.
-        self.assertTrue(
-            (self.proj / ".claude" / "handback_pause.json").exists()
-        )
-        self.write_handback(ID_RECEIPT_STUB.replace(PROMPT_SHA, OTHER_SHA))
-        self.assert_allowed_stop()
-        self.assertTrue(self.marker_path.exists())
-
-    def test_pause_with_good_receipt_allows(self):
-        # Prevents: the verification breaking the healthy question pause.
-        self.write_marker()
-        self.write_manifest()
-        self.write_handback(ID_RECEIPT_STUB)
-        self.declare_pause()
-        self.assert_allowed_stop()
         self.assertTrue(self.marker_path.exists())
 
     def test_v5_receipt_with_manifest_blocks(self):
@@ -557,6 +561,57 @@ class TestReceiptVerification(HandbackHookEnv):
         reason = self.assert_blocked(reason_contains="- Rows:")
         self.assertIn(ABANDON_MINIMUM, reason)
         self.assertTrue(self.marker_path.exists())
+
+
+class TestAllTerminalFailuresTogether(HandbackHookEnv):
+    def test_all_terminal_failures_reported_together(self):
+        # Prevents: one round-trip per failure -- fix the receipt, stop, learn
+        # about the missing section, stop, learn about the Delta grammar. A
+        # terminal handback with three independent defects gets ONE block
+        # naming all three.
+        self.write_marker()
+        self.write_manifest(sha=OTHER_SHA)
+        text = (
+            ID_RECEIPT_COMPLETE
+            .replace("## For the next session\n", "")
+            .replace(
+                "## Delta\n\nnone\n",
+                "## Delta\n\n| E001 | no marker above this row | a | b | c |\n",
+            )
+        )
+        self.write_handback(text)
+        reason = self.assert_blocked()
+        self.assertIn("SHA256", reason)
+        self.assertIn("## For the next session", reason)
+        self.assertIn("FAIL delta:", reason)
+        self.assertEqual(1, reason.count(ABANDON_MINIMUM))
+        self.assertTrue(self.marker_path.exists())
+
+
+class TestPauseFileIsInert(HandbackHookEnv):
+    def test_pause_file_is_inert(self):
+        # Prevents: the retired pause mechanism lingering as a way to waive
+        # the terminal checks. A pause file -- plain or a standing "until" --
+        # no longer changes any decision, and the hook leaves it untouched.
+        self.write_marker()
+        self.write_handback(MALFORMED_DELTA_HANDBACK)
+        for declaration in [
+            {"session_id": self.SESSION},
+            {"session_id": self.SESSION, "until": 9999999999},
+        ]:
+            with self.subTest(declaration=declaration):
+                path = self.write_stale_pause_file(declaration)
+                self.assert_blocked(reason_contains="FAIL delta:")
+                self.assertTrue(path.exists())
+                self.assertEqual(
+                    declaration, json.loads(path.read_text(encoding="utf-8"))
+                )
+
+    def test_hook_source_has_no_pause_mechanism(self):
+        # Prevents: dead pause code surviving in the hook after retirement.
+        source = HANDBACK_HOOK.read_text(encoding="utf-8")
+        self.assertNotIn("handback_pause", source)
+        self.assertNotIn("PAUSE_INSTRUCTION", source)
 
 
 class TestManualCheckMode(HandbackHookEnv):

@@ -298,15 +298,19 @@ Schemas: `harness/templates/state_schema.md` (state) and
    accumulation branch's PR may also be asked for at any time.) Nothing else in this
    lane ever reaches the protected branch.
 
-**The three legible end states** come from writing the handback stub early: a stub still
-at `Status: OPEN` is positive evidence the session DIED, `PARTIAL` / `ABANDONED` is an
+**The legible end states** come from writing the handback stub early: a stub still at
+`Status: OPEN` means the session died or is still working (the orchestrator asks you
+which), `PARTIAL` / `ABANDONED` is an
 honest early exit, `COMPLETE` is a real close, and no file at all means the session was
 never run. The abandon path deliberately costs about three lines -- a status field and
 one sentence -- because an expensive escape hatch produces silent abandonment, not
 better reports.
 
-**Enforcement.** `.claude/hooks/enforce_handback.py` (Stop) blocks a dispatched
-session's closing turn until a schema-valid handback exists at the path its marker names;
+**Enforcement.** `.claude/hooks/enforce_handback.py` (Stop) checks a dispatched
+session's handback at the path its marker names: it blocks only when the file is missing
+or has no valid `Status:` line, ALLOWS every stop while the handback is `Status: OPEN`
+(waits, pauses and questions are never blocked), and once the status is terminal runs
+every shape, receipt and grammar check, reporting all failures in one block;
 it and `enforce_phase_closing.py` are mutually exclusive by construction, reading
 different marker files. That marker, `.claude/handback_session.json`, is written
 deterministically by the companion UserPromptSubmit hook

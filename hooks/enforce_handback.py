@@ -5,11 +5,10 @@ UserPromptSubmit hook hooks/arm_handback_marker.py the moment the dispatched
 prompt carrying an "## Orchestration" block is SUBMITTED, before the model
 has read a word of it; the session-side write in
 commands/grill_and_implement.md Step 0a item 2 is retained as a fallback
-(re-writing the same marker is idempotent). This hook then blocks that
-session's closing turn until a schema-valid handback exists at the path the
-marker names -- and only that file: the check is scoped to the single path
-the marker names, never to any other document that happens to carry a
-"Status:" line.
+(re-writing the same marker is idempotent). This hook then checks the handback
+at the path the marker names -- and only that file: the check is scoped to the
+single path the marker names, never to any other document that happens to
+carry a "Status:" line.
 
 That "## Orchestration" heading string is named here for documentation only.
 This hook never parses a prompt; it keys off .claude/handback_session.json
@@ -28,46 +27,54 @@ other's. An orchestrated session writes a handback marker INSTEAD OF a
 phase-closing marker; for it the handback replaces the per-phase learnings
 file and the ledger merge entirely.
 
-Checks, in order, each blocking with a reason that names the failed check:
-  1. a file exists at the marker's handback_path;
+EVERY STOP IS ALLOWED WHILE THE HANDBACK IS OPEN. A live session stops for
+many reasons that are not a close -- waiting on a background job, pausing,
+putting a question to the user -- and none of them is blocked. This is the
+same rule as the grilling sibling hooks/enforce_grill_handback.py. The
+accepted loss: a session that stops for good without finalizing is not
+blocked; its OPEN stub surfaces it to the orchestrator, for whom an OPEN stub
+means "died, or still working" (harness/templates/handback_schema.md).
+
+Checks, in order:
+  1. a file exists at the marker's handback_path -- BLOCK if not. The stub is
+     the session's minute-one deliverable (written before any question or
+     work), and one write clears the block, so it cannot loop;
   2. a "Status:" line is present and carries a value from the closed
-     vocabulary OPEN / PARTIAL / ABANDONED / COMPLETE. This is the
-     SESSION-level Status vocabulary, owned by
+     vocabulary OPEN / PARTIAL / ABANDONED / COMPLETE -- BLOCK if not, for
+     the same reason. This is the SESSION-level Status vocabulary, owned by
      harness/templates/handback_schema.md. It is NOT the PLAN-level
      vocabulary of an orchestrated plan's state file
      (harness/templates/state_schema.md), which is separate and never
      enforced here even though both fields are spelled "Status";
-  3. READ-RECEIPT VERIFICATION (schema v2, D3), for every status except
-     ABANDONED: when a dispatch manifest exists at
-     docs/orchestration/<plan>/dispatches/<NN>.json (written by
-     harness/scripts/assemble_dispatch.py; plan and NN come from the
-     marker), the receipt's "- Rows:" E-ID list must SET-match the
-     manifest's row_ids and its "- Prompt-SHA256:" must equal the
-     manifest's prompt_sha256 (case-insensitive). Receipt semantics are
-     owned by harness/templates/handback_schema.md. A MISSING or
-     unreadable manifest is a structural no-op -- the manifest is the
-     ORCHESTRATOR's artifact and a session cannot legitimately create it,
-     so blocking on its absence would put the session outside its own
-     power to unblock. This check runs on EVERY Stop evaluation,
-     question pauses included: the FIRST pause of a freshly dispatched
-     session is exactly the minute-one moment the receipt exists for. A
-     receipt block never consumes a pause declaration;
-  4. that value is a TERMINAL state, UNLESS the session has declared a
-     question pause (below). OPEN is in the file vocabulary but is not
-     terminal: the stub is written at session START, so accepting OPEN
-     would make this hook demand a file the session already wrote in minute
-     one. OPEN is reserved as positive evidence that a session DIED, and a
-     session reaching its Stop hook is alive;
-  5. for PARTIAL and COMPLETE only -- the statuses that claim real work
-     landed -- the three required sections are present.
-ABANDONED is deliberately exempt from checks 3 and 5. The abandon path must
-cost about THREE LINES: a status field and one sentence. Every block message
-prints that minimal content VERBATIM, because a blocked session has by
-definition already failed to guess the required shape, and pointing it at a
-schema is telling it to guess again.
+  3. OPEN -> ALLOW, keeping the marker so the checks still run once the
+     status turns terminal;
+  4. ABANDONED -> ALLOW and remove the marker. The abandon path must cost
+     about THREE LINES: a status field and one sentence;
+  5. PARTIAL or COMPLETE -- the statuses that claim real work landed -- run
+     every remaining check and report ALL failures in ONE block, so a session
+     never learns about its defects one round-trip at a time:
+       a. READ-RECEIPT VERIFICATION (schema v2, D3): when a dispatch manifest
+          exists at docs/orchestration/<plan>/dispatches/<NN>.json (written
+          by harness/scripts/assemble_dispatch.py; plan and NN come from the
+          marker), the receipt's "- Rows:" E-ID list must SET-match the
+          manifest's row_ids and its "- Prompt-SHA256:" must equal the
+          manifest's prompt_sha256 (case-insensitive). Receipt semantics are
+          owned by harness/templates/handback_schema.md. A MISSING or
+          unreadable manifest is a structural no-op -- the manifest is the
+          ORCHESTRATOR's artifact and a session cannot legitimately create
+          it, so blocking on its absence would put the session outside its
+          own power to unblock;
+       b. the three required sections are present;
+       c. the "## Delta" marker-block grammar and the "## Structural
+          observations" line shape parse, with the SAME shared parsers the
+          ingest runs.
+     A pass removes the marker.
+Every block message prints the abandon path's minimal content VERBATIM,
+because a blocked session has by definition already failed to guess the
+required shape, and pointing it at a schema is telling it to guess again.
 
 THE MANUAL MODE. `python3 hooks/enforce_handback.py --check-receipt
-<handback_path> [--manifest <manifest_path>]` runs check 3's verification
+<handback_path> [--manifest <manifest_path>]` runs check 5a's verification
 logic standalone -- same code, no Stop event, no marker. Absent --manifest
 the path is derived from the standard layout
 (.../<plan>/handbacks/<NN>.md -> .../<plan>/dispatches/<NN>.json). Unlike
@@ -75,33 +82,15 @@ the hook path, a missing manifest FAILS here (exit 1): the manual caller is
 the orchestrator, the manifest's owner, for whom its absence is a real
 defect. Prints "OK: ..." exit 0, or "FAIL <check>: ..." lines exit 1.
 
-THE QUESTION PAUSE. A session that stops to put a question to the user --
-the STOP-and-ask ambiguity protocol, or the grilling step of
-commands/grill_and_implement.md -- is NOT a session that died, and must
-never be pushed to declare itself ABANDONED or PARTIAL to hand control back.
-Such a session declares the pause by writing .claude/handback_pause.json
-carrying its own session_id; check 3 then accepts the non-terminal status,
-the declaration is CONSUMED (single use, so every pause is re-declared), and
-the handback marker is DELIBERATELY LEFT IN PLACE so the obligation still
-fires at the real close.
-
-The pause declaration is a hook-owned ephemeral file, not part of the
-handback document: the SESSION-level Status vocabulary and the four-part
-handback shape owned by harness/templates/handback_schema.md are unchanged
-by it, and a pause leaves the handback exactly as the schema describes it --
-`Status: OPEN`, read receipt intact. Checks 1 and 2 are NOT waived by a
-pause: a session that never wrote its stub is blocked whether it is pausing
-or closing, which is the failure this hook exists to catch.
-
-Deliberately ignores the "stop_hook_active" re-entry flag: the block
-condition here is fully within the model's control (write the missing or
-malformed file), so re-blocking on every retry until the state is correct is
-the intended behavior, not a runaway loop.
+Deliberately ignores the "stop_hook_active" re-entry flag and the
+"background_tasks" field: every block condition is within the model's
+control (write the missing or malformed file), and no OPEN stop is ever
+blocked, so re-blocking on each retry until the file is correct is the
+intended behavior, not a runaway loop.
 """
 
 import json
 import os
-import time
 import re
 import sys
 
@@ -109,7 +98,6 @@ HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 CLAUDE_DIR = os.path.dirname(HOOK_DIR)
 PROJECT_DIR = os.path.dirname(CLAUDE_DIR)
 MARKER_PATH = os.path.join(CLAUDE_DIR, "handback_session.json")
-PAUSE_MARKER_PATH = os.path.join(CLAUDE_DIR, "handback_pause.json")
 
 # The shared Delta-grammar / observation-line validators live in a pure,
 # no-side-effect module one directory over (the hook is in hooks/, the module
@@ -133,7 +121,6 @@ RECEIPT_SHA_RE = re.compile(
     r"^- Prompt-SHA256:[ \t]*([0-9A-Fa-f]+)[ \t]*$", re.MULTILINE
 )
 STATUS_VOCABULARY = ("OPEN", "PARTIAL", "ABANDONED", "COMPLETE")
-TERMINAL_STATUSES = ("PARTIAL", "ABANDONED", "COMPLETE")
 SECTIONED_STATUSES = ("PARTIAL", "COMPLETE")
 REQUIRED_SECTIONS = (
     "## Delta",
@@ -149,74 +136,16 @@ ABANDON_MINIMUM = (
     "Blocked on the staging credentials; nothing was changed.\n"
 )
 
-# The other cheap exit: a session pausing to ASK, which is not a death and
-# must not be dressed up as one. Printed verbatim alongside ABANDON_MINIMUM
-# whenever the status is merely unadvanced, for the same reason -- a blocked
-# session must not have to guess.
-PAUSE_INSTRUCTION = (
-    "If you are NOT closing but PAUSING to put a question to the user -- the "
-    "STOP-and-ask ambiguity protocol, or the grilling step -- do NOT advance "
-    "the status: a pause is not a death, and ABANDONED would misreport a "
-    "healthy session. Declare the pause instead, then stop again. Verbatim, "
-    "one Bash line:\n"
-    "\n"
-    '  echo "{\\"session_id\\": \\"$CLAUDE_CODE_SESSION_ID\\"}" > '
-    ".claude/handback_pause.json\n"
-    "\n"
-    "The handback stays 'Status: OPEN' with its read receipt intact. The "
-    "declaration is single use -- this hook consumes it, keeps the handback "
-    "marker, and the handback obligation fires again at the real close."
-)
-
-
 def _allow():
     sys.exit(0)
 
 
-def _block(reason, extra=None):
+def _block(reason):
     full = "{0}\n\nThe MINIMAL content that unblocks this, verbatim -- a status field and one sentence, nothing else:\n\n{1}".format(
         reason, ABANDON_MINIMUM
     )
-    if extra:
-        full = "{0}\n{1}".format(full, extra)
     print(json.dumps({"decision": "block", "reason": full}))
     sys.exit(0)
-
-
-def _consume_pause_declaration(session_id):
-    """True if THIS session declared a question pause; consumes the file."""
-    if not os.path.isfile(PAUSE_MARKER_PATH):
-        return False
-    try:
-        with open(PAUSE_MARKER_PATH, "r", encoding="utf-8") as f:
-            declaration = json.load(f)
-    except (json.JSONDecodeError, ValueError, OSError):
-        return False
-    if not isinstance(declaration, dict):
-        return False
-    if declaration.get("session_id") != session_id:
-        return False
-    # A session waiting on a long background job may declare a STANDING pause with
-    # "until": <unix epoch seconds>. It is honoured on every Stop until it expires and is
-    # not consumed; an expired one is removed and the normal check runs.
-    until = declaration.get("until")
-    if until is not None:
-        try:
-            until = float(until)
-        except (TypeError, ValueError):
-            return False
-        if time.time() < until:
-            return True
-        try:
-            os.remove(PAUSE_MARKER_PATH)
-        except OSError:
-            pass
-        return False
-    try:
-        os.remove(PAUSE_MARKER_PATH)
-    except OSError:
-        pass
-    return True
 
 
 def _resolve_path(path):
@@ -294,6 +223,66 @@ def _verify_receipt(content, manifest):
             "Prompt-SHA256 mismatch: receipt has {0}, manifest has "
             "{1}".format(sha_match.group(1), expected_sha)
         )
+    return failures
+
+
+def _terminal_failures(content, plan_name, session_number):
+    """Every PARTIAL / COMPLETE failure, in check order; empty means pass."""
+    failures = []
+
+    manifest = _load_manifest(_manifest_path_for(plan_name, session_number))
+    if manifest is not None:
+        receipt_failures = _verify_receipt(content, manifest)
+        if receipt_failures:
+            failures.append(
+                "Read receipt does not match the dispatch manifest: {0}. "
+                "Rebuild it from the dispatched prompt file itself ({1}): "
+                "'- Rows:' lists the E-IDs from the first cell of each row "
+                "in the prompt's rows block, comma-separated, and "
+                "'- Prompt-SHA256:' is the output of `sha256sum` on that "
+                "prompt file.".format(
+                    "; ".join(receipt_failures),
+                    manifest.get("prompt_path", "<unknown>"),
+                )
+            )
+
+    missing = [
+        section for section in REQUIRED_SECTIONS
+        if not re.search(
+            r"^{0}[ \t]*$".format(re.escape(section)), content, re.MULTILINE
+        )
+    ]
+    if missing:
+        failures.append(
+            "Missing section(s) {0}. A handback claiming work landed carries "
+            "all three -- {1} -- after the header.".format(
+                ", ".join("'{0}'".format(s) for s in missing),
+                ", ".join("'{0}'".format(s) for s in REQUIRED_SECTIONS),
+            )
+        )
+
+    # The ## Delta marker-block grammar and the ## Structural observations
+    # line shape, checked with the SAME shared parsers the ingest runs, on
+    # whichever of the two sections is present.
+    hb_lines = content.splitlines()
+    grammar_failures = []
+    delta_bounds = section_bounds(hb_lines, "## Delta")
+    if delta_bounds is not None:
+        parse_delta(hb_lines[delta_bounds[0]:delta_bounds[1]], grammar_failures)
+    obs_bounds = section_bounds(hb_lines, "## Structural observations")
+    if obs_bounds is not None:
+        parse_observations(
+            hb_lines[obs_bounds[0]:obs_bounds[1]], grammar_failures
+        )
+    if grammar_failures:
+        failures.append(
+            "'## Delta' / '## Structural observations' do not parse with the "
+            "grammar the orchestrator ingests. Apply these exact fixes "
+            "verbatim:\n{0}".format(
+                "\n".join("    {0}".format(g) for g in grammar_failures)
+            )
+        )
+
     return failures
 
 
@@ -382,92 +371,23 @@ def main():
         )
         return
 
-    if status != "ABANDONED":
-        manifest = _load_manifest(
-            _manifest_path_for(plan_name, session_number)
-        )
-        if manifest is not None:
-            receipt_failures = _verify_receipt(content, manifest)
-            if receipt_failures:
-                _block(
-                    "Read-receipt verification failed: {0} does not match "
-                    "the dispatch manifest for plan {1} session {2}: "
-                    "{3}. Rebuild the receipt from the dispatched prompt "
-                    "file itself ({4}): '- Rows:' lists the E-IDs from the "
-                    "first cell of each row in the prompt's rows block, "
-                    "comma-separated, and '- Prompt-SHA256:' is the output "
-                    "of `sha256sum` on that prompt file.".format(
-                        handback_path,
-                        plan_name,
-                        session_number,
-                        "; ".join(receipt_failures),
-                        manifest.get("prompt_path", "<unknown>"),
-                    )
-                )
-                return
-
-    if status not in TERMINAL_STATUSES:
-        if _consume_pause_declaration(current_session_id):
-            # A declared question pause: allow the turn to close WITHOUT a
-            # terminal status, and keep the marker so the real close is
-            # still enforced.
-            _allow()
-            return
-        _block(
-            "Handback schema check failed: {0} is still 'Status: {1}' -- the "
-            "unadvanced stub. OPEN is reserved as evidence that a session "
-            "died, so it is not a state a live session may CLOSE in. Advance "
-            "the status to one of {2} before stopping.".format(
-                handback_path, status, " / ".join(TERMINAL_STATUSES)
-            ),
-            extra=PAUSE_INSTRUCTION,
-        )
+    if status == "OPEN":
+        # The stub: a live session waiting, pausing or asking. Allow, and keep
+        # the marker so the terminal checks still run at the real close.
+        _allow()
         return
 
     if status in SECTIONED_STATUSES:
-        for section in REQUIRED_SECTIONS:
-            if not re.search(
-                r"^{0}[ \t]*$".format(re.escape(section)), content, re.MULTILINE
-            ):
-                _block(
-                    "Handback schema check failed: {0} is 'Status: {1}' but "
-                    "has no '{2}' section. A handback claiming work landed "
-                    "carries all three sections -- {3} -- after the header. "
-                    "Add the missing section before stopping.".format(
-                        handback_path,
-                        status,
-                        section,
-                        ", ".join("'{0}'".format(s) for s in REQUIRED_SECTIONS),
-                    )
-                )
-                return
-
-        # The three sections are present; now enforce the ## Delta
-        # marker-block grammar and the ## Structural observations line shape
-        # with the SAME shared parsers the ingest runs, slicing each section
-        # body with section_bounds and collecting the failures list exactly as
-        # ingest does. Only PARTIAL and COMPLETE reach here -- ABANDONED and
-        # OPEN never do -- so the cheap abandon path is never grammar-checked.
-        hb_lines = content.splitlines()
-        grammar_failures = []
-        delta_bounds = section_bounds(hb_lines, "## Delta")
-        if delta_bounds is not None:
-            parse_delta(
-                hb_lines[delta_bounds[0]:delta_bounds[1]], grammar_failures
-            )
-        obs_bounds = section_bounds(hb_lines, "## Structural observations")
-        if obs_bounds is not None:
-            parse_observations(
-                hb_lines[obs_bounds[0]:obs_bounds[1]], grammar_failures
-            )
-        if grammar_failures:
+        failures = _terminal_failures(content, plan_name, session_number)
+        if failures:
             _block(
-                "Handback grammar check failed: {0} is 'Status: {1}' but its "
-                "'## Delta' / '## Structural observations' sections do not "
-                "parse. This is the SAME grammar the orchestrator ingests, so "
-                "fix it here. Apply these exact fixes verbatim, then stop "
+                "Handback check failed: {0} is 'Status: {1}', and a handback "
+                "claiming work landed must pass every check below. All "
+                "failures are listed at once; fix them all, then stop "
                 "again:\n\n{2}".format(
-                    handback_path, status, "\n".join(grammar_failures)
+                    handback_path,
+                    status,
+                    "\n".join("- {0}".format(f) for f in failures),
                 )
             )
             return

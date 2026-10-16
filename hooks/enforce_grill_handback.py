@@ -2,10 +2,12 @@
 
 A grilling session (commands/orchestrated_grill.md) stops on EVERY question
 -- each AskUserQuestion round and each `linger` exchange ends a turn, with no
-question cap -- so it cannot live under hooks/enforce_handback.py, which
-blocks every stop while the handback is still OPEN. This hook is that hook's
-grilling sibling: every stop while the handback is `Status: OPEN` is ALLOWED,
-and the shape checks apply only once the file carries a TERMINAL status.
+question cap -- and writes a lean handback with no "## Delta", so it cannot
+live under hooks/enforce_handback.py, whose terminal checks demand that
+shape. This hook is that hook's grilling sibling: every stop while the
+handback is `Status: OPEN` is ALLOWED (the same rule enforce_handback.py
+follows), and the shape checks apply only once the file carries a TERMINAL
+status.
 
 SHARED CONTRACTS (edit in lockstep):
   - The MARKER. .claude/grill_handback_session.json, written by the session
@@ -45,11 +47,12 @@ Checks, in order, each blocking with a reason that names the failed check:
      enforce_handback.py exactly: when a dispatch manifest exists at
      docs/orchestration/<plan>/dispatches/<NN>.json (plan and NN from the
      marker), the receipt must match it. A missing or unreadable manifest is
-     a structural no-op. Like the sibling hook, this runs on OPEN stops too:
-     the first question of a freshly dispatched session is exactly the
-     minute-one moment the receipt exists for, and the block is within the
-     session's power to clear once (fix the receipt), so it cannot stall the
-     grilling question after question;
+     a structural no-op. Unlike the sibling hook (which checks the receipt
+     only at a terminal status), this still runs on OPEN stops: the first
+     question of a freshly dispatched session is the minute-one moment the
+     receipt exists for, and the block is within the session's power to
+     clear once (fix the receipt), so it cannot stall the grilling question
+     after question;
   4. OPEN -> ALLOW, keeping the marker in place so the obligation still
      fires once the session writes a terminal status;
   5. ABANDONED -> nothing else is required (the Status line alone);

@@ -64,11 +64,10 @@ here.
 
 A grilling session STOPS ON EVERY QUESTION: each AskUserQuestion round and
 each `linger` exchange ends a turn, and the session has no question cap, so
-it may stop dozens of times before it is done. The sibling schema's rule that
-a live session may not close while `OPEN` -- enforced by
-`hooks/enforce_handback.py`, which blocks every such stop unless a pause is
-declared -- would stall a grilling session on every question. That was the
-observed defect this schema exists to remove.
+it may stop dozens of times before it is done. A hook that blocked stops
+while `OPEN` would stall it on every question -- the observed defect this
+schema was first written to remove. (`hooks/enforce_handback.py` has since
+adopted the same rule for implementation sessions.)
 
 So for a grilling handback:
 
