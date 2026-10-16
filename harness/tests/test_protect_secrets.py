@@ -254,7 +254,7 @@ class TestNormalWorkAllowed(SecretsEnv):
         self.assert_bash_allowed([
             "git ls-files | xargs grep -n foo",
             "git ls-files -z | xargs -0 grep foo",
-            "git ls-files -z -- '*.md' | xargs -0 command grep -n x",
+            "git ls-files -z -- '*.md' | xargs -0 grep -n x",
             "grep -rn foo $(git ls-files)",
             "git grep foo",
             "git grep -n foo -- '*.py'",
