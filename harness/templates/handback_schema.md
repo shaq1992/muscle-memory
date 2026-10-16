@@ -79,7 +79,7 @@ shape a hook can CHECK.
 
 ## Structure
 
-Exactly FOUR parts, in this order.
+Exactly FIVE parts, in this order.
 
 ```
 Status: OPEN | PARTIAL | ABANDONED | COMPLETE
@@ -87,6 +87,9 @@ Status: OPEN | PARTIAL | ABANDONED | COMPLETE
 **Handed to this session (read receipt):**
 - Rows: <comma-separated row E-IDs from the prompt's orchestration block>
 - Prompt-SHA256: <sha256 of the dispatched prompt file, lowercase hex>
+
+## Scope changes
+[user-stated re-scopes, written the moment they happen, or "none"]
 
 ## Delta
 [rows to add / change / retire, written in the state file's exact table format]
@@ -99,8 +102,11 @@ Status: OPEN | PARTIAL | ABANDONED | COMPLETE
 ```
 
 Part one is the header: the `Status` line plus the read receipt. Parts two
-through four are the three `##` sections. There is no fifth part and no
-optional section.
+through five are the four `##` sections. There is no sixth part and no
+optional section -- except on the abandon path, which needs none of them.
+
+The STUB carries `## Scope changes` with `none` already in it, so the place to
+record a re-scope exists from minute one (see the `## Scope changes` subsection below).
 
 ### `Status` -- closed vocabulary
 
@@ -120,6 +126,44 @@ once the status is terminal. The accepted cost: a session that stops for good
 without finalizing is not blocked. Its `OPEN` stub surfaces it instead, and
 an `OPEN` stub found at ingest means "died, or still working" (see "The
 legible end states").
+
+### `## Scope changes`
+
+Re-scopes the USER states during the session: an item added, dropped,
+narrowed, widened or moved to another session, or a dispatched constraint the
+user lifts. They exist so a scope change reaches the orchestrator WITHOUT the
+user having to say "put this in the handback" and hope it happens.
+
+**Written the moment the change happens, not at close.** The session appends
+the line BEFORE acting on the change -- a session that dies after a re-scope
+still carried it, and nothing depends on the session remembering it at the
+end. The session's own judgement calls are not scope changes; only what the
+user said is.
+
+One line per change, in this exact machine shape:
+
+```
+- "<the user's words, quoted verbatim>" | overrides: <E-ID, or the prompt item> | <what changes>
+```
+
+- the user's words go in double quotes, copied, never paraphrased (a pipe
+  inside them is replaced with a slash, as in table cells);
+- `overrides:` names what the change displaces -- a handed row's E-ID
+  (`E017`), or the prompt item (`prompt item 3`, `Must not: no README edits`);
+- the last field says in a few words what is now in or out of scope.
+
+Write `none` when the user changed nothing. The closing hook checks the
+line shape at `PARTIAL` / `COMPLETE` with the same parser the ingest runs
+(`parse_scope_changes` in `harness/scripts/handback_validation.py`), and
+`harness/scripts/ingest_handback.py` prints every line at the TOP of its
+summary and NEVER applies one: each re-scope is the orchestrator's decision
+(Step 9 of `commands/orchestrator.md`). A durable fact that follows from the
+change (for example, a settled row now reading differently) still goes in
+`## Delta` as a CHANGE row; the scope line is what makes the orchestrator
+look.
+
+An `ABANDONED` close does not need this section; the abandon path stays at
+three lines.
 
 ### `## Delta`
 

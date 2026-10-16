@@ -79,13 +79,16 @@ RECEIPT = (
 
 
 def handback_text(status="COMPLETE", delta="none", obs="none",
-                  advisory="- nothing to hand forward."):
+                  advisory="- nothing to hand forward.", scope="none"):
+    """scope=None omits the ## Scope changes section (a pre-v3 handback)."""
+    scope_block = "" if scope is None else "## Scope changes\n\n{0}\n\n".format(scope)
     return (
         "Status: {0}\n\n{1}\n"
+        "{5}"
         "## Delta\n\n{2}\n\n"
         "## For the next session\n\n{3}\n\n"
         "## Structural observations\n\n{4}\n"
-    ).format(status, RECEIPT, delta, advisory, obs)
+    ).format(status, RECEIPT, delta, advisory, obs, scope_block)
 
 
 class IngestEnv(unittest.TestCase):
@@ -478,6 +481,48 @@ class TestModes(IngestEnv):
         self.assert_ok(r)
         self.assertIn("WARN", r.stdout)
         self.assertIn("| E004 | Applies anyway.", self.state_text())
+
+
+SCOPE_LINES = (
+    '- "also do the README" | overrides: prompt item 2 | README rewrite is in scope\n'
+    '- "drop item 3" | overrides: E017 | split close moves to session 03'
+)
+
+
+class TestScopeChanges(IngestEnv):
+    def test_scope_changes_surface_first_and_are_not_applied(self):
+        # Prevents: a re-scope buried under the Added/Changed lines where the
+        # orchestrator skims past it -- or silently written into state.
+        result = self.run_ingest(handback_text(scope=SCOPE_LINES))
+        self.assert_ok(result)
+        out = result.stdout
+        self.assertIn("Scope changes", out)
+        self.assertIn('"also do the README"', out)
+        self.assertIn('"drop item 3"', out)
+        self.assertLess(out.index("Scope changes"), out.index("OK"))
+        self.assertNotIn("also do the README", self.state_text())
+
+    def test_none_prints_nothing_alarming(self):
+        result = self.run_ingest(handback_text())
+        self.assert_ok(result)
+        self.assertIn("Scope changes: none", result.stdout)
+
+    def test_pre_v3_handback_without_section_still_ingests(self):
+        # Prevents: a handback written before the section existed becoming
+        # un-ingestable.
+        result = self.run_ingest(handback_text(scope=None))
+        self.assert_ok(result)
+        self.assertIn("no ## Scope changes section", result.stdout)
+
+    def test_malformed_scope_line_fails_closed(self):
+        # Prevents: an unparseable scope note slipping through with state
+        # already partly applied.
+        result = self.run_ingest(
+            handback_text(delta="ADD\n| - | x | - | `fact` | - |",
+                          scope="- the user dropped item 3")
+        )
+        self.assert_failed_untouched(result)
+        self.assertIn("FAIL scope:", result.stdout)
 
 
 if __name__ == "__main__":

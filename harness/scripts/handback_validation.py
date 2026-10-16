@@ -10,9 +10,9 @@ them: the ingest script (the orchestrator's pen), the handback Stop hook
 This module hosts two families:
 
   - Delta marker-block / row-shape GRAMMAR validators (OBSERVATION_TAGS,
-    OPEN_MANUAL_MARKER, the ID/observation regexes, first_cell/cells/
+    OPEN_MANUAL_MARKER, the ID/observation/scope regexes, first_cell/cells/
     is_separator_row/is_header_row, the Delta class, parse_delta,
-    parse_observations);
+    parse_observations, parse_scope_changes);
   - shared STATE/SECTION primitives the ingest, the Stop hook, and the
     state-structure check all need (the ESTABLISHED_HEADING / LOG_HEADING
     section names, the ID_MAX ceiling, the NEXT_ID_RE counter regex, and the
@@ -38,7 +38,8 @@ Contract of this module:
 The Delta marker-block grammar these functions enforce is DEFINED in
 harness/templates/handback_schema.md; this module and that template are a
 lockstep contract -- any change to the grammar (marker words, cell counts,
-placeholder shape, observation line shape, tag vocabulary) must update BOTH.
+placeholder shape, observation line shape, tag vocabulary, scope-change line
+shape) must update BOTH.
 """
 
 import re
@@ -59,6 +60,12 @@ OPEN_MANUAL_MARKER = "OPEN (orchestrator-manual):"
 ID_RE = re.compile(r"^E(\d{3})$")
 ID_FIND_RE = re.compile(r"\bE\d{3}\b")
 OBSERVATION_RE = re.compile(r"^-\s*([A-Za-z][A-Za-z-]*)\s*\|\s*(.+)$")
+# A ## Scope changes line: the user's words in double quotes, then what the
+# change overrides, then what changes -- see handback_schema.md.
+SCOPE_HEADING = "## Scope changes"
+SCOPE_RE = re.compile(
+    r'^-\s*"(.+)"\s*\|\s*overrides:\s*([^|]*\S)\s*\|\s*([^|]*\S)\s*$'
+)
 
 # Shared state/section primitives (copied VERBATIM from ingest_handback.py).
 # The section heading names and the `- Next row ID:` counter regex the ingest,
@@ -239,6 +246,25 @@ def parse_observations(body_lines, failures):
             )
             continue
         out.append((tag, desc))
+    return out
+
+
+def parse_scope_changes(body_lines, failures):
+    """Return (quote, overrides, effect) triples; 'none' (or empty) yields nothing."""
+    out = []
+    content = [ln.strip() for ln in body_lines if ln.strip() != ""]
+    if content == ["none"] or not content:
+        return out
+    for line in content:
+        m = SCOPE_RE.match(line)
+        if not m:
+            failures.append(
+                "FAIL scope: line is not '- \"<user\'s words>\" | overrides: "
+                "<E-ID or prompt item> | <what changes>' (or the single word "
+                "none): {0!r}".format(line[:80])
+            )
+            continue
+        out.append((m.group(1), m.group(2), m.group(3)))
     return out
 
 

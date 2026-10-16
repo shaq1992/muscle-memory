@@ -288,7 +288,10 @@ Schemas: `harness/templates/state_schema.md` (state) and
    and the ingest script (`harness/scripts/ingest_handback.py`, the orchestrator's pen)
    applies them verbatim -- nobody re-authors a row, and the orchestrator reads only the
    script's short summary. That is what keeps an ingest nearly free in context, which is
-   what lets a plan run for months. The summary's last line reports `## Established`
+   what lets a plan run for months. If you changed a session's scope while it ran, you do not
+   have to ask it to report that: the session writes your words into the handback's
+   `## Scope changes` section the moment you say them, the closing hook checks the
+   shape, and the summary prints those lines first for the orchestrator to decide on. The summary's last line reports `## Established`
    against the GC threshold (80 rows OR 45 KB); when it trips, the orchestrator offers
    at most ONE line suggesting a garbage-collection pass. GC never auto-runs: on your
    word the propose-only `garbage_collector` sub-agent returns retire / condense /

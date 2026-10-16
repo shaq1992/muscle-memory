@@ -64,10 +64,12 @@ Checks, in order:
           ORCHESTRATOR's artifact and a session cannot legitimately create
           it, so blocking on its absence would put the session outside its
           own power to unblock;
-       b. the three required sections are present;
-       c. the "## Delta" marker-block grammar and the "## Structural
-          observations" line shape parse, with the SAME shared parsers the
-          ingest runs.
+       b. the four required sections are present ("## Scope changes",
+          "## Delta", "## For the next session", "## Structural
+          observations");
+       c. the "## Scope changes" line shape, the "## Delta" marker-block
+          grammar and the "## Structural observations" line shape parse,
+          with the SAME shared parsers the ingest runs.
      A pass removes the marker.
 Every block message prints the abandon path's minimal content VERBATIM,
 because a blocked session has by definition already failed to guess the
@@ -110,8 +112,10 @@ MARKER_PATH = os.path.join(CLAUDE_DIR, "handback_session.json")
 # Stop event.
 sys.path.insert(0, os.path.join(CLAUDE_DIR, "harness", "scripts"))
 from handback_validation import (  # noqa: E402
+    SCOPE_HEADING,
     parse_delta,
     parse_observations,
+    parse_scope_changes,
     section_bounds,
 )
 
@@ -123,6 +127,7 @@ RECEIPT_SHA_RE = re.compile(
 STATUS_VOCABULARY = ("OPEN", "PARTIAL", "ABANDONED", "COMPLETE")
 SECTIONED_STATUSES = ("PARTIAL", "COMPLETE")
 REQUIRED_SECTIONS = (
+    "## Scope changes",
     "## Delta",
     "## For the next session",
     "## Structural observations",
@@ -255,17 +260,23 @@ def _terminal_failures(content, plan_name, session_number):
     if missing:
         failures.append(
             "Missing section(s) {0}. A handback claiming work landed carries "
-            "all three -- {1} -- after the header.".format(
+            "all four -- {1} -- after the header ('## Scope changes' holds "
+            "the single word none when the user changed nothing).".format(
                 ", ".join("'{0}'".format(s) for s in missing),
                 ", ".join("'{0}'".format(s) for s in REQUIRED_SECTIONS),
             )
         )
 
-    # The ## Delta marker-block grammar and the ## Structural observations
-    # line shape, checked with the SAME shared parsers the ingest runs, on
-    # whichever of the two sections is present.
+    # The ## Scope changes line shape, the ## Delta marker-block grammar and
+    # the ## Structural observations line shape, checked with the SAME shared
+    # parsers the ingest runs, on whichever of the sections is present.
     hb_lines = content.splitlines()
     grammar_failures = []
+    scope_bounds = section_bounds(hb_lines, SCOPE_HEADING)
+    if scope_bounds is not None:
+        parse_scope_changes(
+            hb_lines[scope_bounds[0]:scope_bounds[1]], grammar_failures
+        )
     delta_bounds = section_bounds(hb_lines, "## Delta")
     if delta_bounds is not None:
         parse_delta(hb_lines[delta_bounds[0]:delta_bounds[1]], grammar_failures)
@@ -276,7 +287,8 @@ def _terminal_failures(content, plan_name, session_number):
         )
     if grammar_failures:
         failures.append(
-            "'## Delta' / '## Structural observations' do not parse with the "
+            "'## Scope changes' / '## Delta' / '## Structural observations' "
+            "do not parse with the "
             "grammar the orchestrator ingests. Apply these exact fixes "
             "verbatim:\n{0}".format(
                 "\n".join("    {0}".format(g) for g in grammar_failures)

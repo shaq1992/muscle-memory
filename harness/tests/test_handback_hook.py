@@ -77,6 +77,10 @@ ID_RECEIPT_COMPLETE = (
     "\n"
     + ID_RECEIPT_HEADER
     + "\n"
+    "## Scope changes\n"
+    "\n"
+    "none\n"
+    "\n"
     "## Delta\n"
     "\n"
     "none\n"
@@ -95,6 +99,10 @@ COMPLETE_HANDBACK = (
     "\n"
     "**Handed to this session (read receipt):**\n"
     "- | greenlist | the fixture row |\n"
+    "\n"
+    "## Scope changes\n"
+    "\n"
+    "none\n"
     "\n"
     "## Delta\n"
     "\n"
@@ -118,6 +126,10 @@ MALFORMED_DELTA_HANDBACK = (
     "\n"
     "**Handed to this session (read receipt):**\n"
     "- | greenlist | the fixture row |\n"
+    "\n"
+    "## Scope changes\n"
+    "\n"
+    "none\n"
     "\n"
     "## Delta\n"
     "\n"
@@ -381,6 +393,7 @@ class TestCompleteAllowsAndSelfDeletes(HandbackHookEnv):
         # claim real work landed.
         self.write_marker()
         for missing in [
+            "## Scope changes",
             "## Delta",
             "## For the next session",
             "## Structural observations",
@@ -391,6 +404,51 @@ class TestCompleteAllowsAndSelfDeletes(HandbackHookEnv):
                 reason = self.assert_blocked(reason_contains=missing)
                 self.assertIn(ABANDON_MINIMUM, reason)
         self.write_handback(COMPLETE_HANDBACK)
+        self.assert_allowed_stop()
+
+
+SCOPE_LINE = (
+    '- "drop item 3, it moves to the next session" | overrides: E017 '
+    "| item 3 (split close) is out of this session\n"
+)
+
+
+class TestScopeChangesSection(HandbackHookEnv):
+    def test_well_formed_scope_lines_allow(self):
+        # Prevents: a shape check that over-blocks a correctly recorded
+        # re-scope, pushing the session toward writing 'none' instead.
+        self.write_marker()
+        text = COMPLETE_HANDBACK.replace(
+            "## Scope changes\n\nnone\n", "## Scope changes\n\n" + SCOPE_LINE
+        )
+        self.assertIn(SCOPE_LINE, text)
+        self.write_handback(text)
+        self.assert_allowed_stop()
+        self.assertFalse(self.marker_path.exists())
+
+    def test_malformed_scope_line_blocks(self):
+        # Prevents: a free-prose note the orchestrator's ingest cannot surface
+        # -- the user's words unquoted, or no named override target.
+        self.write_marker()
+        for bad in [
+            "- the user dropped item 3 | overrides: E017 | item 3 out\n",
+            '- "drop item 3" | item 3 is out\n',
+            "The user dropped item 3.\n",
+        ]:
+            with self.subTest(bad=bad):
+                text = COMPLETE_HANDBACK.replace(
+                    "## Scope changes\n\nnone\n", "## Scope changes\n\n" + bad
+                )
+                self.write_handback(text)
+                reason = self.assert_blocked(reason_contains="FAIL scope:")
+                self.assertIn(ABANDON_MINIMUM, reason)
+        self.assertTrue(self.marker_path.exists())
+
+    def test_abandoned_needs_no_scope_section(self):
+        # Prevents: the new section raising the price of the abandon path.
+        self.write_marker()
+        self.assertNotIn("Scope", ABANDON_MINIMUM)
+        self.write_handback(ABANDON_MINIMUM)
         self.assert_allowed_stop()
 
 

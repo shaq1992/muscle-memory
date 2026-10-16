@@ -88,7 +88,8 @@ indistinguishable from a session that was never dispatched.
    the FIRST CELL of each row the block listed under "Rows this session must obey"
    (comma-separated), and `- Prompt-SHA256:` with the output of `sha256sum` run on the
    PROMPT FILE this session was invoked with -- compute it, never guess it; the closing
-   hook verifies both against the dispatch manifest.
+   hook verifies both against the dispatch manifest. The stub also carries a
+   `## Scope changes` section holding `none`, the place Step 0b writes to.
 2. **Write the handback marker** at `.claude/handback_session.json`, with exactly these
    keys:
 
@@ -121,6 +122,29 @@ two are mutually exclusive by construction, so never write both.
 Then obey the rows the block handed you. They are the plan's pinned invariants, gates and
 do-not-re-validate entries, already filtered to what this session touches; a
 do-not-re-validate entry is not an invitation to check it again.
+
+## Step 0b -- Record every scope change the moment it happens (ORCHESTRATED ONLY)
+
+Whenever the USER changes this session's scope -- at any point: during grilling, at the
+go/no-go gate, mid-implementation, at close -- record it in the handback's
+`## Scope changes` section IMMEDIATELY, BEFORE acting on the change. Do not wait to be
+asked and do not save it for close: the user should never have to say "tell the
+orchestrator about this in the handback". A scope change is anything the user says that
+adds, drops, narrows, widens or moves work, or lifts or tightens a constraint the prompt
+or a handed row set.
+
+One line per change, shape owned by `harness/templates/handback_schema.md`:
+
+```
+- "<the user's words, quoted verbatim>" | overrides: <E-ID, or the prompt item> | <what changes>
+```
+
+Replace the `none` placeholder with the first line; append later ones. Quote the user's
+words exactly, never paraphrase. Your own judgement calls are not scope changes -- only
+what the user said is. The closing hook checks the line shape, and the orchestrator's
+ingest prints these lines first in its summary, so writing one is all it takes to make
+the orchestrator see the change. A durable fact that follows from it still goes in
+`## Delta` at close.
 
 ## Step 1 -- Grill (capped at 8 questions)
 
@@ -317,8 +341,9 @@ No phase-closing marker, no learnings file, no ledger entry, no document reconci
 -- the brief, the PR and that one appended line are the whole paper trail.
 
 **ORCHESTRATED ONLY:** finalize the handback INSTEAD. Advance the stub in place to its
-terminal status -- `PARTIAL`, `ABANDONED` or `COMPLETE` -- and fill the three sections per
-`harness/templates/handback_schema.md`: `## Delta` (rows pre-formatted in the state file's
+terminal status -- `PARTIAL`, `ABANDONED` or `COMPLETE` -- and fill the four sections per
+`harness/templates/handback_schema.md`: `## Scope changes` (already written live per Step
+0b; `none` if the user changed nothing), `## Delta` (rows pre-formatted in the state file's
 table shape under that schema's marker-block grammar, so the orchestrator's ingest script
 applies them verbatim rather than anyone re-authoring), `## For the next
 session` (advisory judgement only), and `## Structural observations` (same closed

@@ -446,8 +446,8 @@ run for months.
 
 **Never read back the read receipt.** When ingesting, read ONLY the script's
 summary and the `## For the next session` section (sliced to by its fixed
-heading) -- the script consumes `Status:`, `## Delta` and `## Structural
-observations` so the orchestrator does not have to. NEVER
+heading) -- the script consumes `Status:`, `## Scope changes`, `## Delta` and
+`## Structural observations` so the orchestrator does not have to. NEVER
 read the `**Handed to this session (read receipt):**` block -- it is a row-ID
 list plus the dispatched prompt's hash, derivable entirely from the dispatch
 the orchestrator itself issued, so it carries zero new information. Its
@@ -472,6 +472,16 @@ written. The script is FAIL-CLOSED: on a malformed handback, or a Delta row it
 cannot apply unambiguously, it exits 1 with the state file untouched --
 surface its FAIL lines verbatim and resolve with the user, never by quietly
 hand-editing the handback into an ingestable shape.
+
+**Scope changes come first, and are never applied by the script.** The
+summary opens with the handback's `## Scope changes` lines: re-scopes the USER
+stated mid-session, each quoting the user's words and naming the row or prompt
+item it overrides. The session wrote them the moment they happened, so they
+reach the orchestrator without the user having to ask. The script only prints
+them. For each one, the orchestrator decides -- with the user where the change
+touches plan scope -- whether it becomes a state change (a write-through
+trigger like any other); a scope change is never silently dropped and never
+transcribed without that decision.
 
 1. **`## Delta` rows go into state VERBATIM -- applied by the script.** It
    honours each marker block's stated add / change / retire intent against
