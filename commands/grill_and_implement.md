@@ -90,7 +90,10 @@ indistinguishable from a session that was never dispatched.
    PROMPT FILE this session was invoked with -- compute it, never guess it; the closing
    hook verifies both against the dispatch manifest. The stub also carries a
    `## Scope changes` section holding `none`, the place Step 0b writes to.
-2. **Write the handback marker** at `.claude/handback_session.json`, with exactly these
+2. **Write the handback marker** at `.claude/handback_<session_id>_session.json` -- one
+   file per session, so concurrent sessions never clobber each other's; `<session_id>` is
+   this session's id with every character outside `[A-Za-z0-9_-]` replaced by `_` (a
+   Claude Code session id is a UUID, so it is used as is) -- with exactly these
    keys:
 
    ```json

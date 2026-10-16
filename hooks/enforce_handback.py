@@ -1,6 +1,7 @@
 """Stop-event hook enforcing the orchestrated-session handback obligation.
 
-.claude/handback_session.json is written deterministically by the companion
+This session's marker, .claude/handback_<session_id>_session.json (one file
+per session; see MARKER_PREFIX below), is written deterministically by the companion
 UserPromptSubmit hook hooks/arm_handback_marker.py the moment the dispatched
 prompt carrying an "## Orchestration" block is SUBMITTED, before the model
 has read a word of it; the session-side write in
@@ -11,13 +12,14 @@ single path the marker names, never to any other document that happens to
 carry a "Status:" line.
 
 That "## Orchestration" heading string is named here for documentation only.
-This hook never parses a prompt; it keys off .claude/handback_session.json
+This hook never parses a prompt; it keys off its own session's marker file
 alone (the prompt parsing lives in arm_handback_marker.py). The heading
 itself is owned by commands/orchestrator.md Step 7, so a rename there means
 updating this docstring too.
 
-No marker, or a marker whose session_id does not match this invocation, is a
-structural no-op -- the hook allows unconditionally. Enforcement only ever
+No marker for this session (no own per-session file, and no legacy
+single-slot .claude/handback_session.json whose session_id matches) is a
+structural no-op; other sessions' files are never read, removed or enforced -- the hook allows unconditionally. Enforcement only ever
 applies to the session that created the marker, so an abandoned session's
 marker never blocks anyone else.
 
@@ -99,7 +101,19 @@ import sys
 HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 CLAUDE_DIR = os.path.dirname(HOOK_DIR)
 PROJECT_DIR = os.path.dirname(CLAUDE_DIR)
-MARKER_PATH = os.path.join(CLAUDE_DIR, "handback_session.json")
+# One marker FILE PER SESSION: .claude/<prefix>_<session_id>_session.json,
+# prefix "handback" here and "grill_handback" in enforce_grill_handback.py.
+# The session_id is sanitized (every character outside [A-Za-z0-9_-] becomes
+# "_"); the "_session.json" suffix keeps the harness .gitignore's
+# /*_session.json line covering it. hooks/arm_handback_marker.py computes the
+# same path with its own copy of session_marker_path() -- edit both in
+# lockstep (harness/tests/test_arm_handback_marker.py pins the agreement).
+# The single-slot file below predates the per-session files: it is honoured
+# only when its session_id matches the Stop event's, and removed like an own
+# file once that session passes.
+MARKER_PREFIX = "handback"
+LEGACY_MARKER_PATH = os.path.join(CLAUDE_DIR, "handback_session.json")
+SESSION_ID_UNSAFE_RE = re.compile(r"[^A-Za-z0-9_-]")
 
 # The shared Delta-grammar / observation-line validators live in a pure,
 # no-side-effect module one directory over (the hook is in hooks/, the module
@@ -140,6 +154,36 @@ ABANDON_MINIMUM = (
     "\n"
     "Blocked on the staging credentials; nothing was changed.\n"
 )
+
+def session_marker_path(prefix, session_id, claude_dir=CLAUDE_DIR):
+    """This session's own marker path for prefix ("handback" or
+    "grill_handback")."""
+    return os.path.join(
+        claude_dir,
+        "{0}_{1}_session.json".format(
+            prefix, SESSION_ID_UNSAFE_RE.sub("_", session_id)
+        ),
+    )
+
+
+def load_session_marker(prefix, legacy_path, session_id):
+    """(path, marker) of THIS session's marker -- its own per-session file,
+    else the legacy single-slot file when its session_id matches -- or
+    (None, None). Unreadable or foreign files are skipped, never removed."""
+    if not isinstance(session_id, str) or not session_id:
+        return None, None
+    for path in (session_marker_path(prefix, session_id), legacy_path):
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                marker = json.load(f)
+        except (json.JSONDecodeError, ValueError, OSError):
+            continue
+        if isinstance(marker, dict) and marker.get("session_id") == session_id:
+            return path, marker
+    return None, None
+
 
 def _allow():
     sys.exit(0)
@@ -317,20 +361,10 @@ def main():
         _allow()
         return
 
-    current_session_id = payload.get("session_id")
-
-    if not os.path.isfile(MARKER_PATH):
-        _allow()
-        return
-
-    try:
-        with open(MARKER_PATH, "r", encoding="utf-8") as f:
-            marker = json.load(f)
-    except (json.JSONDecodeError, ValueError, OSError):
-        _allow()
-        return
-
-    if not isinstance(marker, dict) or marker.get("session_id") != current_session_id:
+    marker_path, marker = load_session_marker(
+        MARKER_PREFIX, LEGACY_MARKER_PATH, payload.get("session_id")
+    )
+    if marker is None:
         _allow()
         return
 
@@ -404,7 +438,7 @@ def main():
             )
             return
 
-    os.remove(MARKER_PATH)
+    os.remove(marker_path)
     _allow()
 
 

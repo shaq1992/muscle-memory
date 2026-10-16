@@ -72,8 +72,10 @@ only at the end is absent when a session dies.
      must obey", comma-separated;
    - `- Prompt-SHA256:` -- the output of ONE `sha256sum <prompt file>` call on the prompt
      file this session was invoked with. Compute it, never guess it.
-2. **Write the grill marker** at `.claude/grill_handback_session.json`, with exactly these
-   keys:
+2. **Write the grill marker** at `.claude/grill_handback_<session_id>_session.json` --
+   one file per session, `<session_id>` being this session's id with every character
+   outside `[A-Za-z0-9_-]` replaced by `_` (a Claude Code session id is a UUID, so it is
+   used as is) -- with exactly these keys:
 
    ```json
    {
@@ -91,14 +93,15 @@ only at the end is absent when a session dies.
    conventional, write them as `null`. This key set is a SHARED CONTRACT with
    `hooks/arm_handback_marker.py` and `hooks/enforce_grill_handback.py`: any change to it
    must update all three files in lockstep.
-3. **NEVER write `.claude/handback_session.json`.** That marker arms
+3. **NEVER write `.claude/handback_<session_id>_session.json`.** That marker arms
    `hooks/enforce_handback.py`, whose terminal checks demand the implementation
    handback's shape (`## Delta` and its siblings), which a lean grill handback never
    carries; the grill marker arms the grill-shaped checks instead (schema: "Stops while
-   `OPEN` are allowed"). If
-   `.claude/handback_session.json` already exists AND its `session_id` equals THIS
-   session's id (the UserPromptSubmit hook can arm it before it knows which command the
-   prompt names), delete it. A marker naming a different session is not yours: leave it.
+   `OPEN` are allowed"). If THIS session's `.claude/handback_<session_id>_session.json`
+   exists (the UserPromptSubmit hook can arm it before it knows which command the prompt
+   names), delete it; so too the legacy single-slot `.claude/handback_session.json` when
+   its `session_id` equals THIS session's id. A marker naming a different session is not
+   yours: leave it.
 
 Then obey the handed rows: a do-not-re-validate entry is not an invitation to check it
 again. NEVER write the state file -- the one-writer rule holds; the orchestrator authors
@@ -182,7 +185,7 @@ If the grilling needed things the dispatched prompt should have carried, record 
 
 This session opens NO branch, makes NO commit and opens NO pull request. It writes exactly
 two files, both under gitignored `docs/`: the requirements doc and the lean handback (plus
-the `.claude/grill_handback_session.json` marker). Nothing else is written.
+the `.claude/grill_handback_<session_id>_session.json` marker). Nothing else is written.
 
 ## Step 2 -- After "stop asking questions": write, then finalize
 

@@ -2,7 +2,7 @@
 
 Companion to enforce_handback.py, which enforces the orchestrated-session
 handback obligation at Stop time but is a structural no-op unless
-.claude/handback_session.json exists with a matching session_id. Before this
+this session's marker file exists (PER-SESSION MARKER FILES below). Before this
 hook, that marker was written only by the dispatched session itself
 (commands/grill_and_implement.md Step 0a item 2) -- model obedience, not
 mechanism. A session that skipped Step 0a was never armed, and the Stop hook
@@ -40,7 +40,25 @@ are scanned in order -- the literal prompt first, then each referenced file
 in order of first mention -- and the FIRST segment yielding a usable block
 (heading plus Handback field) wins; any later block is ignored.
 
-On trigger, the hook writes .claude/handback_session.json with EXACTLY the
+PER-SESSION MARKER FILES. Each session arms its OWN file,
+.claude/<prefix>_<session_id>_session.json -- prefix "handback" for the
+implementation marker, "grill_handback" for the grill marker; the session_id
+with every character outside [A-Za-z0-9_-] replaced by "_"; the
+"_session.json" suffix keeps the harness .gitignore's /*_session.json line
+covering it. A single slot let a second session (or an orchestrator pasting
+a block) clobber a live session's marker. The Stop hooks read and remove
+only their own session's file, and honour a legacy single-slot
+handback_session.json / grill_handback_session.json only when its session_id
+matches. session_marker_path() below is a LOCKSTEP COPY of
+hooks/enforce_handback.py's.
+
+NO ARMING INSIDE AN ORCHESTRATOR SESSION. When an
+orchestrator_*_session.json marker (hooks/enforce_orchestrator_isolation.py's
+MARKER_GLOB) names the submitting session_id, the hook writes nothing: an
+orchestrator that pastes or @-references a dispatch prompt is not the
+dispatched session, and an armed marker would block its own stops.
+
+On trigger, the hook writes .claude/handback_<session_id>_session.json with EXACTLY the
 key names and value shapes that grill_and_implement.md Step 0a item 2
 specifies and enforce_handback.py reads:
 
@@ -96,7 +114,7 @@ as above (same heading, same Handback field, same plan_name/session_number
 derivation: Branch field first, then the conventional handback path -- which
 agrees with commands/orchestrated_grill.md Step 0a item 2's derivation from
 the handback path whenever both are conventional), and the hook writes
-.claude/grill_handback_session.json:
+.claude/grill_handback_<session_id>_session.json:
 
     {
       "session_id":            <the UserPromptSubmit event's session_id>,
@@ -108,7 +126,7 @@ the handback path whenever both are conventional), and the hook writes
                                 when absent>
     }
 
-and does NOT write .claude/handback_session.json -- that marker arms
+and does NOT write the implementation marker -- that marker arms
 enforce_handback.py, whose terminal checks demand the implementation
 handback's "## Delta" shape, which a lean grill handback never carries.
 SHARED MARKER CONTRACT: the
@@ -130,6 +148,7 @@ trip enforce_orchestrator_isolation.py-style corruption handling downstream.
 Stdlib-only, ASCII-only, like every hook in this corpus.
 """
 
+import fnmatch
 import json
 import os
 import re
@@ -138,10 +157,16 @@ import tempfile
 
 HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 CLAUDE_DIR = os.path.dirname(HOOK_DIR)
-MARKER_PATH = os.path.join(CLAUDE_DIR, "handback_session.json")
-# The grill lane's marker (see the docstring's GRILL LANE paragraph); path and
-# key set owned by commands/orchestrated_grill.md Step 0a item 2.
-GRILL_MARKER_PATH = os.path.join(CLAUDE_DIR, "grill_handback_session.json")
+# Marker file prefixes (see the docstring's PER-SESSION MARKER FILES
+# paragraph): "handback" arms enforce_handback.py, "grill_handback" arms
+# enforce_grill_handback.py (path and key set owned by
+# commands/orchestrated_grill.md Step 0a item 2).
+MARKER_PREFIX = "handback"
+GRILL_MARKER_PREFIX = "grill_handback"
+SESSION_ID_UNSAFE_RE = re.compile(r"[^A-Za-z0-9_-]")
+# The orchestrator's per-plan markers; same glob as
+# hooks/enforce_orchestrator_isolation.py MARKER_GLOB.
+ORCHESTRATOR_MARKER_GLOB = "orchestrator_*_session.json"
 
 # A line-start /orchestrated_grill invocation (the assembler's bare line, or a
 # typed "/orchestrated_grill @docs/prompts/...").
@@ -190,6 +215,40 @@ AT_REF_PLAIN_RE = re.compile(r"(?<![\w@])@([^\s\"'@]+)")
 REF_STRIP_CHARS = "\"'`<>()[]{},;:!?"
 # Per-file read cap for referenced prompt files (~1 MB).
 REF_FILE_MAX_BYTES = 1000000
+
+
+def session_marker_path(prefix, session_id):
+    """.claude/<prefix>_<sanitized session_id>_session.json. LOCKSTEP COPY of
+    hooks/enforce_handback.py session_marker_path(): the Stop hooks look for
+    the marker exactly here (harness/tests/test_arm_handback_marker.py pins
+    the agreement)."""
+    return os.path.join(
+        CLAUDE_DIR,
+        "{0}_{1}_session.json".format(
+            prefix, SESSION_ID_UNSAFE_RE.sub("_", session_id)
+        ),
+    )
+
+
+def _in_orchestrator_session(session_id):
+    """True when an orchestrator_*_session.json marker names session_id.
+    Unreadable markers are skipped (fail soft)."""
+    try:
+        names = os.listdir(CLAUDE_DIR)
+    except OSError:
+        return False
+    for name in names:
+        if not fnmatch.fnmatch(name, ORCHESTRATOR_MARKER_GLOB):
+            continue
+        try:
+            with open(os.path.join(CLAUDE_DIR, name), "r",
+                      encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            continue
+        if isinstance(data, dict) and data.get("session_id") == session_id:
+            return True
+    return False
 
 
 def _project_dir(payload):
@@ -324,9 +383,9 @@ def _parse_orchestration(prompt):
     return handback_path, plan_name, session_number
 
 
-def _write_marker_atomically(marker, marker_path=MARKER_PATH):
-    """Write marker_path (default MARKER_PATH) via temp file + os.replace;
-    exceptions propagate to main()'s fail-soft catch."""
+def _write_marker_atomically(marker, marker_path):
+    """Write marker_path via temp file + os.replace; exceptions propagate to
+    main()'s fail-soft catch."""
     prefix = "." + os.path.splitext(os.path.basename(marker_path))[0] + "."
     fd, tmp_path = tempfile.mkstemp(prefix=prefix, suffix=".tmp", dir=CLAUDE_DIR)
     try:
@@ -357,6 +416,11 @@ def main():
         # a Stop event; arming with one would be noise, not enforcement.
         sys.exit(0)
 
+    if _in_orchestrator_session(session_id):
+        # An orchestrator session pasting or @-referencing a dispatch prompt
+        # is not the dispatched session: arm nothing.
+        sys.exit(0)
+
     prompt = payload.get("prompt")
     # Literal prompt first, then each referenced prompt file in order of
     # first mention; the first segment with a usable block wins.
@@ -384,7 +448,7 @@ def main():
             # without a handback stub, so arming either marker would block
             # that refusal's stop. Arm nothing.
             sys.exit(0)
-        # Grill lane: arm the grill marker only, never handback_session.json.
+        # Grill lane: arm the grill marker only, never the implementation one.
         _write_marker_atomically(
             {
                 "session_id": session_id,
@@ -393,7 +457,7 @@ def main():
                 "handback_path": handback_path,
                 "requirements_doc_path": requirements_doc_path,
             },
-            GRILL_MARKER_PATH,
+            session_marker_path(GRILL_MARKER_PREFIX, session_id),
         )
         sys.exit(0)
 
@@ -403,7 +467,8 @@ def main():
             "plan_name": plan_name,
             "session_number": session_number,
             "handback_path": handback_path,
-        }
+        },
+        session_marker_path(MARKER_PREFIX, session_id),
     )
     sys.exit(0)
 

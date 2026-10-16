@@ -432,10 +432,14 @@ class TestLegacyMarkerIsInert(IsolationHookEnv):
         self.assertTrue(legacy.exists())
 
     def test_other_session_marker_families_are_not_scanned(self):
-        # handback_session.json and improve_session.json share the
+        # The handback markers (per-session and legacy single-slot names)
+        # and improve_session.json share the
         # *_session.json gitignore glob but are NOT orchestrator markers;
         # a malformed one must not trip the fail-closed path either.
         (self.claude_dir / "handback_session.json").write_text(
+            "{not json", encoding="utf-8"
+        )
+        (self.claude_dir / "handback_abc-123_session.json").write_text(
             "{not json", encoding="utf-8"
         )
         (self.claude_dir / "improve_session.json").write_text(

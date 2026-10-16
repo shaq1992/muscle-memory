@@ -76,8 +76,8 @@ So for a grilling handback:
 - the shape checks below apply only once the file carries a TERMINAL status.
 
 This is why a grilling session arms its own marker,
-`.claude/grill_handback_session.json`, and NEVER the sibling's
-`.claude/handback_session.json` (the marker's key set is owned by
+`.claude/grill_handback_<session_id>_session.json`, and NEVER the sibling's
+`.claude/handback_<session_id>_session.json` (the marker's path and key set are owned by
 `commands/orchestrated_grill.md`).
 
 An `OPEN` stub found by the orchestrator therefore means "died, or still
@@ -240,7 +240,7 @@ On a stop whose handback carries a TERMINAL status, the hook checks:
   requirements doc exists at the path in `## Requirements doc` and is
   non-empty.
 
-On a pass the hook removes the grill marker. The bullet ceiling of
+On a pass the hook removes this session's grill marker (and no other). The bullet ceiling of
 `## Decisions at a glance` is judgement and is never counted by the hook.
 
 ## The abandon path -- BINDING CONSTRAINT (INHERITED)

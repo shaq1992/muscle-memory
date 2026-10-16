@@ -316,17 +316,22 @@ or has no valid `Status:` line, ALLOWS every stop while the handback is `Status:
 (waits, pauses and questions are never blocked), and once the status is terminal runs
 every shape, receipt and grammar check, reporting all failures in one block;
 it and `enforce_phase_closing.py` are mutually exclusive by construction, reading
-different marker files. That marker, `.claude/handback_session.json`, is written
+different marker files. That marker, `.claude/handback_<session_id>_session.json`
+(one file per session, so concurrent sessions never clobber each other; the hook
+reads and removes only its own session's file, and honours a legacy single-slot
+`.claude/handback_session.json` only when its session_id matches), is written
 deterministically by the companion UserPromptSubmit hook
 `hooks/arm_handback_marker.py` the moment a dispatched prompt carrying an
-`## Orchestration` block is submitted; `enforce_handback.py` reads it. The
+`## Orchestration` block is submitted -- unless an `orchestrator_*_session.json`
+marker names the submitting session, which arms nothing (an orchestrator pasting a
+dispatch prompt is not the dispatched session); `enforce_handback.py` reads it. The
 session-side marker write in `/grill_and_implement`'s Step 0a remains as a
 fallback for settings.json files predating the UserPromptSubmit registration. Its
 grilling sibling, `hooks/enforce_grill_handback.py` (Stop), enforces an orchestrated
 grilling session's (`/orchestrated_grill`) lean handback
 (`harness/templates/grill_handback_schema.md`): it reads its own marker,
-`.claude/grill_handback_session.json` (armed by the same UserPromptSubmit hook, never
-`handback_session.json`), ALLOWS every stop while the handback is `Status: OPEN` --
+`.claude/grill_handback_<session_id>_session.json` (armed by the same UserPromptSubmit
+hook, never the implementation marker; same per-session and legacy rules), ALLOWS every stop while the handback is `Status: OPEN` --
 a grilling session stops on every question -- and applies the shape and
 requirements-doc checks only once the status is terminal; bootstrap Step 6 registers
 it as the third Stop entry. `.claude/hooks/enforce_orchestrator_isolation.py` (PreToolUse on
@@ -467,10 +472,10 @@ failed check. Full mechanics: `closing_sequence.md` steps 4-5.
 This hook serves PHASED-PLAN phases only. Its orchestrated counterpart is
 `enforce_handback.py`, which enforces the handback obligation instead; the two are
 mutually exclusive by construction because they read different marker files
-(`phase_closing.json` vs `handback_session.json`) and neither honors the other's. A
+(`phase_closing.json` vs `handback_<session_id>_session.json`) and neither honors the other's. A
 session writes one marker or the other, never both. The third Stop hook,
 `enforce_grill_handback.py`, serves orchestrated GRILLING sessions on its own marker
-(`grill_handback_session.json`) and is exclusive with both in the same way.
+(`grill_handback_<session_id>_session.json`) and is exclusive with both in the same way.
 
 ## Glossaries
 

@@ -173,7 +173,9 @@ class HandbackHookEnv(unittest.TestCase):
             str(scripts_dir / "handback_validation.py"),
         )
 
-        self.marker_path = self.proj / ".claude" / "handback_session.json"
+        self.claude_dir = self.proj / ".claude"
+        self.marker_path = self.marker_path_for(self.SESSION)
+        self.legacy_marker_path = self.claude_dir / "handback_session.json"
         self.closing_marker_path = self.proj / ".claude" / "phase_closing.json"
         self.handback_rel = "docs/orchestration/{0}/handbacks/{1:02d}.md".format(
             PLAN_NAME, SESSION_NUMBER
@@ -183,8 +185,15 @@ class HandbackHookEnv(unittest.TestCase):
 
     # -- fixture writers ---------------------------------------------------
 
-    def write_marker(self, session=None, handback_path=None):
-        self.marker_path.write_text(
+    def marker_path_for(self, session, prefix="handback"):
+        return self.claude_dir / "{0}_{1}_session.json".format(prefix, session)
+
+    def write_marker(self, session=None, handback_path=None, path=None):
+        """Write a marker for session (default: this fixture's session) at
+        path (default: that session's own per-session file); returns it."""
+        if path is None:
+            path = self.marker_path_for(session or self.SESSION)
+        path.write_text(
             json.dumps(
                 {
                     "session_id": session or self.SESSION,
@@ -198,6 +207,7 @@ class HandbackHookEnv(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        return path
 
     def write_closing_marker(self, session=None):
         self.closing_marker_path.write_text(
@@ -306,9 +316,70 @@ class TestForeignSessionAllows(HandbackHookEnv):
     def test_foreign_session_allows(self):
         # Case 2: an abandoned session's marker never blocks another session,
         # and is never consumed.
-        self.write_marker(session="some-other-session")
+        foreign = self.write_marker(session="some-other-session")
         self.assert_allowed_stop()
-        self.assertTrue(self.marker_path.exists())
+        self.assertTrue(foreign.exists())
+
+
+class TestPerSessionMarkerFiles(HandbackHookEnv):
+    def test_reads_and_removes_only_own_file(self):
+        # Prevents: a passing session deleting (or being enforced by) a
+        # concurrent session's marker.
+        foreign = self.write_marker(session="other-live-session")
+        self.write_marker()
+        self.write_handback(text=ABANDON_MINIMUM)
+        self.assert_allowed_stop()
+        self.assertFalse(self.marker_path.exists())
+        self.assertTrue(foreign.exists())
+
+    def test_legacy_single_slot_honoured_only_on_matching_session(self):
+        # Prevents: a marker armed before the per-session rename going
+        # unenforced -- and a stale legacy marker blocking someone else.
+        self.write_marker(session="stale-session",
+                          path=self.legacy_marker_path)
+        self.assert_allowed_stop()
+        self.assertTrue(self.legacy_marker_path.exists())
+        self.write_marker(path=self.legacy_marker_path)
+        self.assert_blocked(reason_contains=self.handback_rel)
+        self.write_handback(text=ABANDON_MINIMUM)
+        self.assert_allowed_stop()
+        self.assertFalse(self.legacy_marker_path.exists())
+
+
+class TestGrillHookPerSessionMarker(HandbackHookEnv):
+    """enforce_grill_handback.py follows the same per-session rule."""
+
+    def setUp(self):
+        super(TestGrillHookPerSessionMarker, self).setUp()
+        self.grill_hook_copy = self.claude_dir / "hooks" / (
+            "enforce_grill_handback.py")
+        shutil.copyfile(
+            str(HARNESS_ROOT / "hooks" / "enforce_grill_handback.py"),
+            str(self.grill_hook_copy),
+        )
+
+    def grill_decision(self, session=None):
+        return self._run(self.grill_hook_copy, session)
+
+    def test_own_file_enforced_foreign_ignored_legacy_on_match(self):
+        # Prevents: the grill Stop hook still reading the single slot, so a
+        # per-session grill marker is never enforced.
+        foreign = self.write_marker(
+            session="other-grill",
+            path=self.marker_path_for("other-grill", "grill_handback"))
+        self.assertEqual("allow", self.grill_decision()[0])
+        self.assertTrue(foreign.exists())
+        own = self.write_marker(
+            path=self.marker_path_for(self.SESSION, "grill_handback"))
+        self.assertEqual("block", self.grill_decision()[0])
+        own.unlink()
+        legacy = self.write_marker(
+            path=self.claude_dir / "grill_handback_session.json")
+        self.assertEqual("block", self.grill_decision()[0])
+        self.write_handback(text=ABANDON_MINIMUM)
+        self.assertEqual("allow", self.grill_decision()[0])
+        self.assertFalse(legacy.exists())
+        self.assertTrue(foreign.exists())
 
 
 class TestMissingHandbackBlocks(HandbackHookEnv):
