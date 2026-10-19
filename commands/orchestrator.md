@@ -357,10 +357,20 @@ Step 8 clears.
    `## Dispatched` (write-through trigger (b)) as part of the dispatch, not on
    return. A session that is never run at all must still be visible on a cold
    resume as a dispatched row with no handback behind it.
-7. **Report the path ONLY.** Say where the prompt was written and stop. NEVER
-   echo the prompt body into the conversation -- the body is for the receiving
-   session, and echoing it burns orchestrator context on text that is already on
-   disk.
+7. **Report the path ONLY -- as two paste-ready lines.** After the dispatch,
+   print exactly these two things in the chat, then stop:
+   1. the real resolved prompt path, repo-relative, prefixed with `@`, alone on
+      its line with no backticks or surrounding text, so the user can paste it
+      straight into a new session:
+      `@docs/prompts/<ddmmyy>/<plan_name>_session_<NN>_prompt.md`
+   2. a one-line note that the new dispatched session should be renamed,
+      followed by the command alone on its own line:
+      `/rename <plan_name>_s<NN>` -- `NN` the same zero-padded two-digit session
+      number (plan `pet-poc`, session 27: `/rename pet-poc_s27`).
+
+   NEVER echo the prompt body into the conversation -- the body is for the
+   receiving session, and echoing it burns orchestrator context on text that is
+   already on disk.
 
 ## Step 8 -- TREE BROKER
 
