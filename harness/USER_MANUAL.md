@@ -267,10 +267,14 @@ Schemas: `harness/templates/state_schema.md` (state) and
    `## Orchestration` block with the rows copied verbatim -- plus a dispatch manifest
    at `docs/orchestration/<plan_name>/dispatches/<NN>.json` (row IDs + the prompt
    file's SHA-256). The orchestrator records the expectation in the state file's
-   `## Dispatched` BEFORE the session runs, and reports the path only -- never the
-   prompt body. One tree-holding session at a time: while a session is outstanding, a
-   second dispatch is refused by name rather than queued.
-3. **You paste that prompt into a fresh session.** `/grill_and_implement` detects the
+   `## Dispatched` BEFORE the session runs, and reports only two paste-ready lines --
+   the prompt path prefixed with `@` and a `/rename <plan_name>_s<NN>` command for the
+   new session -- never the prompt body (this report shape is owned by
+   `commands/orchestrator.md` Step 7 item 7). One tree-holding session at a time:
+   while a session is outstanding, a second dispatch is refused by name rather than
+   queued.
+3. **You paste that prompt into a fresh session.** Paste the `@` line into the new
+   session, then run the printed `/rename` line there. `/grill_and_implement` detects the
    `## Orchestration` block and runs as an orchestrated session: it writes a handback
    STUB at `docs/orchestration/<plan_name>/handbacks/<NN>.md` in minute one -- whose
    read receipt (row-ID list + prompt hash) is verified against the dispatch manifest
