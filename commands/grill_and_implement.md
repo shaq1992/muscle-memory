@@ -88,8 +88,12 @@ indistinguishable from a session that was never dispatched.
    the FIRST CELL of each row the block listed under "Rows this session must obey"
    (comma-separated), and `- Prompt-SHA256:` with the output of `sha256sum` run on the
    PROMPT FILE this session was invoked with -- compute it, never guess it; the closing
-   hook verifies both against the dispatch manifest.
-2. **Write the handback marker** at `.claude/handback_session.json`, with exactly these
+   hook verifies both against the dispatch manifest. The stub also carries a
+   `## Scope changes` section holding `none`, the place Step 0b writes to.
+2. **Write the handback marker** at `.claude/handback_<session_id>_session.json` -- one
+   file per session, so concurrent sessions never clobber each other's; `<session_id>` is
+   this session's id with every character outside `[A-Za-z0-9_-]` replaced by `_` (a
+   Claude Code session id is a UUID, so it is used as is) -- with exactly these
    keys:
 
    ```json
@@ -121,6 +125,29 @@ two are mutually exclusive by construction, so never write both.
 Then obey the rows the block handed you. They are the plan's pinned invariants, gates and
 do-not-re-validate entries, already filtered to what this session touches; a
 do-not-re-validate entry is not an invitation to check it again.
+
+## Step 0b -- Record every scope change the moment it happens (ORCHESTRATED ONLY)
+
+Whenever the USER changes this session's scope -- at any point: during grilling, at the
+go/no-go gate, mid-implementation, at close -- record it in the handback's
+`## Scope changes` section IMMEDIATELY, BEFORE acting on the change. Do not wait to be
+asked and do not save it for close: the user should never have to say "tell the
+orchestrator about this in the handback". A scope change is anything the user says that
+adds, drops, narrows, widens or moves work, or lifts or tightens a constraint the prompt
+or a handed row set.
+
+One line per change, shape owned by `harness/templates/handback_schema.md`:
+
+```
+- "<the user's words, quoted verbatim>" | overrides: <E-ID, or the prompt item> | <what changes>
+```
+
+Replace the `none` placeholder with the first line; append later ones. Quote the user's
+words exactly, never paraphrase. Your own judgement calls are not scope changes -- only
+what the user said is. The closing hook checks the line shape, and the orchestrator's
+ingest prints these lines first in its summary, so writing one is all it takes to make
+the orchestrator see the change. A durable fact that follows from it still goes in
+`## Delta` at close.
 
 ## Step 1 -- Grill (capped at 8 questions)
 
@@ -262,14 +289,14 @@ protected-branch invariant of `harness/procedures/git_strategy.md` holds identic
 **Standalone:**
 
 1. Cut ONE short-lived branch `quick/<slug>` from the default branch.
-2. Implement the brief in-session; commit on that branch (conventional messages, no AI
-   attribution -- ever). Verify per the brief's outline and report results plainly.
+2. Implement the brief in-session; commit on that branch (conventional messages; no AI
+   attribution, per the "Commit authorship" law in `harness/procedures/git_strategy.md`). Verify per the brief's outline and report results plainly.
 3. Confirm the ACTIVE gh account owns the target repo (`gh auth status`) and switch to
    the owning account if it is not active -- `gh pr create` follows gh's active account,
    and repo-local push pinning does NOT cover it, so with two github.com identities the
    PR otherwise opens as the wrong user. Then push the branch and open the PR with
    `gh pr create`, using the brief as the PR body source (title from the brief's scope
-   line; no AI attribution in title or body).
+   line; attribution per that same law).
 4. The USER merges with a `!`-prefixed `gh pr merge <n> --merge` -- the keystroke is the
    approval. Claude never runs `gh pr merge`. If the merge is withheld, the branch and
    open PR are the durable artifacts.
@@ -288,10 +315,13 @@ protected-branch invariant of `harness/procedures/git_strategy.md` holds identic
    "Parse arguments" above.
 2. Implement and commit on it exactly as above (same commit rules, same no-attribution
    law).
-3. Close by merging into the accumulation branch and stop there: push the session branch,
-   check out the accumulation branch, merge with git defaults and an explicit
-   `-m "merge: ..."` message, push the accumulation branch, delete the session branch
-   remote and local with `git branch -d` (never `-D`).
+3. Close by merging into the accumulation branch and stop there, following step 4
+   (4a-4f) of the per-work-unit flow in `harness/procedures/git_strategy.md`: push the
+   session branch, land on a current accumulation branch, merge with git defaults and an
+   explicit `-m "merge: ..."` message, push the accumulation branch, verify it landed,
+   then delete the session branch remote and local with `git branch -d` (never `-D`).
+   Each is its own Bash call, checked before the next; if one fails, stop there as that
+   step says -- never reset, never delete to clean up -- and report it in the handback.
 4. **Open NO pull request.** Only the PLAN opens a PR -- from the accumulation branch, by
    the orchestrator, on the user's word. If every session opened its own PR the review
    queue would flood and the accumulation branch would stop being the plan's single
@@ -306,6 +336,8 @@ MACHINERY this session ran under, never defects in the project's domain logic --
 vocabulary defined in `harness/templates/handback_schema.md`, with `-` in the session-number
 field. The file is APPEND-ONLY: never edit, reorder or delete an existing line. If there is
 nothing to report, append nothing; do not fabricate an observation to fill the file.
+Never write a closing (`disposition`) line here -- only
+`harness/scripts/close_observations.py` writes those.
 
 This is a ONE-LINE WRITE, not a self-improvement step. Do not compose a brief, spawn a
 sub-agent, review a diff or propose an edit to the harness. The observation is evidence
@@ -317,8 +349,9 @@ No phase-closing marker, no learnings file, no ledger entry, no document reconci
 -- the brief, the PR and that one appended line are the whole paper trail.
 
 **ORCHESTRATED ONLY:** finalize the handback INSTEAD. Advance the stub in place to its
-terminal status -- `PARTIAL`, `ABANDONED` or `COMPLETE` -- and fill the three sections per
-`harness/templates/handback_schema.md`: `## Delta` (rows pre-formatted in the state file's
+terminal status -- `PARTIAL`, `ABANDONED` or `COMPLETE` -- and fill the four sections per
+`harness/templates/handback_schema.md`: `## Scope changes` (already written live per Step
+0b; `none` if the user changed nothing), `## Delta` (rows pre-formatted in the state file's
 table shape under that schema's marker-block grammar, so the orchestrator's ingest script
 applies them verbatim rather than anyone re-authoring), `## For the next
 session` (advisory judgement only), and `## Structural observations` (same closed

@@ -4,7 +4,8 @@ Usage: python3 .claude/harness/scripts/assemble_dispatch.py
            --state <state_file> --body <body_file> --plan <plan_name>
            --session <NN> --branch <branch> --rows E001,E002,... --out <prompt_path>
            [--accumulation-branch <branch>] [--command <name>|none]
-           [--requirements-doc <path>]
+           [--requirements-doc <path>] [--repo-root <dir>]
+           [--new-path <path> ...]
 
 Run from the PROJECT ROOT with project-relative paths: the --state value is
 echoed VERBATIM into the prompt's "State file:" field, and the reading
@@ -50,9 +51,37 @@ numbers are never reused, a task body without exactly ONE TDD-posture
 line (outside the orchestrated_grill lane), a TDD-posture line in an
 orchestrated_grill body, a body invoking a command other than --command,
 an invalid --accumulation-branch, --command or --requirements-doc value,
---requirements-doc without --command orchestrated_grill) it prints
-"FAIL <check>: <detail>" lines and exits 1 WITHOUT writing anything.
-Success prints an "OK: ..." line, exit 0.
+--requirements-doc without --command orchestrated_grill, or a failed body
+check below) it prints "FAIL <check>: <detail>" lines and exits 1 WITHOUT
+writing anything. Success prints an "OK: ..." line, exit 0, after any
+"WARN <check>: <detail>" lines.
+
+BODY CHECKS (A-E). The authored body is checked against the state file and
+the session args, so a prompt cannot point the session at something it
+cannot find:
+
+  A. Every E-ID the body mentions must be a ## Established row. One at or
+     below the highest ID ever issued ("- Next row ID:" in the state's log
+     minus one; the highest row present when there is no counter) is a
+     retired row or a typo -> FAIL. One above it is a forward reference
+     (a row the session may propose) -> WARN only.
+  B. Every E-ID the body mentions that IS a ## Established row must also be
+     in --rows -> FAIL "add it to --rows": the session is handed only the
+     rows in its block.
+  C. --rows must not name an ID twice -> FAIL.
+  D. Every path the body cites must exist. A cited path is an "@" reference
+     (validate_prompt.py's AT_REF_RE shape) or a backticked token holding a
+     "/" whose last part has a file extension or that ends in "/"; a
+     trailing ":N" / ":N-M" line citation is stripped first. Tokens holding
+     whitespace, "<", ">", "*", "$" or "://", and anything inside ``` fences,
+     are not paths. A relative path must exist under --repo-root (default:
+     the working directory) or under the working directory; an absolute or
+     "~" path must exist as given. Exempt: a "(new)" directly after the
+     token, or the path passed via --new-path (repeatable) -> otherwise FAIL.
+     A worktree plan (code in a harness worktree, docs in the project)
+     passes --repo-root <worktree> on every dispatch.
+  E. --branch must equal <plan>-session-<NN> (NN as normalized above) ->
+     FAIL: hooks/arm_handback_marker.py parses exactly that shape.
 
 ORCHESTRATED GRILL LANE (--command orchestrated_grill). The bare
 "/orchestrated_grill" line is inserted directly after the body's first H1
@@ -135,6 +164,17 @@ COMMAND_NAME_RE = re.compile(r"^[a-z_]+$")
 # whitespace-separated arguments. Group 1 is the command name.
 INVOCATION_RE = re.compile(r"^/([a-z_]+)(?:\s+\S.*)?\s*$")
 H1_RE = re.compile(r"^#\s+\S")
+# Body checks A-E (see the docstring's BODY CHECKS paragraph).
+BODY_ID_RE = re.compile(r"\bE\d{3}\b")
+NEXT_ID_RE = re.compile(r"^-\s*Next row ID:\s*E(\d{3})\s*$", re.MULTILINE)
+# Same shape as validate_prompt.py's AT_REF_RE.
+AT_REF_RE = re.compile(r"(?<![\w`])@([A-Za-z0-9_./-]+)")
+INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
+FENCE_RE = re.compile(r"^\s*```")
+LINE_CITATION_RE = re.compile(r":\d+(?:-\d+)?$")
+EXTENSION_RE = re.compile(r"\.[A-Za-z0-9]+$")
+NEW_MARK_RE = re.compile(r"^\s*\(new\)")
+NOT_PATH_CHARS = ("<", ">", "*", "$", "://")
 
 
 def first_cell(line):
@@ -198,6 +238,119 @@ def extract_rows(state_text, row_ids, failures):
             continue
         rows.append(by_id[rid])
     return rows
+
+
+def established_ids(state_text):
+    """Set of E-IDs heading a row of the ## Established table, or None when
+    the section is absent (extract_rows reports that)."""
+    lines = state_text.splitlines()
+    bounds = section_bounds(lines, ESTABLISHED_HEADING)
+    if bounds is None:
+        return None
+    ids = set()
+    for line in lines[bounds[0]:bounds[1]]:
+        stripped = line.strip()
+        if stripped.startswith("|") and ID_RE.match(first_cell(stripped)):
+            ids.add(first_cell(stripped))
+    return ids
+
+
+def highest_issued(state_text, ids):
+    """Highest E-ID number ever issued: the log's counter minus one, else
+    the highest row present (0 when there is neither)."""
+    match = NEXT_ID_RE.search(state_text)
+    if match is not None:
+        return int(match.group(1)) - 1
+    return max([int(rid[1:]) for rid in ids] or [0])
+
+
+def check_body_ids(body_text, state_text, row_ids, failures, warnings):
+    """Checks A and B over the E-IDs the body mentions."""
+    ids = established_ids(state_text)
+    if ids is None:
+        return
+    top = highest_issued(state_text, ids)
+    handed = set(row_ids)
+    seen = []
+    for rid in BODY_ID_RE.findall(body_text):
+        if rid not in seen:
+            seen.append(rid)
+    for rid in seen:
+        if rid not in ids:
+            if int(rid[1:]) <= top:
+                failures.append(
+                    "FAIL body: task body cites {0}, which is not a row of "
+                    "{1} (retired, or a typo: IDs up to E{2:03d} have been "
+                    "issued)".format(rid, ESTABLISHED_HEADING, top)
+                )
+            else:
+                warnings.append(
+                    "WARN body: task body cites {0}, above the highest "
+                    "issued ID E{1:03d} (a forward reference?)".format(
+                        rid, top)
+                )
+        elif rid not in handed:
+            failures.append(
+                "FAIL body: task body cites {0}, a {1} row not in --rows; "
+                "add it to --rows (or drop the mention)".format(
+                    rid, ESTABLISHED_HEADING)
+            )
+
+
+def cited_paths(body_text):
+    """(path, marked_new) for each path the body cites (check D), in order.
+    Fenced code is skipped; see the docstring for what counts as a path."""
+    out = []
+    in_fence = False
+    for line in body_text.splitlines():
+        if FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        for m in INLINE_CODE_RE.finditer(line):
+            token = LINE_CITATION_RE.sub("", m.group(1).strip())
+            if any(ch.isspace() for ch in token):
+                continue
+            if any(bad in token for bad in NOT_PATH_CHARS):
+                continue
+            if "/" not in token:
+                continue
+            last = token.rstrip("/").rsplit("/", 1)[-1]
+            if not token.endswith("/") and not EXTENSION_RE.search(last):
+                continue
+            marked = NEW_MARK_RE.match(line[m.end():]) is not None
+            out.append((token, marked))
+        unquoted = INLINE_CODE_RE.sub(lambda m: " " * len(m.group(0)), line)
+        for m in AT_REF_RE.finditer(unquoted):
+            token = LINE_CITATION_RE.sub("", m.group(1).rstrip("."))
+            marked = NEW_MARK_RE.match(unquoted[m.end():]) is not None
+            out.append((token, marked))
+    return out
+
+
+def check_body_paths(body_text, repo_root, new_paths, failures):
+    """Check D: every cited path exists unless marked (new) / --new-path."""
+    cwd = os.getcwd()
+    exempt = set(p.rstrip("/") for p in new_paths)
+    reported = set()
+    for path, marked in cited_paths(body_text):
+        if marked or path.rstrip("/") in exempt or path in reported:
+            continue
+        expanded = os.path.expanduser(path)
+        if os.path.isabs(expanded):
+            found = os.path.exists(expanded)
+        else:
+            found = (os.path.exists(os.path.join(repo_root, expanded))
+                     or os.path.exists(os.path.join(cwd, expanded)))
+        if not found:
+            reported.add(path)
+            failures.append(
+                "FAIL paths: task body cites {0}, which exists under neither "
+                "{1} (--repo-root) nor {2} (cwd); fix the path, or mark a "
+                "file the session creates with '(new)' after it or "
+                "--new-path {0}".format(path, repo_root, cwd)
+            )
 
 
 def default_accumulation_branch(plan):
@@ -341,9 +494,17 @@ def main(argv=None):
                              "'Requirements doc:' field; only with --command "
                              "{0} (default: docs/orchestration/<plan>/"
                              "requirements/<NN>.md)".format(GRILL_COMMAND))
+    parser.add_argument("--repo-root", default=None,
+                        help="directory relative cited paths are checked "
+                             "under, besides the working directory "
+                             "(default: the working directory)")
+    parser.add_argument("--new-path", action="append", default=[],
+                        help="a cited path the session creates, exempt from "
+                             "the exists check (repeatable)")
     args = parser.parse_args(argv)
 
     failures = []
+    warnings = []
 
     if args.command == COMMAND_NONE:
         command = None
@@ -377,6 +538,15 @@ def main(argv=None):
         )
         session = args.session
 
+    expected_branch = "{0}-session-{1}".format(args.plan, session)
+    if args.branch != expected_branch:
+        failures.append(
+            "FAIL args: --branch {0!r} must be {1!r} (<plan>-session-<NN>; "
+            "hooks/arm_handback_marker.py parses that shape)".format(
+                args.branch, expected_branch
+            )
+        )
+
     grill = command == GRILL_COMMAND
     requirements_doc = None
     if grill:
@@ -409,6 +579,12 @@ def main(argv=None):
                     rid
                 )
             )
+    duplicates = sorted(set(r for r in row_ids if row_ids.count(r) > 1))
+    if duplicates:
+        failures.append(
+            "FAIL args: duplicate row ID(s) in --rows: {0}".format(
+                ", ".join(duplicates))
+        )
 
     try:
         with open(args.state, "r", encoding="utf-8") as f:
@@ -450,6 +626,11 @@ def main(argv=None):
                 "carry exactly one ({1})".format(posture_count, POSTURE_LEGAL)
             )
 
+    if body_text:
+        check_body_ids(body_text, state_text, row_ids, failures, warnings)
+        check_body_paths(body_text, args.repo_root or os.getcwd(),
+                         args.new_path, failures)
+
     if os.path.exists(args.out):
         failures.append(
             "FAIL out: prompt file already exists: {0} (session numbers "
@@ -471,6 +652,8 @@ def main(argv=None):
     if not failures:
         row_lines = extract_rows(state_text, row_ids, failures)
 
+    for line in warnings:
+        print(line)
     if failures:
         for line in failures:
             print(line)

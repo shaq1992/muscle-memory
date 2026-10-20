@@ -64,11 +64,10 @@ here.
 
 A grilling session STOPS ON EVERY QUESTION: each AskUserQuestion round and
 each `linger` exchange ends a turn, and the session has no question cap, so
-it may stop dozens of times before it is done. The sibling schema's rule that
-a live session may not close while `OPEN` -- enforced by
-`hooks/enforce_handback.py`, which blocks every such stop unless a pause is
-declared -- would stall a grilling session on every question. That was the
-observed defect this schema exists to remove.
+it may stop dozens of times before it is done. A hook that blocked stops
+while `OPEN` would stall it on every question -- the observed defect this
+schema was first written to remove. (`hooks/enforce_handback.py` has since
+adopted the same rule for implementation sessions.)
 
 So for a grilling handback:
 
@@ -77,8 +76,8 @@ So for a grilling handback:
 - the shape checks below apply only once the file carries a TERMINAL status.
 
 This is why a grilling session arms its own marker,
-`.claude/grill_handback_session.json`, and NEVER the sibling's
-`.claude/handback_session.json` (the marker's key set is owned by
+`.claude/grill_handback_<session_id>_session.json`, and NEVER the sibling's
+`.claude/handback_<session_id>_session.json` (the marker's path and key set are owned by
 `commands/orchestrated_grill.md`).
 
 An `OPEN` stub found by the orchestrator therefore means "died, or still
@@ -241,7 +240,7 @@ On a stop whose handback carries a TERMINAL status, the hook checks:
   requirements doc exists at the path in `## Requirements doc` and is
   non-empty.
 
-On a pass the hook removes the grill marker. The bullet ceiling of
+On a pass the hook removes this session's grill marker (and no other). The bullet ceiling of
 `## Decisions at a glance` is judgement and is never counted by the hook.
 
 ## The abandon path -- BINDING CONSTRAINT (INHERITED)

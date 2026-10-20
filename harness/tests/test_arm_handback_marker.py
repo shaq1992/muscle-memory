@@ -177,10 +177,21 @@ class ArmHookEnv(unittest.TestCase):
         hooks_dir.mkdir(parents=True)
         self.hook_copy = hooks_dir / "arm_handback_marker.py"
         shutil.copyfile(str(ARM_HOOK), str(self.hook_copy))
-        self.marker_path = self.proj / ".claude" / "handback_session.json"
-        self.grill_marker_path = (
-            self.proj / ".claude" / "grill_handback_session.json"
+        # Per-session marker files (the session_id is already filename-safe
+        # here, so it appears unchanged).
+        self.claude_dir = self.proj / ".claude"
+        self.marker_path = self.claude_dir / "handback_{0}_session.json".format(
+            self.SESSION
         )
+        self.grill_marker_path = (
+            self.claude_dir / "grill_handback_{0}_session.json".format(
+                self.SESSION)
+        )
+
+    def armed_files(self):
+        """Every handback / grill marker file present, by name."""
+        return sorted(p.name for p in self.claude_dir.glob("*_session.json")
+                      if not p.name.startswith("orchestrator_"))
 
     def isolated_env(self):
         """Subprocess env pinning CLAUDE_PROJECT_DIR to the temp project.
@@ -255,25 +266,44 @@ class TestExactBlockArms(ArmHookEnv):
         self.arm(prompt, session=self.SESSION)
         self.assertEqual(HANDBACK_REL, self.read_marker()["handback_path"])
 
-    def test_overwrites_existing_marker_unconditionally(self):
-        # Pins ACTUAL behavior: re-arming clobbers whatever marker exists
-        # (a stale marker from an abandoned session must never survive a
-        # fresh dispatch). There is deliberately NO not-clobber rule.
-        self.marker_path.write_text(
-            json.dumps(
-                {
-                    "session_id": "stale-earlier-session",
-                    "plan_name": "old-plan",
-                    "session_number": "01",
-                    "handback_path": "docs/orchestration/old/handbacks/01.md",
-                }
-            ),
+    def test_two_sessions_get_two_markers_neither_clobbered(self):
+        # Prevents: the single-slot clobber -- a second dispatched session
+        # (or an orchestrator pasting a block) overwriting a LIVE session's
+        # marker, so the first session's Stop is never enforced.
+        self.arm(dispatched_prompt(), session=self.SESSION)
+        self.arm(dispatched_prompt(), session="second-session")
+        self.assertEqual(
+            sorted(["handback_{0}_session.json".format(self.SESSION),
+                    "handback_second-session_session.json"]),
+            self.armed_files(),
+        )
+        self.assertEqual(self.SESSION, self.read_marker()["session_id"])
+        self.assertFalse((self.claude_dir / "handback_session.json").exists())
+
+    def test_session_id_is_sanitized_in_filename(self):
+        # Prevents: a session_id carrying "/" or ".." writing the marker
+        # outside .claude/ or under a name the *_session.json gitignore glob
+        # does not cover.
+        self.arm(dispatched_prompt(), session="../x/y z")
+        self.assertEqual(["handback____x_y_z_session.json"],
+                         self.armed_files())
+
+    def test_orchestrator_session_arms_nothing(self):
+        # Prevents: an orchestrator session that pastes or @-references a
+        # dispatch prompt acquiring a handback obligation its Stop hook then
+        # enforces (aim 6a).
+        (self.claude_dir / "orchestrator_some-plan_session.json").write_text(
+            json.dumps({"session_id": self.SESSION, "plan_name": "some-plan",
+                        "state_path": "docs/orchestration/x_state.md"}),
             encoding="utf-8",
         )
         self.arm(dispatched_prompt(), session=self.SESSION)
-        marker = self.read_marker()
-        self.assertEqual(self.SESSION, marker["session_id"])
-        self.assertEqual(HANDBACK_REL, marker["handback_path"])
+        self.arm(grilling_prompt(), session=self.SESSION)
+        self.assertEqual([], self.armed_files())
+        # Another session's orchestrator marker does not suppress arming.
+        self.arm(dispatched_prompt(), session="worker-session")
+        self.assertEqual(["handback_worker-session_session.json"],
+                         self.armed_files())
 
 
 class TestReferencedPromptFile(ArmHookEnv):
@@ -374,7 +404,7 @@ class TestGrillLaneRouting(ArmHookEnv):
     def _assert_grill_marker_only(self):
         self.assertFalse(
             self.marker_path.exists(),
-            "a grilling dispatch must never arm handback_session.json",
+            "a grilling dispatch must never arm the implementation marker",
         )
         self.assertTrue(
             self.grill_marker_path.exists(), "grill marker was not armed"
@@ -541,8 +571,8 @@ class TestSilentNoOps(ArmHookEnv):
         ]:
             with self.subTest(case=label):
                 self.run_arm(stdin_text, env=env)
-                self.assertFalse(
-                    self.marker_path.exists(),
+                self.assertEqual(
+                    [], self.armed_files(),
                     "{0} must not arm a marker".format(label),
                 )
 

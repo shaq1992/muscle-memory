@@ -92,8 +92,8 @@ own git repo, and every improvement is a versioned commit:
    your file (`git -C .claude add <edited file>`), never a blanket `add -A`.
 2. Commit ONCE per invocation, on the CURRENTLY CHECKED-OUT branch (the phase branch
    during a harness plan; local `main` otherwise -- never switch branches). Message
-   convention, exactly: `improve: <file> -- <summary>`. No AI attribution anywhere in the
-   message, ever.
+   convention, exactly: `improve: <file> -- <summary>`. No AI attribution in the message, per
+   the "Commit authorship" law in `harness/procedures/git_strategy.md`.
    The commit and the `git -C .claude push origin main` must be issued as SEPARATE Bash
    calls, never chained with `&&` in one command, because the git_guardrails.py PreToolUse
    hook blocks the whole command when the push is disallowed and the commit would then

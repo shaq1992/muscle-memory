@@ -9,8 +9,8 @@ commands/orchestrator.md Step 9 -- it acts as its invoker's pen under the
 one-writer rule, never as a second writer, and is invoked only by the
 orchestrator. It:
 
-  1. parses the handback's Status line and its ## Delta and ## Structural
-     observations sections, slicing by the fixed headings (it never reads
+  1. parses the handback's Status line and its ## Scope changes, ## Delta
+     and ## Structural observations sections, slicing by the fixed headings (it never reads
      the read-receipt block, and never reads ## For the next session --
      that section is the orchestrator's judgement, not the script's);
   2. applies the ## Delta marker blocks to ## Established by row ID:
@@ -33,7 +33,11 @@ orchestrator. It:
      exactly duplicates an existing row (whitespace-normalized) is FLAGGED
      in the summary, never resolved -- semantic contradiction stays the
      orchestrator's judgement per state_schema.md's no-contradiction law;
-  6. WARNS (never blocks) on incoming rows over ~600 bytes (the D7 row
+  6. prints ## Scope changes FIRST in its summary, ahead of the OK line, and
+     NEVER applies them: each is a user-stated re-scope for the orchestrator
+     to decide. A handback with no such section (written before it existed)
+     still ingests, with a one-line note;
+  7. WARNS (never blocks) on incoming rows over ~600 bytes (the D7 row
      discipline) and reports ## Established row count and byte size against
      the GC threshold (80 rows OR 45 KB -- either bound trips).
 
@@ -66,11 +70,13 @@ from handback_validation import (  # noqa: E402
     is_separator_row,
     parse_delta,
     parse_observations,
+    parse_scope_changes,
     ID_FIND_RE,
     ID_RE,
     OBSERVATION_RE,
     OBSERVATION_TAGS,
     OPEN_MANUAL_MARKER,
+    SCOPE_HEADING,
 )
 
 ESTABLISHED_HEADING = "## Established"
@@ -391,6 +397,14 @@ def main(argv=None):
     if obs_bounds is not None:
         observations = parse_observations(
             hb_lines[obs_bounds[0]:obs_bounds[1]], failures)
+    # ## Scope changes is surfaced, never applied: the orchestrator decides
+    # each one. A handback written before the section existed (pre-v3) has
+    # none to surface and still ingests.
+    scope_bounds = section_bounds(hb_lines, SCOPE_HEADING)
+    scope_changes = []
+    if scope_bounds is not None:
+        scope_changes = parse_scope_changes(
+            hb_lines[scope_bounds[0]:scope_bounds[1]], failures)
 
     state_lines = state_text.splitlines()
     trailing_newline = state_text.endswith("\n")
@@ -430,6 +444,17 @@ def main(argv=None):
     rows, size = established_level(state_lines)
     over = rows > THRESHOLD_ROWS or size > THRESHOLD_BYTES
     mode = " (check only, nothing written)" if args.check else ""
+    if scope_bounds is None:
+        print("Scope changes: no ## Scope changes section (pre-v3 handback) "
+              "-- none surfaced")
+    elif not scope_changes:
+        print("Scope changes: none")
+    else:
+        print("Scope changes (user-stated; NOT applied -- decide each and "
+              "write any row yourself): {0}".format(len(scope_changes)))
+        for quote, overrides, effect in scope_changes:
+            print('  - "{0}" | overrides: {1} | {2}'.format(
+                quote, overrides, effect))
     print("OK{0}: ingested {1} (Status: {2})".format(
         mode, args.handback, status))
     print("Added: {0}".format(

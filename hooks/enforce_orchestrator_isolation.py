@@ -37,8 +37,9 @@ replaces. The remedy is stated in the deny reason: delete the named file.
 A readable marker naming a DIFFERENT session never constrains this one --
 dispatched implementation sessions must write code -- and no marker at all is
 a structural no-op. The legacy single-slot orchestrator_session.json does not
-match the scan pattern and is inert; so is handback_session.json, which
-belongs to a different hook, and any improve_session.json left behind by
+match the scan pattern and is inert; so are the handback markers
+(handback_<session_id>_session.json, grill_handback_<session_id>_session.json
+and their legacy single-slot names), which belong to different hooks, and any improve_session.json left behind by
 the retired /orchestrator improve subcommand, which nothing consumes.
 
 This is an ANTI-DRIFT GUARDRAIL, not a sandbox. A Bash heredoc bypasses it

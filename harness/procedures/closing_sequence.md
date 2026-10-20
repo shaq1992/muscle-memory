@@ -165,7 +165,7 @@ zero-commit rule in step 8 applies. State plainly what the phase's outputs
 were and why nothing is committable.
 
 Commit message: `feat: <plan_name> phase <N> -- <brief description>`. No AI
-attribution anywhere, ever.
+attribution, per the "Commit authorship" law in `git_strategy.md`.
 
 ## Step 8: Autonomous git close
 
@@ -187,15 +187,14 @@ then confirm the session ends on the expected branch
 (`git branch --show-current`).
 
 Otherwise, perform the autonomous close -- no user confirmation, no surfacing
-of commands for manual execution:
-
-1. Push the phase branch: `git -C <repo> push -u origin <phase-branch>`.
-2. `git -C <repo> checkout integration/<plan_name>`, then merge with git
-   defaults and an explicit message:
-   `git -C <repo> merge <phase-branch> -m "merge: <plan_name> phase <N> -- <brief description>"`.
-3. Push the integration branch: `git -C <repo> push origin integration/<plan_name>`.
-4. Delete the phase branch, remote and local
-   (`git -C <repo> branch -d`, never `-D`).
+of commands for manual execution -- exactly as step 4 of the per-work-unit flow
+in git_strategy.md (4a-4f): push the phase branch, land on a current
+`integration/<plan_name>`, merge with
+`-m "merge: <plan_name> phase <N> -- <brief description>"`, push the
+integration branch, verify it landed, then delete the phase branch remote and
+local (`git branch -d`, never `-D`). Each is its own Bash call, checked before
+the next; on a failure, stop at that step as git_strategy.md says (never reset,
+never delete) and report.
 
 Report each operation's outcome (hashes, branch states) to the user.
 
@@ -205,7 +204,8 @@ switch to the owning account if it is not active, because `gh pr create` follows
 gh's active account and repo-local push pinning does NOT cover it (with two
 github.com identities the PR otherwise opens as the wrong user); then
 push the integration branch, open the PR autonomously with `gh pr create`
-(title/body per the PR convention, no AI attribution), then hand off: the USER
+(title/body per the PR convention; attribution per git_strategy.md "Commit
+authorship"), then hand off: the USER
 merges with a `!`-prefixed `gh pr merge <n> --merge` (the keystroke is the
 approval; Claude never runs `gh pr merge`). If the merge is withheld, the plan
 closes with the integration branch and the open PR as the durable artifacts.

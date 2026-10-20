@@ -123,6 +123,8 @@ BOTH `python3` occurrences in each hook command below (the `command -v` guard an
       "PreToolUse": [
         { "matcher": "Bash",
           "hooks": [ { "type": "command", "command": "D=\"${CLAUDE_PROJECT_DIR:-.}\"; command -v python3 >/dev/null 2>&1 && exec python3 \"$D/.claude/hooks/git_guardrails.py\" || exit 0" } ] },
+        { "matcher": "Read|Edit|Grep|Bash",
+          "hooks": [ { "type": "command", "command": "D=\"${CLAUDE_PROJECT_DIR:-.}\"; command -v python3 >/dev/null 2>&1 && exec python3 \"$D/.claude/hooks/protect_secrets.py\" || exit 0" } ] },
         { "matcher": "Edit|Write|NotebookEdit",
           "hooks": [ { "type": "command", "command": "D=\"${CLAUDE_PROJECT_DIR:-.}\"; command -v python3 >/dev/null 2>&1 && exec python3 \"$D/.claude/hooks/enforce_orchestrator_isolation.py\" || exit 0" } ] }
       ],
@@ -137,15 +139,21 @@ BOTH `python3` occurrences in each hook command below (the `command -v` guard an
     }
   }
   ```
+- The `Read|Edit|Grep|Bash` registration exists because `protect_secrets.py`
+  deterministically denies reads of `.env`-family files (allowing `.env.example`),
+  environment dumps, and recursive searches not scoped to tracked files. The
+  `Read(.env)` deny rules below do not cover Bash scripts or recursive grep; this
+  hook does.
 - The `UserPromptSubmit` registration exists because `arm_handback_marker.py`
   deterministically arms the handback marker that `enforce_handback.py` keys off.
 - The third `Stop` registration exists because `enforce_grill_handback.py` enforces
   the orchestrated grilling session's handback (`commands/orchestrated_grill.md`,
   `harness/templates/grill_handback_schema.md`); unregistered, that hook is inert.
-- If it DOES exist, parse it as JSON and MERGE idempotently: add the six hook
+- If it DOES exist, parse it as JSON and MERGE idempotently: add the seven hook
   registrations only if an equivalent entry is not already present (in particular,
-  a re-run on a settings.json written before the `UserPromptSubmit` or the
-  `enforce_grill_handback.py` `Stop` entry existed adds each missing entry without
+  a re-run on a settings.json written before the `UserPromptSubmit`, the
+  `enforce_grill_handback.py` `Stop` or the `protect_secrets.py` `PreToolUse` entry
+  existed adds each missing entry without
   duplicating anything -- match on the hook script's filename); add each
   `permissions.deny` and `permissions.allow` rule only if absent (create the `allow`
   list if the file has none). Preserve every other existing key and every

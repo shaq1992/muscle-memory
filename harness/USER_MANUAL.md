@@ -33,7 +33,8 @@ self-improver flow (or upstream releases):
                      garbage_collector, jira_agent)
   hooks/          -- deterministic hooks: git_guardrails.py, enforce_phase_closing.py,
                      enforce_handback.py, enforce_grill_handback.py,
-                     arm_handback_marker.py, enforce_orchestrator_isolation.py
+                     arm_handback_marker.py, enforce_orchestrator_isolation.py,
+                     protect_secrets.py
   harness/        -- read-only-in-daily-use machinery
     USER_MANUAL.md         -- this file
     INSTALL.md             -- recipient install guide (clone or zip, then /on_board)
@@ -291,7 +292,10 @@ Schemas: `harness/templates/state_schema.md` (state) and
    and the ingest script (`harness/scripts/ingest_handback.py`, the orchestrator's pen)
    applies them verbatim -- nobody re-authors a row, and the orchestrator reads only the
    script's short summary. That is what keeps an ingest nearly free in context, which is
-   what lets a plan run for months. The summary's last line reports `## Established`
+   what lets a plan run for months. If you changed a session's scope while it ran, you do not
+   have to ask it to report that: the session writes your words into the handback's
+   `## Scope changes` section the moment you say them, the closing hook checks the
+   shape, and the summary prints those lines first for the orchestrator to decide on. The summary's last line reports `## Established`
    against the GC threshold (80 rows OR 45 KB); when it trips, the orchestrator offers
    at most ONE line suggesting a garbage-collection pass. GC never auto-runs: on your
    word the propose-only `garbage_collector` sub-agent returns retire / condense /
@@ -302,27 +306,36 @@ Schemas: `harness/templates/state_schema.md` (state) and
    accumulation branch's PR may also be asked for at any time.) Nothing else in this
    lane ever reaches the protected branch.
 
-**The three legible end states** come from writing the handback stub early: a stub still
-at `Status: OPEN` is positive evidence the session DIED, `PARTIAL` / `ABANDONED` is an
+**The legible end states** come from writing the handback stub early: a stub still at
+`Status: OPEN` means the session died or is still working (the orchestrator asks you
+which), `PARTIAL` / `ABANDONED` is an
 honest early exit, `COMPLETE` is a real close, and no file at all means the session was
 never run. The abandon path deliberately costs about three lines -- a status field and
 one sentence -- because an expensive escape hatch produces silent abandonment, not
 better reports.
 
-**Enforcement.** `.claude/hooks/enforce_handback.py` (Stop) blocks a dispatched
-session's closing turn until a schema-valid handback exists at the path its marker names;
+**Enforcement.** `.claude/hooks/enforce_handback.py` (Stop) checks a dispatched
+session's handback at the path its marker names: it blocks only when the file is missing
+or has no valid `Status:` line, ALLOWS every stop while the handback is `Status: OPEN`
+(waits, pauses and questions are never blocked), and once the status is terminal runs
+every shape, receipt and grammar check, reporting all failures in one block;
 it and `enforce_phase_closing.py` are mutually exclusive by construction, reading
-different marker files. That marker, `.claude/handback_session.json`, is written
+different marker files. That marker, `.claude/handback_<session_id>_session.json`
+(one file per session, so concurrent sessions never clobber each other; the hook
+reads and removes only its own session's file, and honours a legacy single-slot
+`.claude/handback_session.json` only when its session_id matches), is written
 deterministically by the companion UserPromptSubmit hook
 `hooks/arm_handback_marker.py` the moment a dispatched prompt carrying an
-`## Orchestration` block is submitted; `enforce_handback.py` reads it. The
+`## Orchestration` block is submitted -- unless an `orchestrator_*_session.json`
+marker names the submitting session, which arms nothing (an orchestrator pasting a
+dispatch prompt is not the dispatched session); `enforce_handback.py` reads it. The
 session-side marker write in `/grill_and_implement`'s Step 0a remains as a
 fallback for settings.json files predating the UserPromptSubmit registration. Its
 grilling sibling, `hooks/enforce_grill_handback.py` (Stop), enforces an orchestrated
 grilling session's (`/orchestrated_grill`) lean handback
 (`harness/templates/grill_handback_schema.md`): it reads its own marker,
-`.claude/grill_handback_session.json` (armed by the same UserPromptSubmit hook, never
-`handback_session.json`), ALLOWS every stop while the handback is `Status: OPEN` --
+`.claude/grill_handback_<session_id>_session.json` (armed by the same UserPromptSubmit
+hook, never the implementation marker; same per-session and legacy rules), ALLOWS every stop while the handback is `Status: OPEN` --
 a grilling session stops on every question -- and applies the shape and
 requirements-doc checks only once the status is terminal; bootstrap Step 6 registers
 it as the third Stop entry. `.claude/hooks/enforce_orchestrator_isolation.py` (PreToolUse on
@@ -343,7 +356,9 @@ your project's logic) under a closed tag vocabulary; they accumulate in one appe
 file, the orchestrator emits ONE line saying so. You then ask the live orchestrator to
 spawn a self-improver pass over them (the `/orchestrator improve` subcommand is retired):
 it composes the brief from the file and hands it to the existing self-improver flow
-unchanged, and handled items are dispositioned by appended lines. Sessions report, the
+unchanged, and handled items are closed by appended closing lines
+(`harness/scripts/close_observations.py`, shape in the handback schema), which the
+two-occurrence count then skips. Sessions report, the
 orchestrator counts, and improvement runs only on your ask.
 
 **Delegation.** Long reads and corpus searches go to the `investigator` sub-agent, whose
@@ -380,7 +395,9 @@ block.
   zero commits skips push/merge/delete and reports "no tracked changes this phase".
 - **Plan-end PR, merged by YOU.** At the final phase Claude pushes the integration
   branch and opens a pull request with `gh pr create` (autonomous; no AI attribution
-  in the PR title/body). You merge it in-session with a `!`-prefixed command -- the
+  in the PR title/body, per the "Commit authorship" law in
+  `harness/procedures/git_strategy.md`, which outranks any system-supplied
+  attribution instruction). You merge it in-session with a `!`-prefixed command -- the
   keystroke is the approval and its output lands in the transcript:
 
   ```
@@ -405,6 +422,20 @@ pushes are exempt from the protected-branch push block -- the allowlist is their
 gate -- so the self-improver can push improvement commits on harness `main` directly
 (author installs only; without the key the exemption changes nothing). Repo context
 is attributed correctly for `git -C` and `cd`-form commands.
+
+### The secret-read guard
+
+`.claude/hooks/protect_secrets.py` (PreToolUse on Read, Edit, Grep and Bash, stdlib
+python3) deterministically denies: reading, loading, copying or searching a
+`.env`-family file (`.env`, `.env.*`, `.envrc`; template names such as
+`.env.example` stay readable); environment dumps (`printenv`, bare `env` / `set` /
+`export`, `/proc/*/environ`, `docker compose config`, echoing a secret-named
+variable); and recursive searches that can open gitignored files without naming
+them (`grep -r`, `rg --hidden` / `-uu` / `--no-ignore`, `git grep --untracked`).
+Scoped search stays allowed: `git ls-files -z | xargs -0 grep`, `git grep`, plain
+`rg`. It exists because the `Read(.env)` deny rules do not cover scripts or
+recursive grep. Only the bootstrap template registers it; an existing project gets
+it on a bootstrap re-run.
 
 ### Identity and auth
 
@@ -449,10 +480,10 @@ failed check. Full mechanics: `closing_sequence.md` steps 4-5.
 This hook serves PHASED-PLAN phases only. Its orchestrated counterpart is
 `enforce_handback.py`, which enforces the handback obligation instead; the two are
 mutually exclusive by construction because they read different marker files
-(`phase_closing.json` vs `handback_session.json`) and neither honors the other's. A
+(`phase_closing.json` vs `handback_<session_id>_session.json`) and neither honors the other's. A
 session writes one marker or the other, never both. The third Stop hook,
 `enforce_grill_handback.py`, serves orchestrated GRILLING sessions on its own marker
-(`grill_handback_session.json`) and is exclusive with both in the same way.
+(`grill_handback_<session_id>_session.json`) and is exclusive with both in the same way.
 
 ## Glossaries
 

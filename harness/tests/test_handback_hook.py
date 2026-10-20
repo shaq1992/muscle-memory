@@ -77,6 +77,10 @@ ID_RECEIPT_COMPLETE = (
     "\n"
     + ID_RECEIPT_HEADER
     + "\n"
+    "## Scope changes\n"
+    "\n"
+    "none\n"
+    "\n"
     "## Delta\n"
     "\n"
     "none\n"
@@ -95,6 +99,10 @@ COMPLETE_HANDBACK = (
     "\n"
     "**Handed to this session (read receipt):**\n"
     "- | greenlist | the fixture row |\n"
+    "\n"
+    "## Scope changes\n"
+    "\n"
+    "none\n"
     "\n"
     "## Delta\n"
     "\n"
@@ -118,6 +126,10 @@ MALFORMED_DELTA_HANDBACK = (
     "\n"
     "**Handed to this session (read receipt):**\n"
     "- | greenlist | the fixture row |\n"
+    "\n"
+    "## Scope changes\n"
+    "\n"
+    "none\n"
     "\n"
     "## Delta\n"
     "\n"
@@ -161,7 +173,9 @@ class HandbackHookEnv(unittest.TestCase):
             str(scripts_dir / "handback_validation.py"),
         )
 
-        self.marker_path = self.proj / ".claude" / "handback_session.json"
+        self.claude_dir = self.proj / ".claude"
+        self.marker_path = self.marker_path_for(self.SESSION)
+        self.legacy_marker_path = self.claude_dir / "handback_session.json"
         self.closing_marker_path = self.proj / ".claude" / "phase_closing.json"
         self.handback_rel = "docs/orchestration/{0}/handbacks/{1:02d}.md".format(
             PLAN_NAME, SESSION_NUMBER
@@ -171,8 +185,15 @@ class HandbackHookEnv(unittest.TestCase):
 
     # -- fixture writers ---------------------------------------------------
 
-    def write_marker(self, session=None, handback_path=None):
-        self.marker_path.write_text(
+    def marker_path_for(self, session, prefix="handback"):
+        return self.claude_dir / "{0}_{1}_session.json".format(prefix, session)
+
+    def write_marker(self, session=None, handback_path=None, path=None):
+        """Write a marker for session (default: this fixture's session) at
+        path (default: that session's own per-session file); returns it."""
+        if path is None:
+            path = self.marker_path_for(session or self.SESSION)
+        path.write_text(
             json.dumps(
                 {
                     "session_id": session or self.SESSION,
@@ -186,6 +207,7 @@ class HandbackHookEnv(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        return path
 
     def write_closing_marker(self, session=None):
         self.closing_marker_path.write_text(
@@ -228,11 +250,12 @@ class HandbackHookEnv(unittest.TestCase):
         )
         return path
 
-    def declare_pause(self, session=None):
-        (self.proj / ".claude" / "handback_pause.json").write_text(
-            json.dumps({"session_id": session or self.SESSION}),
-            encoding="utf-8",
-        )
+    def write_stale_pause_file(self, declaration):
+        # The retired question-pause file. Written only to prove the hook no
+        # longer reads, honours or deletes it.
+        path = self.proj / ".claude" / "handback_pause.json"
+        path.write_text(json.dumps(declaration), encoding="utf-8")
+        return path
 
     # -- hook drivers ------------------------------------------------------
 
@@ -293,9 +316,70 @@ class TestForeignSessionAllows(HandbackHookEnv):
     def test_foreign_session_allows(self):
         # Case 2: an abandoned session's marker never blocks another session,
         # and is never consumed.
-        self.write_marker(session="some-other-session")
+        foreign = self.write_marker(session="some-other-session")
         self.assert_allowed_stop()
-        self.assertTrue(self.marker_path.exists())
+        self.assertTrue(foreign.exists())
+
+
+class TestPerSessionMarkerFiles(HandbackHookEnv):
+    def test_reads_and_removes_only_own_file(self):
+        # Prevents: a passing session deleting (or being enforced by) a
+        # concurrent session's marker.
+        foreign = self.write_marker(session="other-live-session")
+        self.write_marker()
+        self.write_handback(text=ABANDON_MINIMUM)
+        self.assert_allowed_stop()
+        self.assertFalse(self.marker_path.exists())
+        self.assertTrue(foreign.exists())
+
+    def test_legacy_single_slot_honoured_only_on_matching_session(self):
+        # Prevents: a marker armed before the per-session rename going
+        # unenforced -- and a stale legacy marker blocking someone else.
+        self.write_marker(session="stale-session",
+                          path=self.legacy_marker_path)
+        self.assert_allowed_stop()
+        self.assertTrue(self.legacy_marker_path.exists())
+        self.write_marker(path=self.legacy_marker_path)
+        self.assert_blocked(reason_contains=self.handback_rel)
+        self.write_handback(text=ABANDON_MINIMUM)
+        self.assert_allowed_stop()
+        self.assertFalse(self.legacy_marker_path.exists())
+
+
+class TestGrillHookPerSessionMarker(HandbackHookEnv):
+    """enforce_grill_handback.py follows the same per-session rule."""
+
+    def setUp(self):
+        super(TestGrillHookPerSessionMarker, self).setUp()
+        self.grill_hook_copy = self.claude_dir / "hooks" / (
+            "enforce_grill_handback.py")
+        shutil.copyfile(
+            str(HARNESS_ROOT / "hooks" / "enforce_grill_handback.py"),
+            str(self.grill_hook_copy),
+        )
+
+    def grill_decision(self, session=None):
+        return self._run(self.grill_hook_copy, session)
+
+    def test_own_file_enforced_foreign_ignored_legacy_on_match(self):
+        # Prevents: the grill Stop hook still reading the single slot, so a
+        # per-session grill marker is never enforced.
+        foreign = self.write_marker(
+            session="other-grill",
+            path=self.marker_path_for("other-grill", "grill_handback"))
+        self.assertEqual("allow", self.grill_decision()[0])
+        self.assertTrue(foreign.exists())
+        own = self.write_marker(
+            path=self.marker_path_for(self.SESSION, "grill_handback"))
+        self.assertEqual("block", self.grill_decision()[0])
+        own.unlink()
+        legacy = self.write_marker(
+            path=self.claude_dir / "grill_handback_session.json")
+        self.assertEqual("block", self.grill_decision()[0])
+        self.write_handback(text=ABANDON_MINIMUM)
+        self.assertEqual("allow", self.grill_decision()[0])
+        self.assertFalse(legacy.exists())
+        self.assertTrue(foreign.exists())
 
 
 class TestMissingHandbackBlocks(HandbackHookEnv):
@@ -323,16 +407,28 @@ class TestBadStatusBlocks(HandbackHookEnv):
                 self.assertIn(ABANDON_MINIMUM, reason)
                 self.assertTrue(self.marker_path.exists())
 
-    def test_open_stub_is_not_a_terminal_state(self):
-        # OPEN is in the file-level vocabulary but is NOT a terminal state.
-        # The stub is written at session start, so accepting OPEN here would
-        # make the hook vacuous -- it would demand a file the session already
-        # wrote in minute one. A session that reaches its Stop hook is alive,
-        # and OPEN is reserved as positive evidence that a session died.
+
+
+class TestOpenStubAllows(HandbackHookEnv):
+    def test_open_stub_allows_and_keeps_marker(self):
+        # Prevents: a session waiting on a background job, or pausing to ask
+        # a question, being blocked on every stop (the stuck loops of E007).
+        # Every stop while OPEN is allowed; the marker stays so the checks
+        # still run once the status turns terminal.
         self.write_marker()
         self.write_handback(STUB_HANDBACK)
-        reason = self.assert_blocked(reason_contains="OPEN")
-        self.assertIn(ABANDON_MINIMUM, reason)
+        for _ in range(3):
+            self.assert_allowed_stop()
+            self.assertTrue(self.marker_path.exists())
+
+    def test_open_with_bad_receipt_allows(self):
+        # Prevents: a receipt mismatch at OPEN turning every wait into a
+        # block loop the session can only leave by abandoning. The receipt
+        # is checked at the terminal close instead.
+        self.write_marker()
+        self.write_manifest(sha=OTHER_SHA)
+        self.write_handback(ID_RECEIPT_STUB)
+        self.assert_allowed_stop()
         self.assertTrue(self.marker_path.exists())
 
 
@@ -368,6 +464,7 @@ class TestCompleteAllowsAndSelfDeletes(HandbackHookEnv):
         # claim real work landed.
         self.write_marker()
         for missing in [
+            "## Scope changes",
             "## Delta",
             "## For the next session",
             "## Structural observations",
@@ -378,6 +475,51 @@ class TestCompleteAllowsAndSelfDeletes(HandbackHookEnv):
                 reason = self.assert_blocked(reason_contains=missing)
                 self.assertIn(ABANDON_MINIMUM, reason)
         self.write_handback(COMPLETE_HANDBACK)
+        self.assert_allowed_stop()
+
+
+SCOPE_LINE = (
+    '- "drop item 3, it moves to the next session" | overrides: E017 '
+    "| item 3 (split close) is out of this session\n"
+)
+
+
+class TestScopeChangesSection(HandbackHookEnv):
+    def test_well_formed_scope_lines_allow(self):
+        # Prevents: a shape check that over-blocks a correctly recorded
+        # re-scope, pushing the session toward writing 'none' instead.
+        self.write_marker()
+        text = COMPLETE_HANDBACK.replace(
+            "## Scope changes\n\nnone\n", "## Scope changes\n\n" + SCOPE_LINE
+        )
+        self.assertIn(SCOPE_LINE, text)
+        self.write_handback(text)
+        self.assert_allowed_stop()
+        self.assertFalse(self.marker_path.exists())
+
+    def test_malformed_scope_line_blocks(self):
+        # Prevents: a free-prose note the orchestrator's ingest cannot surface
+        # -- the user's words unquoted, or no named override target.
+        self.write_marker()
+        for bad in [
+            "- the user dropped item 3 | overrides: E017 | item 3 out\n",
+            '- "drop item 3" | item 3 is out\n',
+            "The user dropped item 3.\n",
+        ]:
+            with self.subTest(bad=bad):
+                text = COMPLETE_HANDBACK.replace(
+                    "## Scope changes\n\nnone\n", "## Scope changes\n\n" + bad
+                )
+                self.write_handback(text)
+                reason = self.assert_blocked(reason_contains="FAIL scope:")
+                self.assertIn(ABANDON_MINIMUM, reason)
+        self.assertTrue(self.marker_path.exists())
+
+    def test_abandoned_needs_no_scope_section(self):
+        # Prevents: the new section raising the price of the abandon path.
+        self.write_marker()
+        self.assertNotIn("Scope", ABANDON_MINIMUM)
+        self.write_handback(ABANDON_MINIMUM)
         self.assert_allowed_stop()
 
 
@@ -447,15 +589,19 @@ class TestBlockMessageStatesUnblockingContent(HandbackHookEnv):
         self.write_handback("Status: FINISHED\n\nA sentence.\n")
         reasons.append(self.assert_blocked())
 
-        # Status OPEN.
+        # Status OPEN is no longer a block at all.
         self.write_handback(STUB_HANDBACK)
-        reasons.append(self.assert_blocked())
+        self.assert_allowed_stop()
 
         # PARTIAL missing a required section.
         self.write_handback(
             COMPLETE_HANDBACK.replace("Status: COMPLETE", "Status: PARTIAL")
             .replace("## Delta\n", "")
         )
+        reasons.append(self.assert_blocked())
+
+        # COMPLETE with a malformed Delta.
+        self.write_handback(MALFORMED_DELTA_HANDBACK)
         reasons.append(self.assert_blocked())
 
         for i, reason in enumerate(reasons):
@@ -465,6 +611,10 @@ class TestBlockMessageStatesUnblockingContent(HandbackHookEnv):
                     "block reason {0} omits the verbatim unblocking "
                     "content: {1!r}".format(i, reason),
                 )
+                # Prevents: block messages still telling a session to write
+                # the retired pause file that nothing reads any more.
+                self.assertNotIn("handback_pause", reason)
+                self.assertNotIn("pause", reason.lower())
 
 
 class TestReceiptVerification(HandbackHookEnv):
@@ -519,33 +669,16 @@ class TestReceiptVerification(HandbackHookEnv):
         self.assert_allowed_stop()
         self.assertFalse(self.marker_path.exists())
 
-    def test_pause_with_bad_receipt_blocks(self):
-        # Prevents: the minute-one signal being skippable via a question
-        # pause -- the FIRST pause of a dispatched session is exactly the
-        # moment the verification is for.
+    def test_terminal_partial_bad_receipt_blocks(self):
+        # Prevents: moving the receipt check to terminal-only silently
+        # dropping it for PARTIAL, the other status that claims work landed.
         self.write_marker()
         self.write_manifest(sha=OTHER_SHA)
-        self.write_handback(ID_RECEIPT_STUB)
-        self.declare_pause()
+        self.write_handback(
+            ID_RECEIPT_COMPLETE.replace("Status: COMPLETE", "Status: PARTIAL")
+        )
         reason = self.assert_blocked(reason_contains="SHA256")
         self.assertIn(ABANDON_MINIMUM, reason)
-        # The pause declaration is NOT consumed by a receipt block: once the
-        # receipt is fixed, the already-declared pause still lets the
-        # question turn close.
-        self.assertTrue(
-            (self.proj / ".claude" / "handback_pause.json").exists()
-        )
-        self.write_handback(ID_RECEIPT_STUB.replace(PROMPT_SHA, OTHER_SHA))
-        self.assert_allowed_stop()
-        self.assertTrue(self.marker_path.exists())
-
-    def test_pause_with_good_receipt_allows(self):
-        # Prevents: the verification breaking the healthy question pause.
-        self.write_marker()
-        self.write_manifest()
-        self.write_handback(ID_RECEIPT_STUB)
-        self.declare_pause()
-        self.assert_allowed_stop()
         self.assertTrue(self.marker_path.exists())
 
     def test_v5_receipt_with_manifest_blocks(self):
@@ -557,6 +690,57 @@ class TestReceiptVerification(HandbackHookEnv):
         reason = self.assert_blocked(reason_contains="- Rows:")
         self.assertIn(ABANDON_MINIMUM, reason)
         self.assertTrue(self.marker_path.exists())
+
+
+class TestAllTerminalFailuresTogether(HandbackHookEnv):
+    def test_all_terminal_failures_reported_together(self):
+        # Prevents: one round-trip per failure -- fix the receipt, stop, learn
+        # about the missing section, stop, learn about the Delta grammar. A
+        # terminal handback with three independent defects gets ONE block
+        # naming all three.
+        self.write_marker()
+        self.write_manifest(sha=OTHER_SHA)
+        text = (
+            ID_RECEIPT_COMPLETE
+            .replace("## For the next session\n", "")
+            .replace(
+                "## Delta\n\nnone\n",
+                "## Delta\n\n| E001 | no marker above this row | a | b | c |\n",
+            )
+        )
+        self.write_handback(text)
+        reason = self.assert_blocked()
+        self.assertIn("SHA256", reason)
+        self.assertIn("## For the next session", reason)
+        self.assertIn("FAIL delta:", reason)
+        self.assertEqual(1, reason.count(ABANDON_MINIMUM))
+        self.assertTrue(self.marker_path.exists())
+
+
+class TestPauseFileIsInert(HandbackHookEnv):
+    def test_pause_file_is_inert(self):
+        # Prevents: the retired pause mechanism lingering as a way to waive
+        # the terminal checks. A pause file -- plain or a standing "until" --
+        # no longer changes any decision, and the hook leaves it untouched.
+        self.write_marker()
+        self.write_handback(MALFORMED_DELTA_HANDBACK)
+        for declaration in [
+            {"session_id": self.SESSION},
+            {"session_id": self.SESSION, "until": 9999999999},
+        ]:
+            with self.subTest(declaration=declaration):
+                path = self.write_stale_pause_file(declaration)
+                self.assert_blocked(reason_contains="FAIL delta:")
+                self.assertTrue(path.exists())
+                self.assertEqual(
+                    declaration, json.loads(path.read_text(encoding="utf-8"))
+                )
+
+    def test_hook_source_has_no_pause_mechanism(self):
+        # Prevents: dead pause code surviving in the hook after retirement.
+        source = HANDBACK_HOOK.read_text(encoding="utf-8")
+        self.assertNotIn("handback_pause", source)
+        self.assertNotIn("PAUSE_INSTRUCTION", source)
 
 
 class TestManualCheckMode(HandbackHookEnv):

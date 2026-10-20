@@ -234,6 +234,7 @@ Step 8 clears.
      --body <task_body_file> --plan <plan_name> --session <NN> \
      --branch <plan_name>-session-<NN> --rows E006,E007,... \
      --accumulation-branch <branch> \
+     [--repo-root <worktree>] [--new-path <path> ...] \
      [--command none | --command orchestrated_grill [--requirements-doc <path>]] \
      --out "docs/prompts/$(date +%d%m%y)/<plan_name>_session_<NN>_prompt.md"
    ```
@@ -242,6 +243,29 @@ Step 8 clears.
    and passed on EVERY dispatch when the state file carries a settled
    accumulation-branch row -- a dispatch that forgets it silently builds on the
    wrong branch.
+
+   The script also checks the authored body before writing anything (its
+   docstring's BODY CHECKS paragraph is the full rule): every E-ID the body
+   mentions must be a live `## Established` row (a retired or mistyped one
+   FAILS; one above the counter only WARNS) AND must be in `--rows`; `--rows`
+   carries no duplicate; every path the body cites (an `@` reference, or a
+   backticked token with a `/` and a file extension or a trailing `/`) must
+   exist; and `--branch` must be exactly `<plan_name>-session-<NN>`. Mark a
+   file the session will create with `(new)` right after it, or pass
+   `--new-path <path>`. Paths are checked under the working directory and
+   under `--repo-root`: when the state file carries a settled worktree row
+   (code edited in a git worktree outside the project), pass
+   `--repo-root <worktree path>` on EVERY dispatch, or every cited code path
+   FAILS.
+
+   **Authoring checklist** (what the script cannot check -- read the body
+   once against it before running the assembler):
+
+   - **No contradictions.** The body must not prescribe two incompatible
+     actions -- against itself, against a handed row, or against a harness
+     procedure it points at (for example a foreground wait where
+     `harness/procedures/monitoring.md` mandates background plus Monitor).
+     Where two sources really do differ, say which one wins.
 
    The script also ensures the written body carries exactly ONE
    `/grill_and_implement` invocation line -- the `## Orchestration` block alone
@@ -408,9 +432,11 @@ turn except the one the user gives it, and while a dispatched session is running
 there may be no orchestrator session alive at all. The other entry point is
 RESUME -- an outstanding row in `## Dispatched` is a standing instruction to look
 at that handback path on disk before doing anything else, and what is found there
-is the answer: a finalized handback gets ingested, a stub still at `OPEN` is
-positive evidence the session died, and no file at all means the session was
-never run. (A grilling session's `OPEN` stub is the exception -- see below.)
+is the answer: a finalized handback gets ingested, no file at all means the
+session was never run, and a stub still at `OPEN` means the session either
+died or is still working -- the Stop hooks of both lanes allow every stop
+while the handback is `OPEN`, so ASK THE USER which, never infer a death from
+the status alone.
 
 **Grill handbacks are ingested MANUALLY.** A handback from a requirements-
 grilling session follows @.claude/harness/templates/grill_handback_schema.md,
@@ -430,9 +456,9 @@ replying (write-through trigger (a)):
   only.
 - **Update the `## Dispatched` row per the handback's `Status`**, exactly as
   action 4 below describes, and refill or empty `## Next` per action 5.
-- **An `OPEN` stub means "died, or still grilling"** -- a grilling session
-  stops on every question -- so ASK THE USER which, never infer a death from
-  the status alone.
+- **An `OPEN` stub means "died, or still grilling"** -- the same rule as
+  for an implementation session above -- so ASK THE USER which, never infer a
+  death from the status alone.
 
 **The requirements doc is read FREELY.** The orchestrator is ALLOWED and
 ENCOURAGED to read a grilling session's requirements doc -- in full or in
@@ -454,8 +480,8 @@ run for months.
 
 **Never read back the read receipt.** When ingesting, read ONLY the script's
 summary and the `## For the next session` section (sliced to by its fixed
-heading) -- the script consumes `Status:`, `## Delta` and `## Structural
-observations` so the orchestrator does not have to. NEVER
+heading) -- the script consumes `Status:`, `## Scope changes`, `## Delta` and
+`## Structural observations` so the orchestrator does not have to. NEVER
 read the `**Handed to this session (read receipt):**` block -- it is a row-ID
 list plus the dispatched prompt's hash, derivable entirely from the dispatch
 the orchestrator itself issued, so it carries zero new information. Its
@@ -480,6 +506,16 @@ written. The script is FAIL-CLOSED: on a malformed handback, or a Delta row it
 cannot apply unambiguously, it exits 1 with the state file untouched --
 surface its FAIL lines verbatim and resolve with the user, never by quietly
 hand-editing the handback into an ingestable shape.
+
+**Scope changes come first, and are never applied by the script.** The
+summary opens with the handback's `## Scope changes` lines: re-scopes the USER
+stated mid-session, each quoting the user's words and naming the row or prompt
+item it overrides. The session wrote them the moment they happened, so they
+reach the orchestrator without the user having to ask. The script only prints
+them. For each one, the orchestrator decides -- with the user where the change
+touches plan scope -- whether it becomes a state change (a write-through
+trigger like any other); a scope change is never silently dropped and never
+transcribed without that decision.
 
 1. **`## Delta` rows go into state VERBATIM -- applied by the script.** It
    honours each marker block's stated add / change / retire intent against
@@ -544,7 +580,12 @@ All five happen before replying (write-through trigger (a)).
 ## Step 10 -- The two-strikes notice
 
 After ingesting, count occurrences of each observation tag ACROSS THE WHOLE of
-`docs/observations.md` -- not just this plan's lines. The same defect showing up
+`docs/observations.md` -- not just this plan's lines -- by running
+`python3 .claude/harness/scripts/close_observations.py --count`. The count
+covers OPEN observations only: it SKIPS closing (`disposition`) lines, and
+every observation a closing line names, so a fixed defect stops counting
+toward the notice. (Closing lines: `harness/templates/handback_schema.md`,
+"Closing lines".) The same defect showing up
 in two unrelated plans is stronger evidence of a pattern than the same defect
 twice in one plan.
 
@@ -630,8 +671,21 @@ ask is the whole gate.
 4. **Observations-driven passes start from `docs/observations.md`.** When the
    user asks for a pass over accumulated observations, read the file, count
    the tags mechanically, and compose the brief from what is actually there.
-   Handled items are dispositioned by APPENDED lines, as before -- the file
-   is append-only.
+   Handled items are dispositioned by APPENDED closing lines, never edits --
+   the file is append-only. Once a pass lands (or the user rules an item
+   wontfix, duplicate or not-structural), close each item it handled with
+   ONE call per verdict:
+
+   ```
+   python3 .claude/harness/scripts/close_observations.py \
+     --observations docs/observations.md --plan <plan_name> \
+     --session <NN or -> --refs <line>,<line> --verdict fixed \
+     --note "<what landed, e.g. the commit hash>"
+   ```
+
+   The refs are the observation lines' 1-based line numbers; surface the
+   script's OK / FAIL output verbatim. The closing-line shape is defined in
+   `harness/templates/handback_schema.md` ("Closing lines").
 5. **No marker, no fresh session, no checkout.** There is no
    `improve_session.json` and no fresh-session requirement. The standing
    restriction is unchanged: never `git checkout` or `git switch` in the

@@ -126,7 +126,11 @@ class AssembleDispatchEnv(unittest.TestCase):
         )
 
     def run_assembler(self, rows="E001,E003", session=None, extra=None,
-                      accumulation_branch=None):
+                      accumulation_branch=None, branch=None):
+        if branch is None:
+            branch = "{0}-session-{1}".format(
+                PLAN_NAME, session or self.SESSION
+            )
         argv = [
             sys.executable,
             str(ASSEMBLE_DISPATCH),
@@ -134,8 +138,7 @@ class AssembleDispatchEnv(unittest.TestCase):
             "--body", str(self.body_path),
             "--plan", PLAN_NAME,
             "--session", session or self.SESSION,
-            "--branch",
-            "{0}-session-{1}".format(PLAN_NAME, session or self.SESSION),
+            "--branch", branch,
             "--rows", rows,
             "--out", str(self.prompt_path),
         ]
@@ -147,8 +150,11 @@ class AssembleDispatchEnv(unittest.TestCase):
             )
         if extra:
             argv.extend(extra)
+        # cwd is the temp project, so the cited-path check (D) resolves
+        # against the fixture tree, never the test runner's directory.
         return subprocess.run(
-            argv, capture_output=True, text=True, timeout=30
+            argv, capture_output=True, text=True, timeout=30,
+            cwd=str(self.proj),
         )
 
 
@@ -490,6 +496,126 @@ class TestInvocationLine(AssembleDispatchEnv):
             ).hexdigest(),
             manifest["prompt_sha256"],
         )
+
+
+class TestBodyChecks(AssembleDispatchEnv):
+    """Checks A-E over the authored task body and the session args."""
+
+    def write_body(self, extra):
+        self.body_path.write_text(BODY_TEXT + "\n" + extra + "\n",
+                                  encoding="utf-8")
+
+    def assert_nothing_written(self):
+        self.assertFalse(self.prompt_path.exists())
+        self.assertFalse(self.manifest_path.exists())
+
+    def test_a_retired_or_typo_id_at_or_below_counter_blocks(self):
+        # Prevents: a prompt telling the session to obey a row that was
+        # retired (or mistyped onto a retired number) -- the session can
+        # never find it in its block and guesses what it said.
+        self.state_path.write_text(
+            "\n".join(l for l in STATE_FILE_TEXT.splitlines()
+                      if not l.startswith("| E002 ")) + "\n",
+            encoding="utf-8",
+        )
+        self.write_body("Obey row E002 while you work.")
+        r = self.run_assembler()
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("E002", r.stdout)
+        self.assert_nothing_written()
+
+    def test_a_id_above_counter_warns_but_writes(self):
+        # Prevents: a forward reference (a row the session itself will
+        # propose) blocking the dispatch -- it is only suspicious.
+        self.write_body("Your delta may become row E007.")
+        r = self.run_assembler()
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("WARN", r.stdout)
+        self.assertIn("E007", r.stdout)
+        self.assertTrue(self.prompt_path.is_file())
+
+    def test_b_state_row_cited_but_not_handed_blocks(self):
+        # Prevents: a body naming a live row the session was never handed in
+        # its "Rows this session must obey" block (observed pet-poc s11).
+        self.write_body("Respect E002 throughout.")
+        r = self.run_assembler(rows="E001,E003")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        fails = [l for l in r.stdout.splitlines() if l.startswith("FAIL")]
+        self.assertTrue(any("E002" in l and "--rows" in l for l in fails),
+                        r.stdout)
+        self.assert_nothing_written()
+
+    def test_c_duplicate_rows_block(self):
+        # Prevents: a duplicated ID reaching the manifest and the block twice.
+        r = self.run_assembler(rows="E001,E003,E001")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("duplicate", r.stdout)
+        self.assertIn("E001", r.stdout)
+        self.assert_nothing_written()
+
+    def test_d_missing_cited_path_blocks(self):
+        # Prevents: a session sent to read or edit a file that does not exist
+        # (a moved path, a typo) and inventing one.
+        for extra in ["Edit `src/missing.py` now.",
+                      "Read @docs/missing.md first."]:
+            with self.subTest(body=extra):
+                self.write_body(extra)
+                r = self.run_assembler()
+                self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+                self.assertIn("missing.", r.stdout)
+                self.assertIn("(new)", r.stdout)
+                self.assert_nothing_written()
+
+    def test_d_new_marker_and_new_path_flag_exempt(self):
+        # Prevents: the check blocking a file the session is MEANT to create.
+        self.write_body("Create `src/missing.py` (new).")
+        r = self.run_assembler()
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.prompt_path.unlink()
+        self.manifest_path.unlink()
+        self.write_body("Create `src/missing.py` and `docs/quick/`.")
+        r = self.run_assembler(extra=["--new-path", "src/missing.py",
+                                      "--new-path", "docs/quick/"])
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+
+    def test_d_resolves_under_repo_root_or_cwd(self):
+        # Prevents: a worktree-plan dispatch (code cited relative to the
+        # worktree, docs relative to the project) failing on correct paths.
+        other = Path(self._tmpdir.name + "_wt")
+        (other / "hooks").mkdir(parents=True)
+        self.addCleanup(lambda: __import__("shutil").rmtree(str(other)))
+        (other / "hooks" / "real.py").write_text("x\n", encoding="utf-8")
+        self.write_body(
+            "See `hooks/real.py:177` and `hooks/real.py:10-20`, and "
+            "`docs/orchestration/` for state."
+        )
+        r = self.run_assembler()
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("hooks/real.py", r.stdout)
+        r = self.run_assembler(extra=["--repo-root", str(other)])
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+
+    def test_d_ignores_non_paths_and_fenced_code(self):
+        # Prevents: false FAILs on branch names, placeholders, commands and
+        # example code that only look like paths.
+        self.write_body(
+            "Cut from `integration/example-plan` (`origin/main`), name it "
+            "`quick/<slug>`, run `xargs -0 grep x src/a.py`, glob "
+            "`hooks/*.py`.\n\n```\ncat src/missing.py `src/fenced.py`\n```"
+        )
+        r = self.run_assembler()
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+
+    def test_e_branch_must_match_plan_session(self):
+        # Prevents: a branch the marker hook cannot parse
+        # (<plan>-session-<NN>), which made it silently fall back.
+        for branch in ["wrong-branch", PLAN_NAME + "-session-7",
+                       "other-plan-session-07"]:
+            with self.subTest(branch=branch):
+                r = self.run_assembler(branch=branch)
+                self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+                self.assertIn("--branch", r.stdout)
+                self.assert_nothing_written()
 
 
 if __name__ == "__main__":

@@ -2,19 +2,24 @@
 
 A grilling session (commands/orchestrated_grill.md) stops on EVERY question
 -- each AskUserQuestion round and each `linger` exchange ends a turn, with no
-question cap -- so it cannot live under hooks/enforce_handback.py, which
-blocks every stop while the handback is still OPEN. This hook is that hook's
-grilling sibling: every stop while the handback is `Status: OPEN` is ALLOWED,
-and the shape checks apply only once the file carries a TERMINAL status.
+question cap -- and writes a lean handback with no "## Delta", so it cannot
+live under hooks/enforce_handback.py, whose terminal checks demand that
+shape. This hook is that hook's grilling sibling: every stop while the
+handback is `Status: OPEN` is ALLOWED (the same rule enforce_handback.py
+follows), and the shape checks apply only once the file carries a TERMINAL
+status.
 
 SHARED CONTRACTS (edit in lockstep):
-  - The MARKER. .claude/grill_handback_session.json, written by the session
+  - The MARKER. .claude/grill_handback_<session_id>_session.json (one file per
+    session; legacy single-slot grill_handback_session.json honoured only on a
+    matching session_id -- the rule is enforce_handback.py's
+    load_session_marker()), written by the session
     in commands/orchestrated_grill.md Step 0a item 2 (and, once armed there,
     by hooks/arm_handback_marker.py). Its key set -- session_id, plan_name,
     session_number, handback_path, requirements_doc_path -- is OWNED by
     commands/orchestrated_grill.md and shared with hooks/arm_handback_marker.py
     and this hook: any change to it updates all three files together. This
-    hook never reads .claude/handback_session.json (enforce_handback.py's
+    hook never reads a handback_<session_id>_session.json (enforce_handback.py's
     marker), and enforce_handback.py never reads this one -- the two are
     mutually exclusive by construction.
   - The SCHEMA. The lean-handback shape, its Status vocabulary, the
@@ -45,11 +50,12 @@ Checks, in order, each blocking with a reason that names the failed check:
      enforce_handback.py exactly: when a dispatch manifest exists at
      docs/orchestration/<plan>/dispatches/<NN>.json (plan and NN from the
      marker), the receipt must match it. A missing or unreadable manifest is
-     a structural no-op. Like the sibling hook, this runs on OPEN stops too:
-     the first question of a freshly dispatched session is exactly the
-     minute-one moment the receipt exists for, and the block is within the
-     session's power to clear once (fix the receipt), so it cannot stall the
-     grilling question after question;
+     a structural no-op. Unlike the sibling hook (which checks the receipt
+     only at a terminal status), this still runs on OPEN stops: the first
+     question of a freshly dispatched session is the minute-one moment the
+     receipt exists for, and the block is within the session's power to
+     clear once (fix the receipt), so it cannot stall the grilling question
+     after question;
   4. OPEN -> ALLOW, keeping the marker in place so the obligation still
      fires once the session writes a terminal status;
   5. ABANDONED -> nothing else is required (the Status line alone);
@@ -84,7 +90,11 @@ import sys
 HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 CLAUDE_DIR = os.path.dirname(HOOK_DIR)
 PROJECT_DIR = os.path.dirname(CLAUDE_DIR)
-MARKER_PATH = os.path.join(CLAUDE_DIR, "grill_handback_session.json")
+# Per-session marker file .claude/grill_handback_<session_id>_session.json
+# (path rule and legacy single-slot handling shared with enforce_handback.py,
+# imported below).
+MARKER_PREFIX = "grill_handback"
+LEGACY_MARKER_PATH = os.path.join(CLAUDE_DIR, "grill_handback_session.json")
 
 # Receipt logic lives in the sibling hook and the observation parser in the
 # shared validation module; import both rather than re-deriving them. Importing
@@ -97,6 +107,7 @@ from enforce_handback import (  # noqa: E402
     _load_manifest,
     _manifest_path_for,
     _verify_receipt,
+    load_session_marker,
 )
 from handback_validation import (  # noqa: E402
     parse_observations,
@@ -201,20 +212,10 @@ def main():
         _allow()
         return
 
-    current_session_id = payload.get("session_id")
-
-    if not os.path.isfile(MARKER_PATH):
-        _allow()
-        return
-
-    try:
-        with open(MARKER_PATH, "r", encoding="utf-8") as f:
-            marker = json.load(f)
-    except (json.JSONDecodeError, ValueError, OSError):
-        _allow()
-        return
-
-    if not isinstance(marker, dict) or marker.get("session_id") != current_session_id:
+    marker_path, marker = load_session_marker(
+        MARKER_PREFIX, LEGACY_MARKER_PATH, payload.get("session_id")
+    )
+    if marker is None:
         _allow()
         return
 
@@ -349,7 +350,7 @@ def main():
             return
 
     try:
-        os.remove(MARKER_PATH)
+        os.remove(marker_path)
     except OSError:
         pass
     _allow()

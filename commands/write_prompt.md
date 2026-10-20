@@ -111,7 +111,8 @@ Read `.claude/harness/procedures/git_strategy.md` and the key block of
   one-liner, bulleted phase list drawn from the per-phase `feat:` commits --
   under git-default merges a phase merge FAST-FORWARDS whenever the integration
   branch has not moved since the phase branch was cut, so per-phase merge commits
-  may not exist -- pointer note; no AI attribution). Then the USER merges with a
+  may not exist -- pointer note; attribution per git_strategy.md "Commit
+  authorship"). Then the USER merges with a
   `!`-prefixed `gh pr merge <n> --merge`
   per the `merge_style` / `retain_integration_branch` preference keys -- the
   keystroke is the approval and its output lands in the transcript. Claude never
@@ -400,7 +401,7 @@ Tests-as-deliverables policy: per @.claude/preferences.md (Verification section)
   follows gh's active account, which repo-local push pinning does not cover --
   then push [integration-branch] and open the PR
   autonomously with `gh pr create` (title/body per
-  @.claude/harness/procedures/git_strategy.md's PR convention -- no AI attribution).
+  @.claude/harness/procedures/git_strategy.md's PR convention -- attribution per its "Commit authorship" law).
   The USER merges it with a `!`-prefixed command in this session:
 
       ! gh pr merge <n> --merge
