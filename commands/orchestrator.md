@@ -87,7 +87,7 @@ tool) -- do not guess or invent a value -- and write
 
 Write the marker unconditionally, even if unsure whether the enforcing hook is
 registered -- the marker is inert without it. Remove the marker when this
-session's orchestration work is done. The enforcing hook
+session's orchestration work is done -- on a handoff, per Step 11a. The enforcing hook
 (`hooks/enforce_orchestrator_isolation.py`) scans ALL
 `orchestrator_*_session.json` markers and matches on session_id, and it is
 FAIL-CLOSED on a corrupt marker file: while one exists, every guarded write is
@@ -697,6 +697,31 @@ ask is the whole gate.
    TEXT reaches the NEXT session that reads it, never a running one (see
    "What this command does NOT do"). Hooks happen to be re-executed per tool
    call, but do not promise hot-reload anywhere.
+
+## Step 11a -- NEW INCARNATION (handoff on the user's ask)
+
+Runs when the user asks for a new incarnation, a handoff, or a fresh
+orchestrator session. (Numbered 11a so Step 12 stays stable, as with 10a.)
+
+1. **Make state current.** Write through anything still pending under the
+   Step 5 triggers -- above all, trigger (e) preferences stated this session.
+   Run `python3 .claude/harness/scripts/validate_state.py <state_path>` and fix
+   every FAIL as a row-level edit. Append one terse `## Orchestrator log` line
+   recording the handoff. Do NOT bump `- Incarnations:` -- the incoming
+   session bumps it at resume (Step 4).
+2. **Release the marker.** Remove
+   `.claude/orchestrator_<plan_name>_session.json` ONLY if its `session_id` is
+   this session's; otherwise leave it and say whose it is. A marker left behind
+   makes the incoming session refuse the plan (Step 2).
+3. **Print the two lines, as the reply's final lines,** each alone on its line:
+   the resume invocation `/orchestrator <plan_name>`, then
+   `/rename <plan_name>_orch_<N+1>` -- `N` the current `- Incarnations:` value,
+   the number plain and unpadded (1, 9, 10, 123). Incarnations 8 on plan
+   `baggage-dev-to-prod` gives `/rename baggage-dev-to-prod_orch_9`. Contrast
+   the dispatched-session rename `<plan_name>_s<NN>` (zero-padded, Step 7).
+4. **Then stop orchestrating.** After the handoff this session makes no
+   further orchestration writes; the isolation hook's fence lifts once the
+   marker is gone.
 
 ## Step 12 -- PLAN END
 
