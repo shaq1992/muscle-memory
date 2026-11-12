@@ -182,7 +182,7 @@ value nobody chose, and nothing on disk shows the swap. When the user says how
 they want something done, that goes into the file before the acknowledgement is
 typed.
 
-Two further rules on every write:
+Three further rules on every write:
 
 - **Row-level edits only.** Edit the affected rows or lines. NEVER rewrite the
   document. A rewrite makes every row a fresh authorship event and lets an
@@ -190,6 +190,18 @@ Two further rules on every write:
   write, which matters because the file is untracked.
 - **Conversational turns write nothing.** A turn that answers a question,
   explains state, or thinks out loud is not a trigger. Only the five above are.
+- **State edits go through the Edit tool.** Make every manual state-file edit
+  with Edit (Write only to create the file at init), NEVER with Bash -- no
+  heredocs, inline python, sed or echo appends. Claude Code's checkpoints, and
+  so the user's conversation rewind, restore only files changed through
+  Edit/Write; a Bash-made edit survives a rewind, leaving rows and log lines
+  the conversation no longer knows about (observed in pet-mvp-2, 2026-11-11
+  and 2026-11-12: after a one-step rewind, the leftover rows were twice
+  misread as a concurrent writer, and one carried a session scope the user had
+  undone). The script pens (`harness/scripts/ingest_handback.py`,
+  `harness/scripts/migrate_state_v2.py`) are the accepted exception, since
+  they run through Bash by design: after a rewind past a script run, check the
+  state file for that run's rows before relying on it.
 
 ## Step 6 -- NEVER DISPATCH UNBIDDEN
 
