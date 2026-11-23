@@ -802,6 +802,25 @@ lives with the actor who can violate it.
   exists only in the sub-agent's returned text is in the cache, not the memory
   of record -- the same failure the state file exists to prevent, arriving by a
   different door.
+- **Durable reports are saved by the CALLER, never by the sub-agent.** Claude
+  Code refuses a sub-agent's Write of a report file ("Subagents should return
+  findings as text, not write report files"): observed pet-uat incarnation 9,
+  2026-11-20, where 4 of 9 investigators were refused and their returned text
+  was saved ad hoc. So never brief a sub-agent to write a findings or report
+  file (scratchpad working files -- scripts, intermediate extracts -- stay
+  allowed per the agent definitions). When a returned report is worth keeping
+  beyond the state rows it produces (a catalog, a findings list, a study), the
+  orchestrator saves it, before replying, to
+  `docs/orchestration/<plan_name>/reports/<YYYY-MM-DD>_<slug>.md` -- the date
+  derived with `date +%F` at save time, never typed; `<slug>` kebab-case naming
+  the subject; a same-day collision takes a `-2` suffix, never an overwrite.
+  The file opens with a provenance header of exactly these lines: `Date:` (the
+  derived date), `Plan:` and `Incarnation:` (from `## Orchestrator log`),
+  `Agent:` (the sub-agent type), `Brief:` (one line, or the brief file's path),
+  `Saved:` (`verbatim` or `condensed by the agent` -- the orchestrator never
+  edits the body); then the report body. State rows, Open rows and log lines
+  cite the report by that path, which sits inside the isolation allowlist
+  (`docs/orchestration/`).
 - **One writer.** Sub-agents NEVER write the state file, per the one-writer rule
   in @.claude/harness/templates/state_schema.md. Two writers on the single
   source of truth would mean the orchestrator can no longer trust the file to
