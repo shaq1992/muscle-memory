@@ -317,9 +317,12 @@ protected-branch invariant of `harness/procedures/git_strategy.md` holds identic
    law).
 3. Close by merging into the accumulation branch and stop there, following step 4
    (4a-4f) of the per-work-unit flow in `harness/procedures/git_strategy.md`: push the
-   session branch, land on a current accumulation branch, merge with git defaults and an
-   explicit `-m "merge: ..."` message, push the accumulation branch, verify it landed,
-   then delete the session branch remote and local with `git branch -d` (never `-D`).
+   session branch, land on a current accumulation branch, merge with
+   `git merge --no-ff <session-branch> -m "merge: ..."` (always a real merge commit, so
+   the message is kept), push the accumulation branch, verify it landed, then delete the
+   session branch remote and local -- if the session ran in a git worktree, first
+   `git worktree remove <path>` (never `--force`; stop and report if it refuses) -- with
+   `git branch -d` (never `-D`).
    Each is its own Bash call, checked before the next; if one fails, stop there as that
    step says -- never reset, never delete to clean up -- and report it in the handback.
 4. **Open NO pull request.** Only the PLAN opens a PR -- from the accumulation branch, by
