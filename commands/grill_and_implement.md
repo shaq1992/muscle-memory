@@ -331,6 +331,18 @@ protected-branch invariant of `harness/procedures/git_strategy.md` holds identic
    accumulation point. The zero-commit rule applies unchanged: a session branch with no
    commits skips push/merge/delete and says so plainly.
 
+## Delegating to sub-agents (caller-side rule, both modes)
+
+Never brief a sub-agent to write a report or findings file -- Claude Code refuses a
+sub-agent's Write of one, so the sub-agent halts on that step. Scratchpad working files
+stay allowed per the agent definitions; findings come back as TEXT. When a returned report
+is worth keeping, THIS SESSION saves it itself (the one exception to "the brief is the
+only document"): standalone, next to the brief as
+`docs/quick/<slug>_<subject>.md`; ORCHESTRATED ONLY, under the plan's
+`docs/orchestration/<plan_name>/reports/`, with the dated naming and provenance header
+defined in `commands/orchestrator.md` "Delegating to sub-agents (caller-side rules)" --
+follow it, do not restate it -- and cite the saved path in the handback.
+
 ## Step 5 -- Close
 
 **Standalone:** append this run's structural observations -- defects in the WORKFLOW
