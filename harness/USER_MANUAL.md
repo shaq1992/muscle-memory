@@ -437,7 +437,12 @@ python3) deterministically denies: reading, loading, copying or searching a
 variable); and recursive searches that can open gitignored files without naming
 them (`grep -r`, `rg --hidden` / `-uu` / `--no-ignore`, `git grep --untracked`).
 Scoped search stays allowed: `git ls-files -z | xargs -0 grep`, `git grep`, plain
-`rg`. It exists because the `Read(.env)` deny rules do not cover scripts or
+`rg`. A recursive grep is also allowed when it carries at least one `--include=GLOB`
+and every such glob is a plain extension glob such as `*.md` or `*.py` (`--exclude`
+never counts), and a grep / rg / git-grep search PATTERN that mentions `.env` is not
+treated as a file. Interpreter code that merely mentions a `.env` name stays blocked:
+write the script to the session scratchpad with the Write tool and run it by path,
+or use sed / tee. It exists because the `Read(.env)` deny rules do not cover scripts or
 recursive grep. Only the bootstrap template registers it; an existing project gets
 it on a bootstrap re-run.
 
