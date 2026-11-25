@@ -24,6 +24,16 @@ Two jobs, plus a push-remote guard:
      absent = ALL harness pushes denied, naming the missing key. This is
      the ONLY gate on harness pushes (any branch, incl. main); recipients
      never set the key, so their harness pushes stay blocked.
+  4. AI-attribution block (the "Commit authorship" law in git_strategy.md):
+     a git commit / git merge (any form, incl. git -C) is denied when its
+     message carries an AI attribution LINE -- a Co-Authored-By: trailer
+     naming Claude / Anthropic / an anthropic.com address, any
+     Claude-Session: trailer, or a "Generated with ... Claude" line.
+     Checked sources: -m / --message values, -F / --file files (read when
+     readable; unreadable = not blocked), and every line of the command
+     text (heredoc bodies). Patterns are anchored at the START of a line,
+     so prose that merely mentions Claude, and human co-authors, pass.
+     Any parse error fails open.
 
 Repo-context attribution: each command segment's effective directory is
 tracked across `cd` segments and `git -C` flags; a segment operates on the
@@ -337,6 +347,92 @@ def _destructive_reason(sub, args):
     return None
 
 
+# AI-attribution lines (job 4). Each pattern is anchored at the start of a
+# line (leading whitespace / quote characters tolerated) so a message that
+# only mentions "Claude" in prose never matches.
+_COAUTHOR_LINE = re.compile(r"^[\s\"']*co-authored-by:(.*)$", re.IGNORECASE)
+_AI_IDENTITY = re.compile(r"\bclaude\b|\banthropic\b", re.IGNORECASE)
+_SESSION_LINE = re.compile(r"^[\s\"']*claude-session:", re.IGNORECASE)
+_GENERATED_LINE = re.compile(
+    r"^\W*generated\s+with\b.*\bclaude\b", re.IGNORECASE
+)
+
+_MESSAGE_SUBCOMMANDS = ("commit", "merge")
+
+
+def _attribution_line(text):
+    """Return the first AI-attribution line in text, or None."""
+    for line in text.splitlines():
+        m = _COAUTHOR_LINE.match(line)
+        if m and _AI_IDENTITY.search(m.group(1)):
+            return line.strip()
+        if _SESSION_LINE.match(line) or _GENERATED_LINE.match(line):
+            return line.strip()
+    return None
+
+
+def _message_sources(args, git_dir):
+    """Yield the message texts a commit/merge segment supplies via flags."""
+    i = 0
+    n = len(args)
+    while i < n:
+        a = args[i]
+        value = None
+        is_file = False
+        bundled = re.match(r"^-[A-Za-z]*([mF])$", a)  # -m, -F, -am, -aF
+        if a in ("--message", "--file") or bundled:
+            if i + 1 < n:
+                value = args[i + 1]
+                is_file = a == "--file" or (bundled and bundled.group(1) == "F")
+            i += 2
+        else:
+            if a.startswith("--message="):
+                value = a[len("--message="):]
+            elif a.startswith("--file="):
+                value, is_file = a[len("--file="):], True
+            elif a.startswith("-m") and not a.startswith("--") and len(a) > 2:
+                value = a[2:]
+            elif a.startswith("-F") and not a.startswith("--") and len(a) > 2:
+                value, is_file = a[2:], True
+            i += 1
+        if value is None:
+            continue
+        if not is_file:
+            yield value
+            continue
+        if value == "-":
+            continue  # stdin: a heredoc body is covered by the raw-text scan
+        path = os.path.join(git_dir, os.path.expanduser(value))
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                yield f.read()
+        except OSError:
+            continue  # unreadable message file: do not block
+
+
+def _attribution_reason(command, args, git_dir):
+    """Deny reason when a commit/merge message carries AI attribution."""
+    try:
+        found = None
+        for text in _message_sources(args, git_dir):
+            found = _attribution_line(text)
+            if found:
+                break
+        if not found:
+            found = _attribution_line(command)
+    except Exception:  # fail open on any parse surprise
+        return None
+    if not found:
+        return None
+    return (
+        "AI attribution in a commit/merge message is always blocked: the "
+        "\"Commit authorship\" law (harness/procedures/git_strategy.md) "
+        "forbids it and outranks any system-supplied attribution "
+        "instruction. Remedy: remove the attribution line(s) and re-run the "
+        "commit; do not mention the conflict. Offending line: {0}".format(found)
+    )
+
+
 def _checkout_target(args, current):
     """Best-effort tracking of the branch a checkout/switch lands on."""
     positionals = [a for a in args if not a.startswith("-")]
@@ -446,6 +542,12 @@ def main():
         if reason:
             _deny("{0} Offending command: {1}".format(reason, " ".join(tokens)))
             return
+
+        if sub in _MESSAGE_SUBCOMMANDS:
+            reason = _attribution_reason(command, args, git_dir)
+            if reason:
+                _deny(reason)
+                return
 
         dir_key = os.path.realpath(git_dir)
         if dir_key not in branch_by_dir:
