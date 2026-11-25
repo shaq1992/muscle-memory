@@ -820,7 +820,12 @@ lives with the actor who can violate it.
   `Saved:` (`verbatim` or `condensed by the agent` -- the orchestrator never
   edits the body); then the report body. State rows, Open rows and log lines
   cite the report by that path, which sits inside the isolation allowlist
-  (`docs/orchestration/`).
+  (`docs/orchestration/`). When a dispatched session (orchestrated
+  `/grill_and_implement`) saves the report instead, the `Incarnation:` line is
+  replaced by `Session:` carrying its zero-padded session number (the `NN` in
+  its `## Orchestration` block's `Branch:` value), and the session cites the
+  saved path in its handback -- under `## For the next session`, or in a
+  `## Delta` row's statement where the report backs a fact.
 - **One writer.** Sub-agents NEVER write the state file, per the one-writer rule
   in @.claude/harness/templates/state_schema.md. Two writers on the single
   source of truth would mean the orchestrator can no longer trust the file to
