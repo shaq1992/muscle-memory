@@ -123,11 +123,13 @@ The same four steps run for a phase and for an orchestrated session; read
      the same hash twice. If the local branch is only BEHIND, fast-forward it
      with `git merge --ff-only origin/<accumulation-branch>`; if it has
      diverged, stop and report -- the work-unit branch is safe on origin.
-   - **4c. Merge:** `git merge <work-unit-branch> -m "merge: ..."` with git
-     defaults. Check: exit 0 and `git log --oneline -1` shows the merge (or the
-     fast-forwarded tip). On a conflict, run `git merge --abort`, stop and
-     report; the accumulation branch is unchanged and the work-unit branch is
-     on origin.
+   - **4c. Merge:** `git merge --no-ff <work-unit-branch> -m "merge: ..."` --
+     ALWAYS a real merge commit, because when the accumulation branch has not
+     moved since the work-unit branch was cut a plain merge fast-forwards and
+     silently drops the `-m` message. Check: exit 0 and `git log --oneline -1`
+     shows the new merge commit carrying that `merge: ...` message. On a
+     conflict, run `git merge --abort`, stop and report; the accumulation
+     branch is unchanged and the work-unit branch is on origin.
    - **4d. Push the accumulation branch:** `git push origin <accumulation-branch>`.
      Check: exit 0. If refused, the merge exists ONLY locally: do NOT go on to
      4e, do not reset, and keep the work-unit branch. An auth refusal is fixed
@@ -141,7 +143,11 @@ The same four steps run for a phase and for an orchestrated session; read
    - **4f. Delete the work-unit branch:** remote first,
      `git push origin --delete <work-unit-branch>`, then local,
      `git branch -d <work-unit-branch>` (never `-D`; `-d` refusing means the
-     branch is not merged -- stop and report, never escalate). A failed remote
+     branch is not merged -- stop and report, never escalate). If the work
+     unit ran in a git worktree, git refuses to delete a branch still checked
+     out there, so FIRST run `git worktree remove <worktree-path>` (its own
+     call, never `--force`; if it refuses because of uncommitted or untracked
+     files, stop and report) and only then `git branch -d`. A failed remote
      delete leaves only a stray branch: report it and still run the local
      delete.
 
@@ -204,9 +210,8 @@ branch exists to provide.
 
 **PR title/body convention:** the no-AI-attribution law extends verbatim to PR
 titles and bodies. Fixed body shape: the plan one-liner; a bulleted phase list
-(drawn from the per-phase `feat:` commits -- under git-default merges a phase
-merge FAST-FORWARDS whenever the integration branch has not moved since the
-phase branch was cut, so per-phase merge commits may not exist); a pointer note
+(drawn from the per-phase `feat:` commits, or from the per-phase `merge: ...`
+commits, which always exist because step 4c merges with `--no-ff`); a pointer note
 that detailed history lives in the per-phase commits.
 
 **Post-PR fixes:** review changes requested on an open plan PR are committed
