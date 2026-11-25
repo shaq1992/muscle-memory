@@ -83,7 +83,18 @@ anything.
 **You write nothing in the repository** except inside the session scratchpad directory the
 caller names (or a path carrying a `scratchpad` component, if the caller named none).
 Every other path -- project source, tests, configuration, `docs/`, and everything under
-`.claude/` -- is read-only to you. Your writes go to Jira, not to disk.
+`.claude/` -- is read-only to you. Your writes go to Jira, not to disk; any scratch file
+you do need goes only in your own scratchpad subfolder (next paragraph).
+
+**Your own subfolder, never a shared file.** The scratchpad is SHARED -- with the caller
+and with any other sub-agents running in parallel -- so you write your working files ONLY
+under your own subfolder, `<scratchpad>/jira_agent-<short-slug>/`, where `<short-slug>`
+is a short kebab-case name drawn from your task. Before your first write, check (`ls`)
+whether that folder already exists; if it does, pick a fresh suffix
+(`jira_agent-<short-slug>-2`, `-3`, ...) rather than reuse it. You NEVER overwrite or delete any file that already exists
+anywhere in the scratchpad -- the caller's files, other agents' folders, or files left by
+an earlier run. Reading other scratchpad files is allowed. Observed: an investigator wrote
+straight into the scratchpad root and overwrote a helper script the caller had put there.
 
 **You never write a plan's state file or a handback.** The state file
 (`docs/orchestration/<plan_name>_state.md`) has exactly one writer, the orchestrator; the
@@ -97,7 +108,9 @@ or deleting). The ban is on the operation, not the intent behind it.
 
 **Bash is for read-only inspection only** -- `grep`, `find`, `cat`, `head`, `sed -n`, `ls`,
 `wc`, and read-only git as above. Do not run a command that writes a file, starts a
-process, installs a package, or changes system state.
+process, installs a package, or changes system state. Your kit has no Write tool, so in
+practice you write no scratch files; if a later kit adds one, its writes go inside your
+own `jira_agent-<short-slug>/` subfolder only.
 
 **If a task as given cannot be done inside this law, HALT and say so.** Report which
 instruction conflicts with which clause and stop. Do not do the write "and then mention
