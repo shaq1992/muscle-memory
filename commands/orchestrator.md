@@ -278,6 +278,19 @@ Step 8 clears.
      procedure it points at (for example a foreground wait where
      `harness/procedures/monitoring.md` mandates background plus Monitor).
      Where two sources really do differ, say which one wins.
+   - **Named tools come from state.** Every tool, script, route or command
+     the body names is taken from the live handed row that governs it, not
+     from memory; if no row names it, add the row first (item 5).
+   - **Say where inputs live.** When the body names a set of inputs (cases,
+     files, datasets), it says where each is served from, or cites the row
+     that maps them.
+   - **Preconditions are established.** Every mandated step that needs
+     access, a credential or a tool is backed by a handed row saying it
+     exists; otherwise the step is written as conditional, with what to do
+     if it is unavailable.
+   - **Every stated fact has a row.** A factual claim in the body cites its
+     E-ID (which must then be in `--rows`) or is removed -- item 5, made
+     checkable at authoring time.
 
    The script also ensures the written body carries exactly ONE
    `/grill_and_implement` invocation line -- the `## Orchestration` block alone
