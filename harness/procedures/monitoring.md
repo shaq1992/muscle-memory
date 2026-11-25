@@ -51,3 +51,14 @@ All long-running scripts must:
 7. **Working directory** -- background Bash commands do NOT inherit the current
    working directory. Always prefix with `cd /absolute/path/to/project &&` or
    use absolute paths in the command.
+8. **Run record before backgrounding** -- before starting the run, write a
+   few lines to a durable place the session will read again (the session
+   scratchpad, plus the handback when orchestrated): the exact command, its
+   log path, the start time (from `date`, never typed), and the line that
+   means it finished (its `[DONE]` / `[FATAL]` marker or exit line). On
+   resume or after any interruption, read that record and check the log's
+   tail for the terminal line BEFORE restarting or re-running anything. Only
+   a run with no terminal line and no live process is restarted, and the
+   session says so plainly. Observed: a session died mid-run and left the
+   task and its Monitor orphaned with no record; the next turn had to
+   rebuild what was running, where its log was and whether it had finished.
