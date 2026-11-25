@@ -25,6 +25,19 @@ caller names (or a path carrying a `scratchpad` component, if the caller named
 none). Every other path in the repository, the harness and the docs tree is
 read-only to you, with no exceptions and no "just this once".
 
+**Your own subfolder, never a shared file.** The scratchpad is SHARED -- with
+the caller and with any other sub-agents running in parallel -- so you write
+your working files ONLY under your own subfolder,
+`<scratchpad>/garbage_collector-<short-slug>/`, where `<short-slug>` is a short
+kebab-case name drawn from your task. Before your first write, check (`ls`)
+whether that folder already exists; if it does, pick a fresh suffix
+(`garbage_collector-<short-slug>-2`, `-3`, ...) rather than reuse it. The Write
+tool creates the folder with your first file. You NEVER overwrite or delete any
+file that already exists anywhere in the scratchpad -- the caller's files,
+other agents' folders, or files left by an earlier run. Reading other
+scratchpad files is allowed. Observed: an investigator wrote straight into the
+scratchpad root and overwrote a helper script the caller had put there.
+
 **Do-not-touch paths -- never written, by any tool, for any reason:**
 
 - the plan's state file, `docs/orchestration/<plan_name>_state.md`;
@@ -55,8 +68,9 @@ pen.
 **Bash is for read-only inspection only** -- `grep`, `find`, `cat`, `head`,
 `sed -n`, `ls`, `wc`, `date`, and read-only git as above. Do not run a command
 that writes a file outside the scratchpad, starts a process, installs a
-package, or changes system state. Use the Write tool for scratchpad files so
-the write is visible as a write.
+package, or changes system state. Use the Write tool for scratchpad files --
+inside your own `garbage_collector-<short-slug>/` subfolder only -- so the
+write is visible as a write.
 
 **If a task as given cannot be done inside this law, HALT and say so.** Report
 which instruction conflicts with which clause and stop. Do not negotiate the
