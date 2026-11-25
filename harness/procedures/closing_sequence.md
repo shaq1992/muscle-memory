@@ -190,9 +190,12 @@ Otherwise, perform the autonomous close -- no user confirmation, no surfacing
 of commands for manual execution -- exactly as step 4 of the per-work-unit flow
 in git_strategy.md (4a-4f): push the phase branch, land on a current
 `integration/<plan_name>`, merge with
-`-m "merge: <plan_name> phase <N> -- <brief description>"`, push the
+`git merge --no-ff <phase-branch> -m "merge: <plan_name> phase <N> -- <brief description>"`
+(always a real merge commit; a fast-forward would drop the message), push the
 integration branch, verify it landed, then delete the phase branch remote and
-local (`git branch -d`, never `-D`). Each is its own Bash call, checked before
+local -- if the phase ran in a git worktree, first `git worktree remove <path>`
+(never `--force`; stop and report if it refuses), then `git branch -d`, never
+`-D`. Each is its own Bash call, checked before
 the next; on a failure, stop at that step as git_strategy.md says (never reset,
 never delete) and report.
 
