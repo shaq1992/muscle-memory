@@ -10,6 +10,10 @@ absent). Classes 9-11 are EXPLICITLY FLAGGED EXTRAS beyond the contract:
   11 - settings.json registration (bare python3, no venv, no approvals deny
        rules). Its former closing-hook contract test moved to
        test_closing_hook.py when Phase 4 added the content checks.
+Class 15 (TestBlocksAiAttribution) is the attribution-law contract class:
+the "Commit authorship" law in harness/procedures/git_strategy.md, enforced
+by job 4 of hooks/git_guardrails.py (AI attribution lines in commit and merge
+messages are denied; human co-authors and prose mentions pass).
 
 Stdlib-only. Run with: python3 -m unittest discover .claude/harness/tests
 """
@@ -439,3 +443,85 @@ class TestHarnessWorktreePushAllowlist(GuardrailEnv):
         git(self.repo, "worktree", "add", str(proj_wt), "-b", "proj-branch")
         self.set_harness_push_remote(None)
         self.assert_allowed("git push origin proj-branch", cwd=proj_wt)
+
+
+# ---------------------------------------------------------------------------
+# 15. Attribution-law contract: the "Commit authorship" law in
+# harness/procedures/git_strategy.md. A commit or merge whose message carries
+# an AI attribution LINE (an AI Co-Authored-By trailer, any Claude-Session
+# trailer, a "Generated with ... Claude" line) is denied from every message
+# source: -m / --message, -F files, heredoc bodies. Human co-authors, prose
+# that only mentions Claude, and non-commit commands pass.
+# ---------------------------------------------------------------------------
+class TestBlocksAiAttribution(GuardrailEnv):
+    REASON = "Commit authorship"
+
+    def setUp(self):
+        super().setUp()
+        # inside this test's temp project repo only: a non-protected branch,
+        # so allow cases and the merge deny case never hit the main-branch law
+        git(self.repo, "checkout", "-b", "feat")
+
+    def test_blocks_ai_attribution_in_message_flags(self):
+        for command in [
+            'git commit -m "fix: a" '
+            '-m "Co-Authored-By: Claude Opus <noreply@anthropic.com>"',
+            'git commit --message="Co-Authored-By: Anthropic Bot <x@y.z>"',
+            'git commit -am "Claude-Session: 42"',
+            'git commit -m "feat: z" -m "\U0001F916 Generated with '
+            '[Claude Code](https://claude.com/claude-code)"',
+        ]:
+            with self.subTest(command=command):
+                self.assert_denied(command, reason_contains=self.REASON)
+
+    def test_blocks_ai_attribution_via_harness_dash_C(self):
+        # run from the project repo, targeting the harness repo
+        self.assert_denied(
+            'git -C .claude commit -m "fix" '
+            '-m "co-authored-by: bot <noreply@anthropic.com>"',
+            reason_contains=self.REASON,
+        )
+
+    def test_blocks_ai_attribution_in_heredocs(self):
+        for command in [
+            "git commit -F - <<'EOF'\nfix: y\n\n"
+            "Co-Authored-By: Claude <noreply@anthropic.com>\nEOF",
+            "git commit -m \"$(cat <<'EOF'\nfix: y\n\n"
+            "Claude-Session: abc\nEOF\n)\"",
+        ]:
+            with self.subTest(command=command):
+                self.assert_denied(command, reason_contains=self.REASON)
+
+    def test_blocks_ai_attribution_in_message_file(self):
+        (self.repo / "msg.txt").write_text(
+            "fix: from file\n\n"
+            "Co-Authored-By: Claude <noreply@anthropic.com>\n",
+            encoding="utf-8",
+        )
+        self.assert_denied("git commit -F msg.txt", reason_contains=self.REASON)
+
+    def test_blocks_ai_attribution_in_merge_message(self):
+        self.assert_denied(
+            'git merge --no-ff feature -m "merge" '
+            '-m "Co-Authored-By: Claude <noreply@anthropic.com>"',
+            reason_contains=self.REASON,
+        )
+
+    def test_allows_human_and_prose_messages(self):
+        (self.repo / "human_msg.txt").write_text(
+            "fix: from file\n\nCo-Authored-By: Jane Doe <jane@example.com>\n",
+            encoding="utf-8",
+        )
+        for command in [
+            'git commit -m "fix: plain"',
+            'git commit -m "fix: pair" '
+            '-m "Co-Authored-By: Jane Doe <jane@example.com>"',
+            'git commit -m "docs: explain why Claude must not add a '
+            'Co-Authored-By: Claude trailer"',
+            "git commit -F human_msg.txt",
+            "git commit -F /nonexistent/msg.txt",
+            'git log --grep "Co-Authored-By: Claude"',
+            'git commit -m "x" && git log -1 | grep -c "Co-Authored-By: Claude"',
+        ]:
+            with self.subTest(command=command):
+                self.assert_allowed(command)
