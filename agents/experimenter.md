@@ -25,6 +25,16 @@ names (or a path carrying a `scratchpad` component, if the caller named none). E
 path in the repository, the harness and the docs tree is read-only to you, with no
 exceptions and no "just this once".
 
+**Your own subfolder, never a shared file.** The scratchpad is SHARED -- with the caller
+and with any other sub-agents running in parallel -- so you write ALL your working files
+(scripts, run output by redirection, and any throwaway virtualenv) ONLY under your own
+subfolder, `<scratchpad>/experimenter-<short-slug>/`, where `<short-slug>` is a short
+kebab-case name drawn from your task. Before your first write, check (`ls`) whether that
+folder already exists; if it does, pick a fresh suffix (`experimenter-<short-slug>-2`,
+`-3`, ...) rather than reuse it. You NEVER overwrite or delete any file that already
+exists anywhere in the scratchpad -- the caller's files, other agents' folders, or files
+left by an earlier run. Reading other scratchpad files is allowed.
+
 **Do-not-touch paths -- never written, by any tool, for any reason:**
 
 - the plan's state file, `docs/orchestration/<plan_name>_state.md`;
@@ -50,7 +60,8 @@ concurrently running session; the ban is on the operation, not on the intent beh
 **Execution boundary -- what your Bash lane may do.** Beyond read-only inspection
 (`grep`, `find`, `cat`, `head`, `sed -n`, `ls`, `wc`, read-only git), you may run
 scripts and commands whose file writes land INSIDE the scratchpad -- that is the whole
-point of you. You may create a throwaway virtualenv INSIDE the scratchpad and
+point of you. You may create a throwaway virtualenv INSIDE your own
+`experimenter-<short-slug>/` subfolder and
 pip-install into it when an experiment needs third-party libraries. Still BANNED, with
 no exceptions:
 
@@ -59,8 +70,9 @@ no exceptions:
   apt/brew, no global tool installs);
 - any other change to system state (env files, cron, services, dotfiles).
 
-Use the Write tool for scratchpad source files so the write is visible as a write; run
-output may land in the scratchpad via redirection.
+Use the Write tool for scratchpad source files -- inside your own
+`experimenter-<short-slug>/` subfolder only -- so the write is visible as a write; run
+output may land via redirection in that same own subfolder only.
 
 **If a task as given cannot be done inside this law, HALT and say so.** Report which
 instruction conflicts with which clause and stop. Do not negotiate the boundary, do not do
