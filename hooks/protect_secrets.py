@@ -24,6 +24,15 @@ Deterministic pattern matching, never model judgement. It DENIES:
      --no-exclude-standard. Scoped search stays allowed:
      `git ls-files | xargs grep`, `grep -r ... $(git ls-files)`, plain
      `git grep`, and plain rg / ag (they skip hidden and gitignored files).
+     A recursive grep is also scoped when it carries at least one
+     `--include=GLOB` and every such glob is a plain extension glob from a
+     fixed allowlist (`*.md`, `*.py`, `*.json`, ...) that cannot name a
+     dot-file or a .env name; `--exclude` never makes it scoped.
+
+The SEARCH PATTERN of grep-family / rg / git grep is not a file operand: the
+first positional argument (when no -e / -f is given; for the grep family only
+when a file operand follows it) and every -e / --regexp value are skipped by
+the .env operand check. A -f / --file value IS a file and is still checked.
 
 Write is not handled: creating a .env does not expose one.
 
@@ -91,6 +100,36 @@ _RG_HIDDEN_LONG = ("--hidden", "--unrestricted", "--no-ignore")
 _AG_HIDDEN_LONG = ("--hidden", "--unrestricted", "--skip-vcs-ignores")
 _GIT_GREP_UNSCOPED = {"--untracked", "--no-index", "--no-exclude-standard"}
 _XARGS_VALUE_OPTS = {"-n", "-I", "-P", "-d", "-L", "-s", "-E", "-a"}
+# Options that take a SEPARATE value token, per search tool. Used only to find
+# the search pattern. A missing entry is safe (the real pattern is then
+# checked as a file: over-block); a wrong entry is not, so list only options
+# that certainly take a value. Short clusters are never treated as taking one.
+_GREP_VALUE_OPTS = {
+    "-A", "-B", "-C", "-D", "-d", "-m", "--after-context", "--before-context",
+    "--context", "--max-count", "--devices", "--directories", "--binary-files",
+    "--label", "--include", "--exclude", "--exclude-dir", "--exclude-from",
+    "--group-separator",
+}
+_RG_VALUE_OPTS = {
+    "-g", "-t", "-T", "-m", "-A", "-B", "-C", "-M", "-j", "-r", "-E", "-d",
+    "--glob", "--iglob", "--type", "--type-not", "--max-count",
+    "--after-context", "--before-context", "--context", "--max-columns",
+    "--threads", "--replace", "--max-depth", "--encoding", "--type-add",
+    "--ignore-file", "--pre", "--pre-glob", "--sort", "--sortr",
+    "--max-filesize",
+}
+_GIT_GREP_VALUE_OPTS = {
+    "-A", "-B", "-C", "-m", "--after-context", "--before-context", "--context",
+    "--max-count", "--max-depth", "--threads",
+}
+# Extensions a recursive grep's --include glob may end in to count as scoped.
+_SAFE_INCLUDE_EXTS = {
+    "md", "markdown", "txt", "rst", "adoc", "py", "pyi", "ipynb", "json",
+    "jsonl", "yaml", "yml", "toml", "js", "mjs", "cjs", "ts", "tsx", "jsx",
+    "sh", "bash", "zsh", "ps1", "html", "htm", "css", "scss", "csv", "tsv",
+    "xml", "sql", "go", "rs", "java", "kt", "c", "h", "cpp", "hpp", "cs", "rb",
+    "php", "swift", "tf", "bicep",
+}
 _DOCKER_VALUE_OPTS = {
     "-f", "--file", "-p", "--project-name", "--env-file", "--profile",
     "--project-directory", "--ansi", "--parallel", "-c", "--context", "-H",
@@ -104,6 +143,13 @@ ENV_REASON = (
     "protect_secrets: {0!r} is a .env secret file -- never read, load, copy or "
     "search it, by any tool. Use .env.example (same keys, placeholder values) "
     "for its structure."
+)
+INTERPRETER_REASON = (
+    "protect_secrets: interpreter code mentions {0!r}, a .env secret file "
+    "name -- blocked even when the code only edits text that mentions it. "
+    "Workaround: write the script to the session scratchpad with the Write "
+    "tool and run it by path (`python3 <scratchpad>/edit.py`), or use sed / "
+    "tee for plain text edits. Use .env.example for the key names."
 )
 DUMP_REASON = (
     "protect_secrets: {0} prints the process environment or a secret "
@@ -204,7 +250,7 @@ def _strip_heredocs(command, check):
         elif cmd in _INTERPRETERS or re.match(r"^python3?(\.\d+)?$", cmd):
             names = env_names_in_text(text)
             if names:
-                raise Denied(ENV_REASON.format(names[0]))
+                raise Denied(INTERPRETER_REASON.format(names[0]))
     return "\n".join(out)
 
 
@@ -360,9 +406,88 @@ def _check_grep_family(cmd, args, inners):
         SUBST_TOKEN_RE.fullmatch(a)
         and re.match(r"\s*git\s+ls-files\b", inners[int(SUBST_TOKEN_RE.fullmatch(a).group(1))])
         for a in args
-    )
+    ) or _scoped_by_include(args)
     if not scoped:
         raise Denied(RECURSIVE_REASON.format("`{0} {1}`".format(cmd, recursive)))
+
+
+def _include_glob_safe(glob):
+    """True only for a plain extension glob that cannot name a .env file."""
+    g = glob.strip("'\"")
+    if not g or g.startswith(".") or "/." in g:
+        return False
+    name = g.rsplit("/", 1)[-1]
+    if not name or name.startswith(".") or "env" in name.lower():
+        return False
+    m = re.fullmatch(r"([A-Za-z0-9_*][A-Za-z0-9_.*-]*)?\.([A-Za-z0-9]+)", name)
+    return bool(m) and m.group(2).lower() in _SAFE_INCLUDE_EXTS
+
+
+def _scoped_by_include(args):
+    """At least one --include glob, every one safe; --exclude never counts."""
+    globs = []
+    for k, a in enumerate(args):
+        if a.startswith("--include-from"):
+            return False  # globs read from a file cannot be judged
+        if a == "--include":
+            if k + 1 >= len(args):
+                return False
+            globs.append(args[k + 1])
+        elif a.startswith("--include="):
+            globs.append(a.split("=", 1)[1])
+    return bool(globs) and all(_include_glob_safe(g) for g in globs)
+
+
+def _pattern_indices(args, value_opts, need_file_after):
+    """Indices of args that are the search PATTERN, never a file read.
+
+    -e / --regexp values are patterns. With no -e / -f, the first positional
+    is the pattern (for the grep family only when a file operand follows it).
+    -f / --file values are files and are never returned. Any short cluster
+    holding e or f makes the pattern position unknowable: nothing positional
+    is skipped (over-block, never under-block).
+    """
+    skip = set()
+    explicit = False
+    positionals = []
+    end_opts = False
+    k = 0
+    while k < len(args):
+        a = args[k]
+        if not end_opts and a.startswith("-") and a != "-":
+            if a == "--":
+                end_opts = True
+            elif a in ("-e", "--regexp"):
+                explicit = True
+                if k + 1 < len(args):
+                    skip.add(k + 1)
+                k += 2
+                continue
+            elif a.startswith("--regexp="):
+                explicit = True
+                skip.add(k)
+            elif a in ("-f", "--file"):
+                explicit = True
+                k += 2  # the value is a file: left for the operand check
+                continue
+            elif a.startswith("--file="):
+                explicit = True
+            elif _short_cluster(a) and a.startswith("-f") and is_env_path(a[2:]):
+                raise Denied(ENV_REASON.format(a[2:]))
+            elif _short_cluster(a) and re.search(r"[ef]", a[1:]):
+                explicit = True
+            elif a in value_opts:
+                k += 2
+                continue
+            k += 1
+            continue
+        positionals.append(k)
+        k += 1
+    if not explicit and positionals and (
+        not need_file_after or len(positionals) > 1
+    ):
+        skip.add(positionals[0])
+    return skip
 
 
 def _glob_hits_dotfiles(value):
@@ -419,8 +544,12 @@ def _check_git(args, all_segments):
         if others and ignored and piped:
             raise Denied(RECURSIVE_REASON.format(
                 "`git ls-files --others --ignored` piped to xargs"))
+    pattern_idx = (_pattern_indices(rest, _GIT_GREP_VALUE_OPTS, False)
+                   if sub == "grep" else set())
     if sub not in _GIT_NAME_ONLY:
-        for a in rest:
+        for k, a in enumerate(rest):
+            if k in pattern_idx:
+                continue
             hit = _env_operand(a)
             if hit:
                 raise Denied(ENV_REASON.format(hit))
@@ -518,12 +647,15 @@ def _check_segment(tokens, all_segments, inners, check):
         for a in args:
             names = env_names_in_text(a)
             if names:
-                raise Denied(ENV_REASON.format(names[0]))
+                raise Denied(INTERPRETER_REASON.format(names[0]))
 
+    pattern_idx = set()
     if cmd in _GREP_FAMILY or cmd == "rgrep":
         _check_grep_family(cmd, args, inners)
+        pattern_idx = _pattern_indices(args, _GREP_VALUE_OPTS, True)
     elif cmd == "rg":
         _check_rg(args)
+        pattern_idx = _pattern_indices(args, _RG_VALUE_OPTS, False)
     elif cmd == "ag":
         _check_ag(args)
     elif cmd == "git":
@@ -538,7 +670,9 @@ def _check_segment(tokens, all_segments, inners, check):
 
     if cmd in _NAME_ONLY:
         return
-    for a in args:
+    for k, a in enumerate(args):
+        if k in pattern_idx:
+            continue
         hit = _env_operand(a)
         if hit:
             raise Denied(ENV_REASON.format(hit))
