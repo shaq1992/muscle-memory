@@ -415,7 +415,11 @@ block.
 deterministically blocks: destructive ops (`git push --force`, `git reset --hard`,
 `git branch -D`, `git clean -f`); every Claude-initiated path to the protected branch
 (`git merge` on it, any PROJECT-repo push targeting it, `gh pr merge` -- PR merges
-are yours alone); and, fail-closed, any harness-repo push whose remote does not match
+are yours alone); any `git commit` / `git merge` whose message carries an AI
+attribution line (Claude/Anthropic `Co-Authored-By:`, `Claude-Session:`, or a
+"Generated with ... Claude" line), per the "Commit authorship" law in
+`harness/procedures/git_strategy.md` -- the deny tells the session to remove the
+line(s) and re-run; and, fail-closed, any harness-repo push whose remote does not match
 the `harness_push_remote` allowlist key (key absent = ALL harness pushes blocked,
 which is exactly the recipient posture -- recipients never set the key). Harness-repo
 pushes are exempt from the protected-branch push block -- the allowlist is their only
