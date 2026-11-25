@@ -390,8 +390,9 @@ block.
   branch) as a settled state row; sessions then cut from and merge into it, and the
   user can ask for its PR onto that base at any time.
 - **Autonomous phase-level git** (no confirmation): push the phase branch, merge into
-  integration with git defaults and an explicit `-m "merge: ..."` message, push
-  integration, delete the phase branch (remote + local, `-d`). A phase branch with
+  integration with `--no-ff` (always a real merge commit, so the explicit
+  `-m "merge: ..."` message is kept), push integration, delete the phase branch
+  (remote + local, `-d`) -- removing its git worktree first if it ran in one. A phase branch with
   zero commits skips push/merge/delete and reports "no tracked changes this phase".
 - **Plan-end PR, merged by YOU.** At the final phase Claude pushes the integration
   branch and opens a pull request with `gh pr create` (autonomous; no AI attribution
