@@ -294,6 +294,78 @@ class TestNormalWorkAllowed(SecretsEnv):
 
 
 # ---------------------------------------------------------------------------
+# 8a. A grep/rg/git-grep SEARCH PATTERN naming .env is not a file read; a
+#     .env FILE operand (or a -f/--file pattern file) still is
+# ---------------------------------------------------------------------------
+class TestPatternNotFile(SecretsEnv):
+    def test_pattern_allowed(self):
+        self.assert_bash_allowed([
+            "grep -n .env README.md",
+            "git grep -n '.env' -- commands",
+            "git grep .env",
+            "grep -e .env -e KEY README.md",
+            "grep --regexp=.env README.md",
+            "rg -n .env docs/",
+        ])
+
+    def test_file_operand_denied(self):
+        self.assert_bash_denied([
+            "grep .env .env",
+            "grep -e KEY .env",
+            "grep -ie KEY .env",
+            "grep -A 3 KEY .env",
+            "grep -f .env README.md",
+            "grep -f.env README.md",
+            "grep --file=.env README.md",
+            "git grep KEY -- .env",
+            "git grep -f .env",
+        ])
+
+
+# ---------------------------------------------------------------------------
+# 8b. Recursive grep scoped by safe --include globs is allowed; a glob that
+#     could match a .env-family file (or an exclude-only / from-file scope,
+#     or a .env search root) is denied
+# ---------------------------------------------------------------------------
+class TestRecursiveInclude(SecretsEnv):
+    def test_safe_include_allowed(self):
+        self.assert_bash_allowed([
+            "grep -rn --include=*.md foo src/",
+            "grep -rn --include='*.py' --include='*.json' foo .",
+            "grep -r --include '*.md' .env .",
+        ])
+
+    def test_unsafe_include_denied(self):
+        self.assert_bash_denied([
+            "grep -r --include=* x .",
+            "grep -r --include='.*' x .",
+            "grep -r --include='*env*' x .",
+            "grep -r --include='.env*' x .",
+            "grep -r --include='*.env' x .",
+            "grep -r --include='*.local' x .",
+            "grep -r --include='*.md' --include='*' x .",
+            "grep -r --exclude='.env*' x .",
+            "grep -r --include-from=globs.txt x .",
+            "grep -r --include='?*.md' x .",
+            "grep -r --include='*.md' x .env",
+        ])
+
+
+# ---------------------------------------------------------------------------
+# 8c. An interpreter one-liner that merely mentions .env is denied, and the
+#     reason names the scratchpad-script / sed workaround
+# ---------------------------------------------------------------------------
+class TestInterpreterWorkaroundReason(SecretsEnv):
+    def test_reason_names_scratchpad_and_sed(self):
+        verdict, reason = self.verdict("Bash", {
+            "command": "python3 -c \"open('notes.md').read().replace('.env','X')\"",
+        })
+        self.assertEqual("deny", verdict)
+        self.assertIn("scratchpad", reason)
+        self.assertIn("sed", reason)
+
+
+# ---------------------------------------------------------------------------
 # 9. A template name elsewhere in the command does not unlock a real .env
 #    (the upstream whole-command allowlist bypass, deliberately NOT ported)
 # ---------------------------------------------------------------------------
