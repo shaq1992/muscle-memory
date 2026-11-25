@@ -432,6 +432,15 @@ warning.
 git worktrees explicitly, as a `settled` row in `## Established`. With that row
 present the broker permits the parallelism the row describes. Absent the row,
 the single-tree rule holds -- parallelism is never inferred from convenience.
+Separate trees do not mean separate machines: the row must also state how
+HEAVY SHARED WORK is kept from colliding -- at minimum the full test suite,
+and any other memory- or CPU-heavy run (builds, end-to-end runs, local
+stacks). Either SERIALISE it (only one session runs it at a time; the others
+run a targeted subset and defer the full run to one named session or to after
+merge) or SPLIT it (each session runs only its own tests). A row that permits
+parallel trees without that rule is incomplete -- add it before dispatching.
+The orchestrator carries the rule into every parallel dispatch by handing that
+row (`--rows`, Step 7), never by paraphrasing it into the body.
 
 ## Step 9 -- INGEST a handback
 
