@@ -247,7 +247,7 @@ On a pass the hook removes this session's grill marker (and no other). The bulle
 
 The sibling schema's binding constraint applies unchanged: the abandon path
 costs about THREE LINES -- the `Status` field and one sentence -- and the
-enforcing hook's block message states that minimal content VERBATIM:
+enforcing hook's block message states that minimal content (Status line exact, sentence as an example -- see below):
 
 ```
 Status: ABANDONED
