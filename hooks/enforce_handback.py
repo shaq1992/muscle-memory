@@ -73,9 +73,12 @@ Checks, in order:
           grammar and the "## Structural observations" line shape parse,
           with the SAME shared parsers the ingest runs.
      A pass removes the marker.
-Every block message prints the abandon path's minimal content VERBATIM,
-because a blocked session has by definition already failed to guess the
-required shape, and pointing it at a schema is telling it to guess again.
+Every block message prints the abandon path's minimal content in full -- the
+Status line exactly, a blank line, then ONE sentence of the session's own
+saying why it stopped, introduced as an example so the sample sentence is never
+read as literal text to copy -- because a blocked session has by definition
+already failed to guess the required shape, and pointing it at a schema is
+telling it to guess again.
 
 THE MANUAL MODE. `python3 hooks/enforce_handback.py --check-receipt
 <handback_path> [--manifest <manifest_path>]` runs check 5a's verification
@@ -190,7 +193,7 @@ def _allow():
 
 
 def _block(reason):
-    full = "{0}\n\nThe MINIMAL content that unblocks this, verbatim -- a status field and one sentence, nothing else:\n\n{1}".format(
+    full = "{0}\n\nThe MINIMAL content that unblocks this: the Status line exactly, a blank line, then ONE sentence of your own saying why you stopped -- for example:\n\n{1}".format(
         reason, ABANDON_MINIMUM
     )
     print(json.dumps({"decision": "block", "reason": full}))
