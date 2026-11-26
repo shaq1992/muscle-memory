@@ -268,7 +268,11 @@ Step 8 clears.
    under `--repo-root`: when the state file carries a settled worktree row
    (code edited in a git worktree outside the project), pass
    `--repo-root <worktree path>` on EVERY dispatch, or every cited code path
-   FAILS.
+   FAILS. The paths cited in the handed rows (`--rows`) are checked the same
+   way but only WARN (`WARN paths: handed row <E-ID> cites <path>`); on such
+   a warning, check that row's premise before dispatch -- update or retire
+   the row if the file moved or is gone, then re-run the assembler -- but
+   dispatch is not blocked.
 
    **Authoring checklist** (what the script cannot check -- read the body
    once against it before running the assembler):
