@@ -62,3 +62,10 @@ All long-running scripts must:
    session says so plainly. Observed: a session died mid-run and left the
    task and its Monitor orphaned with no record; the next turn had to
    rebuild what was running, where its log was and whether it had finished.
+9. **Monitor expiry** -- a Monitor ends on its own after its timeout (at most
+   30 min). For any watch that may run longer, note the expiry time in the
+   run record (rule 8), re-arm the Monitor as soon as its end notice arrives
+   (still one at a time, rule 5), and check the log tail for anything missed
+   in the gap (a watcher that re-reads a recent window on start covers this;
+   otherwise read the log since the last event seen). Observed: the first
+   expiry in a session went unnoticed for ~10 minutes.
