@@ -78,7 +78,12 @@ cannot find:
      the working directory) or under the working directory; an absolute or
      "~" path must exist as given. Exempt: a "(new)" directly after the
      token, or the path passed via --new-path (repeatable) -> otherwise FAIL.
-     A worktree plan (code in a harness worktree, docs in the project)
+     The text of every handed row (--rows, copied verbatim into the
+     ## Orchestration block) is scanned with the same rule, roots and
+     exemptions, but a missing path there is a WARN only, never a FAIL:
+     "WARN paths: handed row <E-ID> cites <path> ..." -- older rows may
+     cite moved or removed files, and dispatch is not blocked by them (the
+     prompt and manifest are still written). A worktree plan (code in a harness worktree, docs in the project)
      passes --repo-root <worktree> on every dispatch.
   E. --branch must equal <plan>-session-<NN> (NN as normalized above) ->
      FAIL: hooks/arm_handback_marker.py parses exactly that shape.
@@ -329,13 +334,14 @@ def cited_paths(body_text):
     return out
 
 
-def check_body_paths(body_text, repo_root, new_paths, failures):
-    """Check D: every cited path exists unless marked (new) / --new-path."""
+def missing_paths(text, repo_root, new_paths):
+    """Check D's rule: the cited paths in text that exist under neither
+    root, in order, each once; (new)-marked and --new-path ones exempt."""
     cwd = os.getcwd()
     exempt = set(p.rstrip("/") for p in new_paths)
-    reported = set()
-    for path, marked in cited_paths(body_text):
-        if marked or path.rstrip("/") in exempt or path in reported:
+    missing = []
+    for path, marked in cited_paths(text):
+        if marked or path.rstrip("/") in exempt or path in missing:
             continue
         expanded = os.path.expanduser(path)
         if os.path.isabs(expanded):
@@ -344,12 +350,36 @@ def check_body_paths(body_text, repo_root, new_paths, failures):
             found = (os.path.exists(os.path.join(repo_root, expanded))
                      or os.path.exists(os.path.join(cwd, expanded)))
         if not found:
-            reported.add(path)
-            failures.append(
-                "FAIL paths: task body cites {0}, which exists under neither "
-                "{1} (--repo-root) nor {2} (cwd); fix the path, or mark a "
-                "file the session creates with '(new)' after it or "
-                "--new-path {0}".format(path, repo_root, cwd)
+            missing.append(path)
+    return missing
+
+
+def check_body_paths(body_text, repo_root, new_paths, failures):
+    """Check D (body): every cited path exists unless marked (new) /
+    --new-path -> otherwise FAIL."""
+    cwd = os.getcwd()
+    for path in missing_paths(body_text, repo_root, new_paths):
+        failures.append(
+            "FAIL paths: task body cites {0}, which exists under neither "
+            "{1} (--repo-root) nor {2} (cwd); fix the path, or mark a "
+            "file the session creates with '(new)' after it or "
+            "--new-path {0}".format(path, repo_root, cwd)
+        )
+
+
+def check_row_paths(row_lines, repo_root, new_paths, warnings):
+    """Check D (handed rows): the same rule over each handed row's text,
+    but WARN only -- an older row may cite a moved or removed file, and
+    dispatch must not be blocked by it."""
+    cwd = os.getcwd()
+    for row in row_lines:
+        rid = first_cell(row)
+        for path in missing_paths(row, repo_root, new_paths):
+            warnings.append(
+                "WARN paths: handed row {0} cites {1}, which exists under "
+                "neither {2} (--repo-root) nor {3} (cwd); the row may cite a "
+                "moved or removed file -- check its premise before the "
+                "session relies on it".format(rid, path, repo_root, cwd)
             )
 
 
@@ -651,6 +681,9 @@ def main(argv=None):
 
     if not failures:
         row_lines = extract_rows(state_text, row_ids, failures)
+        if not failures:
+            check_row_paths(row_lines, args.repo_root or os.getcwd(),
+                            args.new_path, warnings)
 
     for line in warnings:
         print(line)
