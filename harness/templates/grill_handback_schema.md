@@ -255,6 +255,11 @@ Status: ABANDONED
 The user ended the grilling before any requirement was settled; no requirements doc was written.
 ```
 
+The sentence is an EXAMPLE: the session replaces it with its own one-line
+reason for stopping. Only the `Status` line is literal. So the block message
+states the `Status` line exactly, a blank line, then the sentence above
+introduced AS an example of the session's own one sentence.
+
 Any change that raises this cost is a defect in the change.
 
 ## What the handback replaces
