@@ -53,7 +53,9 @@ ALL harness-repo pushes, which is the correct posture for recipients.
 ## Monitoring
 
 - Any command expected to exceed ~45s runs `run_in_background: true` per
-  harness/procedures/monitoring.md; one Monitor at a time; TaskStop when done.
+  harness/procedures/monitoring.md; write a run record (command, log path,
+  start time, terminal line) before backgrounding; one Monitor at a time;
+  re-arm a Monitor when it expires; TaskStop when done.
 - Grep filters: always `[ERROR]|[FATAL]|[DONE]`; add `[RESULT]|[PROGRESS]`
   when progress visibility is needed.
 - Project-specific long-running commands, progress markers, and log locations:
