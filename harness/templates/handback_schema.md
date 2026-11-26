@@ -382,9 +382,13 @@ Status: ABANDONED
 Blocked on the staging credentials; nothing was changed.
 ```
 
-**The enforcing hook's block message must state, VERBATIM, the minimal content
-that unblocks it** -- the exact text above, not a description of it and not a
-pointer to this file. A session that is blocked has by definition already
+The sentence is an EXAMPLE: the session replaces it with its own one-line
+reason for stopping. Only the `Status` line is literal.
+
+**The enforcing hook's block message must state the minimal content that
+unblocks it** -- the `Status` line exactly, a blank line, then the example
+sentence above introduced AS an example of the session's own one sentence;
+not a description of it and not a pointer to this file. A session that is blocked has by definition already
 failed to guess the required shape; telling it to go read a schema is telling
 it to guess again.
 
