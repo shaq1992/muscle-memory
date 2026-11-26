@@ -206,6 +206,16 @@ five rows out of six is noise on every one of them.
 Write a condition, not a date: "if the vendor changes the rate limit", not
 "in two weeks". A row with no plausible trigger takes `-`.
 
+**Live runtime state is a snapshot, not a fact.** Whether a process is up or
+down, a stack is running, something is deployed right now, or a job is in
+progress can change outside the plan at any moment (the user restarts it from
+their own terminal), so prefer not pinning such snapshots at all; record one
+only when a later step depends on it. When recorded, the statement carries its
+as-of date AND time, and the revisit trigger says it must be checked live
+before anyone acts on it. A session handed such a row checks the live state
+first (for example a process or container listing) and, if the two differ,
+treats the row as stale and acts on what it observed.
+
 **Worked examples.** One row per disposition, showing the intended shape
 (and the decreasing-ID order, newest at the top):
 
