@@ -113,7 +113,12 @@ The `Disposition` column is the primary input to what may leave the table:
   related completed-work rows into one pointer-carrying row instead of
   deleting content that has no other durable home.
 - Respect every row's `Revisit trigger`: a row whose trigger has not fired is
-  presumptively still earning its place.
+  presumptively still earning its place. The exception is a row recording
+  live runtime state (a process up or down, a stack running, a job in
+  progress; see the "Live runtime state is a snapshot, not a fact" rule in
+  `harness/templates/state_schema.md`): an unfired trigger does not protect
+  it. Propose retiring it once no pending step depends on it or its as-of
+  time is older than the current session.
 
 ## The three batch shapes
 
