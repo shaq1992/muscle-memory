@@ -71,9 +71,12 @@ Checks, in order, each blocking with a reason that names the failed check:
      is judgement and is never counted here.
 On a pass at a terminal status the hook removes the grill marker.
 
-Every block message prints the abandon path's minimal content VERBATIM (the
-grill schema's "The abandon path" block), because a blocked session has by
-definition already failed to guess the required shape.
+Every block message prints the abandon path's minimal content in full (the
+grill schema's "The abandon path" block) -- the Status line exactly, a blank
+line, then ONE sentence of the session's own saying why it stopped, introduced
+as an example so the sample sentence is never read as literal text to copy --
+because a blocked session has by definition already failed to guess the
+required shape.
 
 Deliberately ignores the "stop_hook_active" re-entry flag: every block
 condition is within the model's control, so re-blocking on each retry until
@@ -143,8 +146,9 @@ def _allow():
 
 def _block(reason):
     full = (
-        "{0}\n\nThe MINIMAL content that unblocks this, verbatim -- a status "
-        "field and one sentence, nothing else:\n\n{1}".format(
+        "{0}\n\nThe MINIMAL content that unblocks this: the Status line "
+        "exactly, a blank line, then ONE sentence of your own saying why you "
+        "stopped -- for example:\n\n{1}".format(
             reason, ABANDON_MINIMUM
         )
     )
