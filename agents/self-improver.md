@@ -173,7 +173,9 @@ proposed new problem either the user's yes or the P-ID they chose instead):
    `.claude/VERSION` if present), `project` (the project directory's name), `change`
    and `why` (one line each), `files`, `commits` (the hash), `prediction`,
    `review` (`verdict`, `reasons`, and on an override `override`: "user: <their
-   word>"), `accepted: true`, `landed` (the commit date).
+   word>"), `accepted: true`, `landed` (the commit date for a commit on `main`;
+   `null` for a commit on a phase branch -- the orchestrator lands it with
+   `sim.py land` once the user's merge reaches main).
 2. **Rejected, not overridden:** `git -C .claude restore -- <the file you edited>`,
    nothing is committed, then append ONE attempt with `accepted: false`,
    `landed: null`, `commits: []` and the reviewer's reasons.

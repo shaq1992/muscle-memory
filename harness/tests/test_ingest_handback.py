@@ -374,6 +374,21 @@ class TestObservations(IngestEnv):
         )
         self.assertEqual(expected, self.obs_text())
 
+    def test_prints_observation_line_numbers(self):
+        # Prevents: a SIM link citing the wrong docs/observations.md line.
+        obs = ("- prompt-underspecified | the prompt omitted the test path\n"
+               "- hook-friction | the stop hook fired while waiting")
+        r = self.run_ingest(handback_text(obs=obs), "--check")
+        self.assert_ok(r)
+        self.assertIn("Observations appended: 2 (L2, L3)", r.stdout)
+        self.assertEqual(OBSERVATIONS_SEED, self.obs_text())
+        r = self.run_ingest(handback_text(obs=obs))
+        self.assert_ok(r)
+        self.assertIn("Observations appended: 2 (L2, L3)", r.stdout)
+        lines = self.obs_text().splitlines()
+        self.assertIn("prompt-underspecified", lines[1])
+        self.assertIn("hook-friction", lines[2])
+
     def test_observations_none_appends_nothing(self):
         # Prevents: fabricated filler lines in the observations file.
         r = self.run_ingest(handback_text(obs="none"))
