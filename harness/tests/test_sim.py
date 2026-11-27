@@ -635,5 +635,144 @@ class TestSimNotebookFixtureKey(GuardrailEnv):
         self.assertNotIn("sim_notebook", text)
         self.assertIn("harness_push_remote", text)
 
+
+class TestLand(SimEnv):
+    """Landed means the merge-to-main date (sim-harness S05): an attempt
+    committed on a plan branch is appended with landed null, and a land
+    record appended after the user's merge starts its count."""
+
+    def pending(self):
+        self.init()
+        self.sim("append", "problem", record=problem())
+        self.sim("append", "attempt", record=attempt("P-0001", landed=None))
+
+    def state_line(self):
+        return [l for l in self.notebook_md().splitlines() if "verdict:" in l][-1]
+
+    def test_land_starts_the_count(self):
+        # Prevents: sessions that ran before the merge counting toward held.
+        self.pending()
+        for n in range(1, 11):
+            self.session(n, started="2026-11-05")
+        self.assertIn("accepted, not landed", self.state_line())
+        self.sim("append", "land",
+                 record={"attempt": "P-0001/A1", "date": "2026-11-06"})
+        self.assertIn("landed 2026-11-06, under observation", self.state_line())
+        for n in range(11, 20):
+            self.session(n, started="2026-11-07")
+        self.assertIn("under observation", self.state_line())
+        r = self.session(20, started="2026-11-07")
+        self.assertIn("P-0001 attempt 1: held", r.stdout)
+        self.sim("validate")
+
+    def test_land_refusals(self):
+        # Prevents: a bogus landing corrupting verdicts.
+        self.pending()
+        self.sim("append", "attempt", record=attempt(
+            "P-0001", accepted=False, landed=None, commits=[]))
+        self.sim("append", "attempt", record=attempt("P-0001"))
+        before = self.snapshot()
+        for rec in ({"attempt": "P-0009/A1", "date": "2026-11-06"},
+                    {"attempt": "P-0001/A2", "date": "2026-11-06"},
+                    {"attempt": "P-0001/A3", "date": "2026-11-06"},
+                    {"attempt": "P-0001/A1", "date": "2026-11-01"},
+                    {"attempt": "P-0001/A1"}):
+            self.sim("append", "land", record=rec, ok=False)
+        self.assertEqual(self.snapshot(), before)
+        self.sim("append", "land",
+                 record={"attempt": "P-0001/A1", "date": "2026-11-06"})
+        before = self.snapshot()
+        self.sim("append", "land", ok=False,
+                 record={"attempt": "P-0001/A1", "date": "2026-11-07"})
+        self.assertEqual(self.snapshot(), before)
+
+    def test_land_command_uses_main(self):
+        # Prevents: landing an attempt whose commit never reached main.
+        repo = _git_repo(self.tmp / "harness")
+        (repo / "f").write_text("a", encoding="utf-8")
+        _git(repo, "add", "f")
+        _git(repo, "commit", "-q", "-m", "base")
+        _git(repo, "checkout", "-q", "-b", "plan")
+        (repo / "f").write_text("b", encoding="utf-8")
+        _git(repo, "commit", "-q", "-am", "on plan")
+        on_plan = _git(repo, "rev-parse", "HEAD").stdout.strip()
+        _git(repo, "checkout", "-q", "-b", "side", "main")
+        (repo / "g").write_text("c", encoding="utf-8")
+        _git(repo, "add", "g")
+        _git(repo, "commit", "-q", "-m", "side only")
+        side = _git(repo, "rev-parse", "HEAD").stdout.strip()
+        self.init()
+        self.sim("append", "problem", record=problem())
+        self.sim("append", "attempt", record=attempt(
+            "P-0001", landed=None, commits=[on_plan]))
+        self.sim("append", "attempt", record=attempt(
+            "P-0001", landed=None, commits=[side]))
+        land = ("land", "--repo", str(repo), "--ref", "main",
+                "--date", "2026-11-08")
+        r = self.sim(*land)
+        self.assertIn("no attempts to land", r.stdout)
+        _git(repo, "checkout", "-q", "main")
+        _git(repo, "merge", "-q", "--no-ff", "plan", "-m", "merge plan")
+        r = self.sim(*land)
+        self.assertIn("landed P-0001/A1", r.stdout)
+        self.assertNotIn("P-0001/A2", r.stdout)
+        lands = [x for x in self.lines("attempts.jsonl") if x["type"] == "land"]
+        self.assertEqual([(x["attempt"], x["date"]) for x in lands],
+                         [("P-0001/A1", "2026-11-08")])
+        commits = self.commits()
+        r = self.sim(*land)
+        self.assertIn("no attempts to land", r.stdout)
+        self.assertEqual(self.commits(), commits)
+        self.sim("validate")
+
+    def test_render_unchanged_without_land(self):
+        # Prevents: the existing notebook view shifting under the new code.
+        self.landed_problem()
+        self.sim("append", "link", record=link("P-0001"))
+        view = self.notebook_md()
+        self.sim("render")
+        self.assertEqual(self.notebook_md(), view)
+        self.assertIn("recurred (docs/observations.md:L90, 2026-11-10)", view)
+
+
+class TestNewProblemWithLink(SimEnv):
+    NEW = {"hypothesis": "ingest drops the link batch", "opened": "2026-11-27",
+           "opened_by": "user", "project": "proj-a", "tags": ["step-misbehaves"]}
+
+    def test_link_with_new_problem_one_write(self):
+        # Prevents: a problem opened with no link (or the reverse) when one
+        # of two writes fails, and a confirmed "new" proposal reading "changed".
+        self.init()
+        before = self.commits()
+        r = self.sim("append", "link", record=link(
+            "new", proposed="new", new_problem=dict(self.NEW)))
+        self.assertEqual(self.commits(), before + 1)
+        self.assertEqual(self.lines("problems.jsonl")[-1]["id"], "P-0001")
+        lk = self.lines("links.jsonl")[-1]
+        self.assertEqual((lk["problem"], lk["proposed"], lk["verdict"],
+                          lk["opened_problem"]),
+                         ("P-0001", "new", "accepted", True))
+        self.assertNotIn("new_problem", lk)
+        self.assertIn("P-0001", r.stdout)
+        self.sim("validate")
+
+    def test_half_specified_or_unopened_new_refused(self):
+        # Prevents: a half-write, and "accepted" on a "new" proposal that
+        # names a problem not opened with it.
+        self.init()
+        self.sim("append", "problem", record=problem())
+        before = self.snapshot()
+        self.sim("append", "link", ok=False, record=link("new", proposed="new"))
+        self.sim("append", "link", ok=False, record=link(
+            "P-0001", new_problem=dict(self.NEW)))
+        self.sim("append", "link", ok=False, record=link(
+            "P-0001", proposed="new", verdict="accepted"))
+        self.sim("append", "link", ok=False, record=link(
+            "P-0001", proposed="new", verdict="accepted", opened_problem=True))
+        self.assertEqual(self.snapshot(), before)
+        self.sim("append", "link", record=link(
+            "P-0001", proposed="new", verdict="changed"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -613,7 +613,47 @@ report is the trigger EVIDENCE for suggesting a garbage-collection pass
 (Step 10a); GC never auto-runs. The summary also WARNS on incoming rows over ~600 bytes per
 the row-discipline law -- a prompt for judgement, never a block.
 
-All five happen before replying (write-through trigger (a)).
+**SIM steps (both lanes, after the script or the manual copy).** Run
+`python3 .claude/harness/scripts/sim.py locate --preferences .claude/preferences.md`
+and print its one line verbatim. Exit 3 (off) or 4 (configured but missing):
+nothing more, today's flow exactly; a "missing" line is also appended as a
+`step-unexecutable` observation (`close_observations.py --add`, Step 11 item 6).
+Exit 0 (on): pass the line's path and domain to every call as
+`--notebook <path> --domain <domain>`, and:
+
+a. **Links, in ONE AskUserQuestion batch**, one question per observation this
+   ingest appended (the script's summary names each `L<n>`; on the grill lane,
+   the lines copied by hand). From the notebook's `NOTEBOOK.md`, propose one
+   existing P-ID or a new problem (a one-line root-cause hypothesis plus its
+   tags) first and recommended, then the next-best problem and "leave
+   unlinked". A session may only suggest a P-ID; the user decides. Over four
+   observations, the batch runs as consecutive calls. Write each confirmed link
+   with `sim.py append link --record '<json>'`: `observation` (`project` = the
+   project directory's name, `ref` = `docs/observations.md:L<n>`, `date` = the
+   line's date), `problem`, `proposed` (the proposed P-ID, or `new`),
+   `proposed_by: "orchestrator"`, `verdict` (`accepted` when the user took the
+   proposal, else `changed`), `date` (today). A confirmed new problem is
+   `"problem": "new"` plus `new_problem` (`hypothesis`, `opened` today,
+   `opened_by: "user"`, `project`, `tags`): one write opens it with its link.
+   "Leave unlinked" writes nothing. A link on a held problem reopens it.
+b. **Count the session, after its links** (the session's own observations come
+   before its "no recurrence" count): `sim.py verdict --project <project
+   directory name> --plan <plan_name> --session <NN> --kind implement|grill
+   --started <the date in its ## Dispatched row>`. A repeat is a no-op; a
+   dispatched session an earlier ingest missed is counted the same way.
+c. **Report verdict changes in ONE line**, from what sim.py printed
+   (`P-0012 attempt 3: recurred`, `held`, `reopened`), or `SIM: no verdict
+   changes`.
+d. **Push once, after the last write.** sim.py pulls fast-forward-only before
+   each call, commits after each write and never pushes: run
+   `git -C <notebook> push origin <its branch>` as its own Bash call. A rejected
+   push (the improver pushed first) is reported verbatim and NOT retried; the
+   records stay committed locally. Give the user the next command,
+   `git -C <notebook> fetch origin && git -C <notebook> log --oneline HEAD...@{u}`.
+   Every record carries a global seq, so the local records must be re-appended
+   on top of origin, and that is the user's call.
+
+All of the above happens before replying (write-through trigger (a)).
 
 ## Step 10 -- The two-strikes notice
 
@@ -721,6 +761,10 @@ ask is the whole gate.
      --note "<what landed, e.g. the commit hash>"
    ```
 
+   With SIM on, a `fixed` close also names the attempt the improver appended:
+   `--attempt P-NNNN/A<n>`. Whether the fix HELD is the notebook's verdict,
+   never the closing line's.
+
    The refs are the observation lines' 1-based line numbers; surface the
    script's OK / FAIL output verbatim. The closing-line shape is defined in
    `harness/templates/handback_schema.md` ("Closing lines").
@@ -731,7 +775,23 @@ ask is the whole gate.
    underneath a concurrently running session. The self-improver commits on
    whatever branch is already checked out and pushes main commits
    immediately, per its own Rule 4.
-6. **No hot-reload promise.** An amendment to command, schema or procedure
+6. **With SIM on, the spawn takes the review hop** of
+   @.claude/harness/procedures/self_improvement.md step 3 (a-e), which owns it:
+   keep the improver's agent ID from its DRAFT, spawn `sim-reviewer`, resume
+   the same improver for FINISH, and relay the verdict to the user in one
+   AskUserQuestion. Then push nothing yourself: the improver pushes the
+   notebook. When an improver's report ends with `Structural observation for
+   the caller: - <tag> | <description>` (its "configured but missing" line),
+   carry it into the observations file like a handback observation:
+
+   ```
+   python3 .claude/harness/scripts/close_observations.py \
+     --observations docs/observations.md --add --plan <plan_name> \
+     --session - --tag <tag> --description "<description>"
+   ```
+
+   It prints the new line's `L<n>`; with SIM on, link it as in Step 9 (a).
+7. **No hot-reload promise.** An amendment to command, schema or procedure
    TEXT reaches the NEXT session that reads it, never a running one (see
    "What this command does NOT do"). Hooks happen to be re-executed per tool
    call, but do not promise hot-reload anywhere.
@@ -786,6 +846,12 @@ On the user's declaration that the plan is done:
    @.claude/harness/templates/state_schema.md -- to its terminal value per that
    schema.
 4. The USER merges. The orchestrator never runs `gh pr merge`.
+5. **With SIM on, land the attempts once the user says the merge is done.** An
+   improver commit on a plan branch was recorded `accepted, not landed`; its
+   count toward held starts only at the merge. Fetch the harness repo, then run
+   `sim.py land --repo <harness repo> --ref origin/<its default branch>` (it
+   lands only attempts whose commits all reached that branch; a repeat is a
+   no-op), print its lines, and push the notebook as in Step 9 (d).
 
 If the user withholds the merge, the plan still ends: the accumulation branch and
 the open PR are its durable artifacts, and the state file still carries its
@@ -795,7 +861,8 @@ terminal status so a later resume does not re-dispatch against finished work.
 
 These are the CALLER's obligations. The isolation law that binds the sub-agent
 itself lives in the sub-agent's own definition (`.claude/agents/investigator.md`,
-`.claude/agents/experimenter.md`, `.claude/agents/jira_agent.md`) so that it applies whether or not the caller
+`.claude/agents/experimenter.md`, `.claude/agents/jira_agent.md`,
+`.claude/agents/sim-reviewer.md`) so that it applies whether or not the caller
 remembered to state it -- hand-writing isolation clauses per call is the failure
 that design replaces. There is no separate delegation procedure file; each rule
 lives with the actor who can violate it.

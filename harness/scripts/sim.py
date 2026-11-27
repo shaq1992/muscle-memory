@@ -16,7 +16,7 @@ sim.py never pushes: the caller owns the push.
 Commands:
   init      [--hold-after N] [--fold-after N] [--agreement-last N]
             [--agreement-threshold F]
-  append    problem|attempt|link|alias --record JSON
+  append    problem|attempt|link|alias|land --record JSON
   verdict   --project P --plan X --session NN --kind implement|grill
             --started DATE   (one counted session)
   render    re-render NOTEBOOK.md and commit if it changed
@@ -24,6 +24,8 @@ Commands:
   count     counts by status
   agreement link-agreement metric over the last N confirmed links
   history   --problem P-NNNN   (one problem's whole history, aliases merged)
+  land      --repo R --ref REF [--date D]   (land every accepted attempt with
+            landed null whose commits are all ancestors of REF in R)
 
   locate    --preferences FILE   (no --notebook/--domain) reads the optional
             sim_notebook key and prints the one fallback line: exit 0 on,
@@ -31,6 +33,7 @@ Commands:
 """
 
 import argparse
+import datetime
 import json
 import re
 import subprocess
@@ -52,6 +55,7 @@ FILES = {
     "problem": "problems.jsonl",
     "attempt": "attempts.jsonl",
     "verdict": "attempts.jsonl",
+    "land": "attempts.jsonl",
     "link": "links.jsonl",
     "alias": "aliases.jsonl",
     "session": "sessions.jsonl",
@@ -189,6 +193,7 @@ def validate_records(records, domain):
     errors = []
     seqs = set()
     problems, attempts, alias_of, session_keys = {}, {}, {}, set()
+    landed_by_record = set()
     attempt_counts = {}
     for rec in records:
         where = "seq {0} ({1})".format(rec.get("seq"), rec.get("type"))
@@ -254,6 +259,27 @@ def validate_records(records, domain):
                     _req(review, "reasons", "str", errors, where + " review")
                     _check_override(review, accepted, errors, where)
             attempts[rec.get("id")] = rec
+        elif t == "land":
+            # The merge-to-main landing of an attempt committed on a plan
+            # branch (appended with landed null).
+            a = attempts.get(rec.get("attempt"))
+            date = _req(rec, "date", "date", errors, where)
+            if rec.get("ref") is not None:
+                _req(rec, "ref", "str", errors, where)
+            if a is None:
+                errors.append("{0}: unknown attempt {1!r}".format(
+                    where, rec.get("attempt")))
+            elif a.get("accepted") is not True:
+                errors.append(where + ": a rejected attempt cannot land")
+            elif a.get("landed") is not None or rec["attempt"] in landed_by_record:
+                errors.append("{0}: {1} has already landed".format(
+                    where, rec["attempt"]))
+            elif isinstance(date, str) and isinstance(a.get("date"), str) and \
+                    date < a["date"]:
+                errors.append("{0}: land date {1} is before the attempt's "
+                              "date {2}".format(where, date, a["date"]))
+            if a is not None:
+                landed_by_record.add(rec["attempt"])
         elif t == "verdict":
             if rec.get("attempt") not in attempts:
                 errors.append("{0}: unknown attempt {1!r}".format(
@@ -278,11 +304,24 @@ def validate_records(records, domain):
                 errors.append("{0}: proposed must be a known problem or "
                               "\"new\"".format(where))
             verdict = rec.get("verdict")
+            # A "new" proposal the user accepted names the problem opened in
+            # the same write: sim.py sets opened_problem on that path only,
+            # and the problem is the record just before the link.
+            opened = rec.get("opened_problem")
+            if opened is not None and opened is not True:
+                errors.append(where + ": opened_problem must be true or absent")
+            opened_with = opened is True and pid in problems and \
+                problems[pid].get("seq") == (rec.get("seq") or 0) - 1
+            if opened is True and not opened_with:
+                errors.append(where + ": opened_problem names no problem opened "
+                              "with this link")
             if verdict not in LINK_VERDICTS:
                 errors.append(where + ": verdict must be accepted or changed")
-            elif (verdict == "accepted") != (proposed == pid):
+            elif (verdict == "accepted") != (proposed == pid or opened_with):
                 errors.append(where + ": verdict 'accepted' means proposed equals "
-                              "problem; 'changed' means they differ")
+                              "problem (or proposed 'new' and the problem was "
+                              "opened with this link); 'changed' means they "
+                              "differ")
             _req(rec, "proposed_by", "str", errors, where)
             _req(rec, "date", "date", errors, where)
         elif t == "alias":
@@ -378,12 +417,17 @@ def derive(records, thresholds):
                 state = "under observation"
             att[rec["id"]] = {"rec": rec, "state": state, "counted": 0,
                               "since_hold": 0, "held_seq": None,
-                              "cause": None}
+                              "cause": None, "landed": rec.get("landed")}
             order.append(rec["id"])
+        elif t == "land":
+            a = att[rec["attempt"]]
+            a["landed"] = rec["date"]
+            if a["state"] == "accepted, not landed":
+                a["state"] = "under observation"
         elif t == "session":
             for aid in order:
                 a = att[aid]
-                landed = a["rec"].get("landed")
+                landed = a["landed"]
                 if landed is None or not rec["started"] > landed:
                     continue
                 if a["state"] == "under observation":
@@ -405,7 +449,7 @@ def derive(records, thresholds):
                 if resolve(a["rec"]["problem"], alias_of) != canon:
                     continue
                 if a["state"] == "under observation" and \
-                        obs_date > a["rec"]["landed"]:
+                        obs_date > a["landed"]:
                     a["state"] = "recurred"
                     a["cause"] = rec
                     hit = True
@@ -416,7 +460,7 @@ def derive(records, thresholds):
                 if held and canon not in reopened:
                     last = held[-1]
                     if rec["seq"] > att[last]["held_seq"] and \
-                            obs_date > att[last]["rec"]["landed"]:
+                            obs_date > att[last]["landed"]:
                         reopened[canon] = rec
     status = {}
     for rec in records:
@@ -492,7 +536,7 @@ def _attempt_line(a):
         detail.append("review: {0} ({1})".format(rv["verdict"], reasons))
     state = a["state"]
     if state == "under observation":
-        state = "landed {0}, under observation".format(rec["landed"])
+        state = "landed {0}, under observation".format(a["landed"])
     elif state == "held":
         state = "held"
     elif state == "recurred":
@@ -714,7 +758,29 @@ def cmd_append(nb, domain, args):
         if new_problem is not None:
             label = "{0} on new problem {1}".format(rec["id"], pid)
     elif args.type == "link":
+        rec.pop("opened_problem", None)
+        new_problem = rec.pop("new_problem", None)
+        if (new_problem is None) != (rec.get("problem") != "new"):
+            raise SimError("a link to a new problem needs problem \"new\" AND "
+                           "a new_problem object; one without the other is "
+                           "refused")
+        if new_problem is not None:
+            # Open the problem and append the link in ONE write.
+            if not isinstance(new_problem, dict):
+                raise SimError("new_problem must be a JSON object")
+            prob = {k: v for k, v in new_problem.items()
+                    if k not in ("seq", "type", "domain", "id")}
+            prob = dict(type="problem", domain=domain, **prob)
+            prob["id"] = "P-{0:04d}".format(
+                sum(1 for r in records if r["type"] == "problem"))
+            rec["problem"] = prob["id"]
+            rec["opened_problem"] = True
+            new.append(prob)
         label = "to {0}".format(rec.get("problem"))
+        if new_problem is not None:
+            label += " (new problem)"
+    elif args.type == "land":
+        label = "of {0}".format(rec.get("attempt"))
     else:
         label = "{0} of {1}".format(rec.get("alias"), rec.get("of"))
     new.append(rec)
@@ -833,6 +899,35 @@ def cmd_history(nb, domain, args):
     print("\n".join(problem_block(v, canon)))
 
 
+def cmd_land(nb, domain, args):
+    """Land every accepted, not-landed attempt whose commits are all
+    ancestors of --ref in --repo: one land record each, in one write."""
+    pull(nb, write=True)
+    meta = load_meta(nb)
+    _check_domain(meta, domain)
+    records = load_records(nb)
+    date = args.date or datetime.date.today().isoformat()
+    att = derive(records, meta["thresholds"])[0]
+    new = []
+    for aid, a in att.items():
+        commits = a["rec"]["commits"]
+        if a["state"] != "accepted, not landed" or not commits:
+            continue
+        if all(subprocess.run(
+                ["git", "-C", str(args.repo), "merge-base", "--is-ancestor",
+                 c, args.ref], capture_output=True).returncode == 0
+               for c in commits):
+            new.append({"type": "land", "domain": domain, "attempt": aid,
+                        "date": date, "ref": args.ref})
+    if not new:
+        print("no attempts to land")
+        return
+    _write(nb, meta, records, new, "land {0} on {1}".format(
+        ", ".join(r["attempt"] for r in new), args.ref))
+    for r in new:
+        print("landed {0} on {1} ({2})".format(r["attempt"], args.ref, date))
+
+
 OFF_LINE = ("SIM notebook: off (no sim_notebook key) -- running without "
             "memory, prediction or recurrence tracking.")
 MISSING_LINE = ("SIM notebook: configured at {0} but missing ({1}) -- running "
@@ -880,7 +975,7 @@ def main(argv=None):
     pi.add_argument("--agreement-last", dest="agreement_last", type=int)
     pi.add_argument("--agreement-threshold", dest="agreement_threshold", type=float)
     pa = sub.add_parser("append", parents=[common])
-    pa.add_argument("type", choices=("problem", "attempt", "link", "alias"))
+    pa.add_argument("type", choices=("problem", "attempt", "link", "alias", "land"))
     pa.add_argument("--record", required=True, help="the record as JSON")
     pv = sub.add_parser("verdict", parents=[common])
     pv.add_argument("--project", required=True)
@@ -896,6 +991,10 @@ def main(argv=None):
     pg.add_argument("--threshold", type=float)
     ph = sub.add_parser("history", parents=[common])
     ph.add_argument("--problem", required=True)
+    pn = sub.add_parser("land", parents=[common])
+    pn.add_argument("--repo", required=True, help="the harness git repo")
+    pn.add_argument("--ref", required=True, help="the branch the merge reached")
+    pn.add_argument("--date", help="landing date (default: today)")
     pl = sub.add_parser("locate")
     pl.add_argument("--preferences", required=True,
                     help="the project's preferences.md")
@@ -908,7 +1007,7 @@ def main(argv=None):
     commands = {"init": cmd_init, "append": cmd_append, "verdict": cmd_verdict,
                 "render": cmd_render, "validate": cmd_validate,
                 "count": cmd_count, "agreement": cmd_agreement,
-                "history": cmd_history}
+                "history": cmd_history, "land": cmd_land}
     try:
         rc = commands[args.command](nb, args.domain, args)
     except SimError as e:

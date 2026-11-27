@@ -93,6 +93,79 @@ class TestClose(CloseEnv):
                 self.assertEqual(after_first, self.text())
 
 
+class TestAttempt(CloseEnv):
+    def test_attempt_on_fixed(self):
+        # Prevents: a closing line that cannot be traced to its SIM attempt.
+        r = self.run_script(
+            "--plan", "harness-improv-v7", "--session", "03", "--refs", "2",
+            "--verdict", "fixed", "--note", "hook allows OPEN stops",
+            "--attempt", "P-0012/A3", "--date", "2026-10-16")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertTrue(self.text().endswith(
+            "disposition | L2 fixed: hook allows OPEN stops "
+            "(attempt P-0012/A3)\n"))
+        r = self.run_script("--count")
+        self.assertIn("hook-friction 1", r.stdout)
+        self.assertNotIn("disposition", r.stdout)
+
+    def test_bad_attempt_refused(self):
+        # Prevents: an untraceable or misleading attempt reference.
+        before = self.text()
+        for verdict, att in (("fixed", "P-12/A3"), ("fixed", "P-0012"),
+                             ("wontfix", "P-0012/A3")):
+            with self.subTest(verdict=verdict, attempt=att):
+                r = self.run_script(
+                    "--plan", "p", "--refs", "2", "--verdict", verdict,
+                    "--note", "n", "--attempt", att)
+                self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+                self.assertIn("FAIL", r.stdout)
+                self.assertEqual(before, self.text())
+
+
+class TestAdd(CloseEnv):
+    def add(self, *extra, tag="step-unexecutable",
+            desc="SIM notebook: configured at /x but missing (path does not exist)"):
+        args = ["--add", "--date", "2026-10-16"] + list(extra)
+        if tag is not None:
+            args += ["--tag", tag]
+        if desc is not None:
+            args += ["--description", desc]
+        return self.run_script(*args)
+
+    def test_add_observation(self):
+        # Prevents: the orchestrator hand-editing the append-only file to
+        # carry an improver's structural observation.
+        r = self.add("--plan", "sim-harness", "--session", "05")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("L5", r.stdout)
+        self.assertEqual(
+            SEED + "2026-10-16 | sim-harness | 05 | step-unexecutable | "
+            "SIM notebook: configured at /x but missing (path does not exist)\n",
+            self.text())
+        r = self.run_script("--count")
+        self.assertIn("step-unexecutable 1", r.stdout)
+
+    def test_add_refusals(self):
+        # Prevents: an off-vocabulary tag, a smuggled closing line, or a
+        # broken line shape entering the file.
+        cases = [
+            ("unknown tag", dict(tag="nonsense")),
+            ("reserved tag", dict(tag="disposition")),
+            ("pipe", dict(desc="a | b")),
+            ("newline", dict(desc="a\nb")),
+            ("no description", dict(desc=None)),
+        ]
+        for label, kw in cases:
+            with self.subTest(case=label):
+                r = self.add("--plan", "sim-harness", **kw)
+                self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+                self.assertIn("FAIL", r.stdout)
+                self.assertEqual(SEED, self.text())
+        r = self.add()
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertEqual(SEED, self.text())
+
+
 class TestCount(CloseEnv):
     def test_closed_observations_and_closing_lines_do_not_count(self):
         # Prevents: a fixed defect keeping its tag at two strikes forever,

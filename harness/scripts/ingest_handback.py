@@ -26,7 +26,8 @@ orchestrator. It:
      block is counted in the summary and never applied; ## Open is never
      touched;
   3. appends ## Structural observations lines to the observations file in
-     the fixed dated shape (append-only; `none` appends nothing);
+     the fixed dated shape (append-only; `none` appends nothing), and the
+     summary names each appended line's L<n> (what a SIM link cites);
   4. updates ## Dispatched: clears the session's row on COMPLETE, rewrites
      its Status cell for PARTIAL/ABANDONED, leaves it standing for OPEN;
   5. runs the structural no-contradiction check: an incoming statement that
@@ -427,6 +428,18 @@ def main(argv=None):
         for tag, desc in observations
     ]
 
+    # The 1-based line number each appended observation gets (a SIM link
+    # cites docs/observations.md:L<n>); reported in --check mode too.
+    obs_refs = ""
+    if obs_lines:
+        try:
+            with open(obs_path, "r", encoding="utf-8") as f:
+                existing = len(f.read().splitlines())
+        except OSError:
+            existing = 0
+        obs_refs = " ({0})".format(", ".join(
+            "L{0}".format(existing + i + 1) for i in range(len(obs_lines))))
+
     new_state = "\n".join(state_lines) + ("\n" if trailing_newline else "")
     changed = new_state != state_text
 
@@ -465,7 +478,7 @@ def main(argv=None):
     if applied["added"]:
         print("Next row ID: {0}".format(
             fmt_id(int(applied["added"][-1][1:]) + 1)))
-    print("Observations appended: {0}".format(len(obs_lines)))
+    print("Observations appended: {0}{1}".format(len(obs_lines), obs_refs))
     print("Dispatched: session {0} -- {1}".format(session, dispatched_note))
     if delta.open_manual:
         print("Open-table rows left for your manual apply: {0}".format(

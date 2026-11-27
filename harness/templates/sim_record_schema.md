@@ -80,6 +80,10 @@ One try at fixing a problem. Recorded whether accepted or rejected.
 | `accepted` | true / false |
 | `landed` | date the change landed, or null (a rejected attempt never lands) |
 
+`landed` means the date the change reached `main`. A commit made on `main`
+lands at once (its commit date). A commit on a plan or phase branch is
+appended with `landed` null and lands later through a land record.
+
 One attempt per improvement: a revise round redrafts, and only the final
 draft is recorded. A reject (or a second revise, handled as one) blocks the
 commit unless the user overrides it in one word. `review.override` (a
@@ -106,6 +110,15 @@ proposer, never a score.
 | `prevents` | the past observation lines it should have prevented |
 | `at_risk` | areas it might break |
 
+### land (in attempts.jsonl)
+
+`attempt`, `date` (when the merge reached main), optional `ref` (the branch
+it reached). Sets the landing date of an accepted attempt appended with
+`landed` null; `sim.py land --repo R --ref REF` appends one for each such
+attempt whose commits are all ancestors of REF. Refused for an unknown or
+rejected attempt, one already landed (by its own field or an earlier land
+record), and a date before the attempt's.
+
 ### verdict (in attempts.jsonl; written by sim.py only)
 
 `attempt`, `state` (`held` or `recurred`), `date`, `cause_seq` (the session or
@@ -124,6 +137,13 @@ An observation confirmed as belonging to a problem.
 | `proposed_by` | who proposed it (a session may only suggest) |
 | `verdict` | `accepted` (proposed = problem) or `changed` (they differ) |
 | `date` | date of the user's verdict |
+| `opened_problem` | set by sim.py only: true when the problem was opened with this link |
+
+**Opening a problem with its link.** `sim.py append link` may carry
+`"problem": "new"` plus a `new_problem` object, exactly as an attempt can:
+one write opens the next `P-NNNN` and the link. A `new` proposal the user
+accepted is then `verdict: accepted` (sim.py sets `opened_problem`); a user
+who picked a different problem than the one proposed is `changed`.
 
 ### alias
 
@@ -145,7 +165,7 @@ standalone sessions never are.
 | State | Meaning |
 |---|---|
 | `rejected` | `accepted` false; never observed |
-| `accepted, not landed` | accepted, `landed` null |
+| `accepted, not landed` | accepted, `landed` null, no land record yet |
 | `under observation` | landed; replaces "fixed at commit" |
 | `recurred` | a link to its problem (through aliases) was confirmed while it was under observation, for an observation dated after landing; set at once |
 | `held` | `hold_after` counted sessions started after landing, with no recurrence |
