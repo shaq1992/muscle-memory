@@ -9,6 +9,7 @@ Stdlib-only. Run with: python3 -m unittest discover .claude/harness/tests
 """
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -431,6 +432,193 @@ class TestPull(SimEnv):
         r = self.sim("count")
         self.assertIn("warning", r.stderr.lower())
         self.assertIn("problems: 0", r.stdout)
+
+
+class TestLocate(SimEnv):
+    """`sim.py locate --preferences FILE`: the fallback detection (E025) the
+    self-improver runs first. It prints exactly one line and its exit code
+    picks the flow: 0 on, 3 off, 4 configured but missing."""
+
+    def locate(self, prefs_text, home=None):
+        prefs = self.tmp / "preferences.md"
+        prefs.write_text(BASE_PARAMS + prefs_text, encoding="utf-8")
+        env = dict(os.environ)
+        if home is not None:
+            env["HOME"] = str(home)
+        return subprocess.run([sys.executable, str(SCRIPT), "locate",
+                               "--preferences", str(prefs)],
+                              capture_output=True, text=True, timeout=60, env=env)
+
+    def test_no_key_is_off(self):
+        # Prevents: an improver on a project that never set the key crashing,
+        # or silently running a SIM-less flow without saying so.
+        r = self.locate("")
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        self.assertEqual(r.stdout.strip().splitlines(),
+                         ["SIM notebook: off (no sim_notebook key) -- running "
+                          "without memory, prediction or recurrence tracking."])
+
+    def test_no_preferences_file_is_off(self):
+        # Prevents: a project with no preferences file crashing the improver.
+        r = subprocess.run([sys.executable, str(SCRIPT), "locate",
+                            "--preferences", str(self.tmp / "absent.md")],
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        self.assertIn("off (no sim_notebook key)", r.stdout)
+
+    def test_key_set_path_absent_is_missing(self):
+        # Prevents: a missing clone being treated as plain "off" with no warning.
+        gone = self.tmp / "no-such-clone"
+        r = self.locate("sim_notebook: {0}\n".format(gone))
+        self.assertEqual(r.returncode, 4, r.stdout + r.stderr)
+        self.assertIn("SIM notebook: configured at {0} but missing".format(gone),
+                      r.stdout)
+        self.assertEqual(len(r.stdout.strip().splitlines()), 1)
+
+    def test_not_a_repo_or_not_initialised_is_missing(self):
+        # Prevents: the flow starting on a path where every sim.py write fails.
+        plain = self.tmp / "plain-dir"
+        plain.mkdir()
+        r = self.locate("sim_notebook: {0}\n".format(plain))
+        self.assertEqual(r.returncode, 4, r.stdout + r.stderr)
+        self.assertIn("but missing", r.stdout)
+        r = self.locate("sim_notebook: {0}\n".format(self.nb))  # repo, no init
+        self.assertEqual(r.returncode, 4, r.stdout + r.stderr)
+        self.assertIn("but missing", r.stdout)
+
+    def test_valid_notebook_is_on_with_domain(self):
+        # Prevents: the improver guessing the notebook's domain.
+        self.init()
+        r = self.locate("sim_notebook: {0}\n".format(self.nb))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(r.stdout.strip(),
+                         "SIM notebook: on at {0} (domain harness)".format(self.nb))
+
+    def test_tilde_is_expanded(self):
+        # Prevents: a valid home-relative key reported as missing.
+        self.init()
+        r = self.locate("sim_notebook: ~/notebook\n", home=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("on at", r.stdout)
+
+
+class TestHistory(SimEnv):
+    def test_history_shows_the_whole_problem(self):
+        # Prevents: the reviewer judging a draft without the cited problem's
+        # past attempts, predictions, reviews and links.
+        self.landed_problem()
+        self.sim("append", "link", record=link("P-0001"))
+        r = self.sim("history", "--problem", "P-0001")
+        out = r.stdout
+        self.assertIn("P-0001: reminder conflicts with the attribution law", out)
+        self.assertIn("Status: recurred", out)
+        self.assertIn("state the precedence rule", out)
+        self.assertIn("Prediction: no attribution-conflict observation", out)
+        self.assertIn("review: accept (small and targeted)", out)
+        self.assertIn("Link: docs/observations.md:L90", out)
+        # Same block as the rendered view, so the two never disagree.
+        block = out.strip().splitlines()
+        md = self.notebook_md().splitlines()
+        start = md.index(block[0])
+        self.assertEqual(md[start:start + len(block)], block)
+
+    def test_history_of_alias_shows_merged_problem(self):
+        # Prevents: history split across a merge being missed.
+        self.landed_problem()
+        self.sim("append", "problem", record=problem(hypothesis="same cause, reworded"))
+        self.sim("append", "alias", record={"alias": "P-0002", "of": "P-0001",
+                                            "reason": "same", "date": "2026-11-03",
+                                            "approved_by": "user"})
+        r = self.sim("history", "--problem", "P-0002")
+        self.assertIn("P-0001: reminder conflicts", r.stdout)
+        self.assertIn("aliases: P-0002", r.stdout)
+
+    def test_unknown_problem_is_an_error(self):
+        # Prevents: an empty history read as "this problem has no past".
+        self.init()
+        r = self.sim("history", "--problem", "P-0042", ok=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("P-0042", r.stderr)
+
+
+class TestReviewOverride(SimEnv):
+    def setUp(self):
+        super().setUp()
+        self.init()
+        self.sim("append", "problem", record=problem())
+
+    def test_accepted_reject_without_override_refused(self):
+        # Prevents: a reviewer reject silently landing as a normal accept.
+        before = self.snapshot()
+        self.sim("append", "attempt", ok=False, record=attempt(
+            "P-0001", review={"verdict": "reject", "reasons": "too broad"}))
+        self.sim("append", "attempt", ok=False, record=attempt(
+            "P-0001", review={"verdict": "revise", "reasons": "second revise"}))
+        self.assertEqual(self.snapshot(), before)
+
+    def test_override_on_accepted_reject_or_revise_recorded(self):
+        # Prevents: a legitimate user override being unrecordable.
+        self.sim("append", "attempt", record=attempt(
+            "P-0001", review={"verdict": "reject", "reasons": "too broad",
+                              "override": "user: yes"}))
+        self.sim("append", "attempt", record=attempt(
+            "P-0001", review={"verdict": "revise", "reasons": "second revise",
+                              "override": "user: go"}))
+        self.assertEqual(self.lines("attempts.jsonl")[0]["review"]["override"],
+                         "user: yes")
+        self.assertIn("overridden by user: yes", self.notebook_md())
+
+    def test_contradictory_override_refused(self):
+        # Prevents: records claiming an override that cannot have happened.
+        before = self.snapshot()
+        bad = [
+            dict(accepted=False, landed=None,
+                 review={"verdict": "reject", "reasons": "r", "override": "user: yes"}),
+            dict(review={"verdict": "accept", "reasons": "r", "override": "user: yes"}),
+            dict(review={"verdict": "reject", "reasons": "r", "override": 1}),
+            dict(review={"verdict": "reject", "reasons": "r", "override": " "}),
+        ]
+        for kw in bad:
+            self.sim("append", "attempt", ok=False, record=attempt("P-0001", **kw))
+        self.assertEqual(self.snapshot(), before)
+
+
+class TestNewProblemWithAttempt(SimEnv):
+    def test_new_problem_and_attempt_in_one_commit(self):
+        # Prevents: a problem opened with no attempt when a second append fails.
+        self.init()
+        before = self.commits()
+        rec = attempt("new", new_problem={
+            "hypothesis": "draft left uncommitted across the review hop",
+            "opened": "2026-11-27", "opened_by": "user", "project": "proj-a",
+            "tags": ["step-misbehaves"]})
+        r = self.sim("append", "attempt", record=rec)
+        self.assertEqual(self.commits(), before + 1)
+        probs = self.lines("problems.jsonl")
+        self.assertEqual(probs[-1]["id"], "P-0001")
+        self.assertEqual(probs[-1]["hypothesis"],
+                         "draft left uncommitted across the review hop")
+        att = self.lines("attempts.jsonl")[-1]
+        self.assertEqual(att["id"], "P-0001/A1")
+        self.assertEqual(att["problem"], "P-0001")
+        self.assertEqual(att["prediction"]["problem"], "P-0001")
+        self.assertNotIn("new_problem", att)
+        self.assertIn("P-0001", r.stdout)
+        self.sim("validate")
+
+    def test_bad_new_problem_writes_nothing(self):
+        # Prevents: a half-write (attempt without problem, or the reverse).
+        self.init()
+        before = self.snapshot()
+        commits = self.commits()
+        self.sim("append", "attempt", ok=False, record=attempt(
+            "new", new_problem={"opened": "2026-11-27", "opened_by": "user",
+                                "project": "proj-a", "tags": []}))
+        self.sim("append", "attempt", ok=False, record=attempt("new"))
+        self.sim("append", "attempt", ok=False, record=attempt(
+            "P-0000", new_problem=problem()))
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.commits(), commits)
 
 
 class TestSimNotebookFixtureKey(GuardrailEnv):

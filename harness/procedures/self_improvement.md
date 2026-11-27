@@ -48,7 +48,36 @@ values through this flow.
    repo, it states that fallback plainly and reports excerpts instead of a
    diff. Wait for it to return.
 
-4. **Surface the response.** Show the sub-agent's full response to the user:
+   **With the SIM notebook on** (the optional `sim_notebook` preferences key;
+   the improver's first act is `sim.py locate`, whose one line it reports
+   first, and on "off" or "configured but missing" it runs exactly the flow
+   above, reviewer skipped -- a "missing" line is also passed on as a
+   structural observation, never a block), the spawn becomes a DRAFT and the
+   flow gains a review hop before anything is committed:
+
+   a. **Draft.** The improver reads the notebook, cites a problem or proposes a
+      new one, writes its prediction BEFORE editing, leaves the edit
+      uncommitted and returns a `## Draft` (problem, prediction, diff, the
+      cited problem's history).
+   b. **Review.** Spawn `Agent(subagent_type="sim-reviewer", ...)` with the
+      approved brief, the history, the draft diff and the prediction. It
+      returns accept, revise or reject with reasons.
+   c. **Revise once.** On `revise`, resume the same improver (SendMessage)
+      with the reasons; it redrafts once; review again. A second `revise` is
+      handled as a reject.
+   d. **Relay to the user.** Show the verdict and reasons. On a reject, the
+      user may override in one word. If the draft proposes a new problem, ask
+      the user to confirm it or pick an existing P-ID (a problem is opened
+      only on the user's yes).
+   e. **Finish.** Resume the same improver with the final verdict, its
+      reasons, the user's word and the problem answer. It commits (accept or
+      override) or restores its draft (kept reject), appends exactly ONE
+      attempt through `sim.py` either way, and pushes the notebook. If it
+      cannot be resumed, spawn a fresh self-improver in FINISH mode with the
+      `## Draft` and that relay; the edit is still in the working tree.
+
+4. **Surface the response.** Show the sub-agent's full response to the user
+   (with SIM on, the FINISH response, which adds a `## SIM` section):
    `## Changes Made` (the commit hash + message and the commit's git diff; on
    the no-repo fallback, old/new excerpts) + `## Drift Warnings and Proposed
    Fix`.
