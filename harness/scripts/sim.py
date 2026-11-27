@@ -23,6 +23,11 @@ Commands:
   validate  record shapes, references, verdict log, stale view
   count     counts by status
   agreement link-agreement metric over the last N confirmed links
+  history   --problem P-NNNN   (one problem's whole history, aliases merged)
+
+  locate    --preferences FILE   (no --notebook/--domain) reads the optional
+            sim_notebook key and prints the one fallback line: exit 0 on,
+            3 off (no key), 4 configured but missing.
 """
 
 import argparse
@@ -247,6 +252,7 @@ def validate_records(records, domain):
                                   "/".join(REVIEW_VERDICTS))
                 else:
                     _req(review, "reasons", "str", errors, where + " review")
+                    _check_override(review, accepted, errors, where)
             attempts[rec.get("id")] = rec
         elif t == "verdict":
             if rec.get("attempt") not in attempts:
@@ -314,6 +320,26 @@ def validate_records(records, domain):
         errors.append("the first record must be the {0} unattributed "
                       "problem".format(UNATTRIBUTED))
     return errors
+
+
+def _check_override(review, accepted, errors, where):
+    """A reviewer reject (or a second revise, handled as a reject) blocks
+    the commit unless the user overrides it; the override is recorded in
+    review.override. So an accepted attempt with a reject/revise verdict must
+    carry one, and an override is meaningless anywhere else."""
+    override = review.get("override")
+    blocked = review.get("verdict") in ("reject", "revise")
+    if override is not None:
+        if not isinstance(override, str) or not override.strip():
+            errors.append(where + ": review.override must be a non-empty string")
+        elif accepted is not True or not blocked:
+            errors.append(where + ": review.override is only valid on an "
+                          "accepted attempt whose review verdict is reject or "
+                          "revise")
+    elif accepted is True and blocked:
+        errors.append(where + ": an accepted attempt with review verdict {0} "
+                      "needs review.override (the user's word)".format(
+                          review.get("verdict")))
 
 
 # ---------------------------------------------------------------- derivation
@@ -459,8 +485,11 @@ def _attempt_line(a):
     if rec["commits"]:
         detail.append("commits: " + ", ".join(rec["commits"]))
     if rec.get("review"):
-        detail.append("review: {0} ({1})".format(rec["review"]["verdict"],
-                                                 rec["review"]["reasons"]))
+        rv = rec["review"]
+        reasons = rv["reasons"]
+        if rv.get("override"):
+            reasons += "; overridden by " + rv["override"]
+        detail.append("review: {0} ({1})".format(rv["verdict"], reasons))
     state = a["state"]
     if state == "under observation":
         state = "landed {0}, under observation".format(rec["landed"])
@@ -482,7 +511,7 @@ def _attempt_line(a):
     return lines
 
 
-def render(records, meta):
+def _view(records, meta):
     th = meta["thresholds"]
     att, status, _, alias_of, links_by_problem, _ = derive(records, th)
     problems = [r for r in records if r["type"] == "problem"]
@@ -492,6 +521,42 @@ def render(records, meta):
     by_problem = {}
     for aid, a in att.items():
         by_problem.setdefault(resolve(a["rec"]["problem"], alias_of), []).append(a)
+    return {"th": th, "att": att, "status": status, "alias_of": alias_of,
+            "links": links_by_problem, "problems": problems,
+            "aliases_for": aliases_for, "by_problem": by_problem}
+
+
+def problem_block(v, pid):
+    """One problem's full entry, as it appears in NOTEBOOK.md (and as
+    `history` prints it)."""
+    th, status = v["th"], v["status"]
+    rec = next(r for r in v["problems"] if r["id"] == pid)
+    out = ["### {0}: {1}".format(pid, rec["hypothesis"])]
+    meta_line = "- Status: {0}. Opened {1} by {2} in {3}; tags: {4}".format(
+        status.get(pid, "unattributed"), rec["opened"], rec["opened_by"],
+        rec["project"], ", ".join(rec["tags"]) or "-")
+    if v["aliases_for"].get(pid):
+        meta_line += "; aliases: " + ", ".join(sorted(v["aliases_for"][pid]))
+    out.append(meta_line)
+    for a in v["by_problem"].get(pid, []):
+        if a["state"] == "under observation":
+            out.append("- Counted sessions: {0}/{1}".format(
+                a["counted"], th["hold_after"]))
+    for a in v["by_problem"].get(pid, []):
+        out.extend(_attempt_line(a))
+    for lk in v["links"].get(pid, []):
+        o = lk["observation"]
+        out.append("- Link: {0} ({1}, {2}) proposed {3} by {4}, {5}".format(
+            o["ref"], o["project"], o["date"], lk["proposed"],
+            lk["proposed_by"], lk["verdict"]))
+    return out
+
+
+def render(records, meta):
+    v = _view(records, meta)
+    th, att, status = v["th"], v["att"], v["status"]
+    problems, by_problem = v["problems"], v["by_problem"]
+    alias_of = v["alias_of"]
     sessions = sum(1 for r in records if r["type"] == "session")
     links = sum(1 for r in records if r["type"] == "link")
 
@@ -511,25 +576,8 @@ def render(records, meta):
             return
         out.extend(["", "## " + title])
         for pid in pids:
-            rec = next(r for r in problems if r["id"] == pid)
-            out.extend(["", "### {0}: {1}".format(pid, rec["hypothesis"])])
-            meta_line = "- Status: {0}. Opened {1} by {2} in {3}; tags: {4}".format(
-                status[pid], rec["opened"], rec["opened_by"], rec["project"],
-                ", ".join(rec["tags"]) or "-")
-            if aliases_for.get(pid):
-                meta_line += "; aliases: " + ", ".join(sorted(aliases_for[pid]))
-            out.append(meta_line)
-            for a in by_problem.get(pid, []):
-                if a["state"] == "under observation":
-                    out.append("- Counted sessions: {0}/{1}".format(
-                        a["counted"], th["hold_after"]))
-            for a in by_problem.get(pid, []):
-                out.extend(_attempt_line(a))
-            for lk in links_by_problem.get(pid, []):
-                o = lk["observation"]
-                out.append("- Link: {0} ({1}, {2}) proposed {3} by {4}, {5}".format(
-                    o["ref"], o["project"], o["date"], lk["proposed"],
-                    lk["proposed_by"], lk["verdict"]))
+            out.append("")
+            out.extend(problem_block(v, pid))
 
     real = [r["id"] for r in problems if r["id"] != UNATTRIBUTED
             and not status[r["id"]].startswith("merged")]
@@ -633,20 +681,44 @@ def cmd_append(nb, domain, args):
     for k in ("seq", "type", "domain"):
         rec.pop(k, None)
     rec = dict(type=args.type, domain=domain, **rec)
+    new = []
     if args.type == "problem":
         rec["id"] = "P-{0:04d}".format(sum(1 for r in records if r["type"] == "problem"))
         label = rec["id"]
     elif args.type == "attempt":
+        new_problem = rec.pop("new_problem", None)
+        if (new_problem is None) != (rec.get("problem") != "new"):
+            raise SimError("an attempt on a new problem needs problem \"new\" "
+                           "AND a new_problem object; one without the other is "
+                           "refused")
+        if new_problem is not None:
+            # Open the problem and append the attempt in ONE write (one
+            # commit): a refused write touches neither.
+            if not isinstance(new_problem, dict):
+                raise SimError("new_problem must be a JSON object")
+            prob = {k: v for k, v in new_problem.items()
+                    if k not in ("seq", "type", "domain", "id")}
+            prob = dict(type="problem", domain=domain, **prob)
+            prob["id"] = "P-{0:04d}".format(
+                sum(1 for r in records if r["type"] == "problem"))
+            rec["problem"] = prob["id"]
+            pred = rec.get("prediction")
+            if isinstance(pred, dict) and pred.get("problem") == "new":
+                pred["problem"] = prob["id"]
+            new.insert(0, prob)
         pid = rec.get("problem")
         n = sum(1 for r in records if r["type"] == "attempt" and r["problem"] == pid)
         rec["id"] = "{0}/A{1}".format(pid, n + 1)
         rec.setdefault("landed", None)
         label = rec["id"]
+        if new_problem is not None:
+            label = "{0} on new problem {1}".format(rec["id"], pid)
     elif args.type == "link":
         label = "to {0}".format(rec.get("problem"))
     else:
         label = "{0} of {1}".format(rec.get("alias"), rec.get("of"))
-    _write(nb, meta, records, [rec], "append {0} {1}".format(args.type, label))
+    new.append(rec)
+    _write(nb, meta, records, new, "append {0} {1}".format(args.type, label))
     print("appended {0} {1}".format(args.type, label))
 
 
@@ -745,6 +817,57 @@ def cmd_agreement(nb, domain, args):
                                       threshold, "met" if met else "not met"))
 
 
+def cmd_history(nb, domain, args):
+    meta, records = _read_state(nb, domain)
+    errors = validate_records(records, domain)
+    if errors:
+        raise SimError("records invalid:\n  " + "\n  ".join(errors))
+    pid = args.problem
+    if not any(r["type"] == "problem" and r["id"] == pid for r in records):
+        raise SimError("unknown problem {0}".format(pid))
+    v = _view(records, meta)
+    canon = resolve(pid, v["alias_of"])
+    if canon != pid:
+        print("{0} is merged into {1}; showing {1}".format(pid, canon),
+              file=sys.stderr)
+    print("\n".join(problem_block(v, canon)))
+
+
+OFF_LINE = ("SIM notebook: off (no sim_notebook key) -- running without "
+            "memory, prediction or recurrence tracking.")
+MISSING_LINE = ("SIM notebook: configured at {0} but missing ({1}) -- running "
+                "without memory, prediction or recurrence tracking.")
+KEY_RE = re.compile(r"^sim_notebook:[ \t]+(\S.*)$")
+
+
+def locate(preferences):
+    """(exit code, line) for the fallback check (E025): 0 on, 3 off, 4
+    configured but missing. Never raises: a broken notebook is reported,
+    never fatal."""
+    raw = None
+    try:
+        text = Path(preferences).read_text(encoding="utf-8")
+    except OSError:
+        text = ""
+    for line in text.splitlines():
+        m = KEY_RE.match(line)
+        if m:
+            raw = m.group(1).strip()
+            break
+    if raw is None:
+        return 3, OFF_LINE
+    nb = Path(raw).expanduser()
+    if not nb.exists():
+        return 4, MISSING_LINE.format(raw, "path does not exist")
+    if not is_git_repo(nb):
+        return 4, MISSING_LINE.format(raw, "not a git repo")
+    try:
+        meta = load_meta(nb)
+    except SimError as e:
+        return 4, MISSING_LINE.format(raw, "no usable notebook.json: " + str(e))
+    return 0, "SIM notebook: on at {0} (domain {1})".format(raw, meta["domain"])
+
+
 def main(argv=None):
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--notebook", required=True, help="notebook directory")
@@ -771,11 +894,21 @@ def main(argv=None):
     pg = sub.add_parser("agreement", parents=[common])
     pg.add_argument("--last", type=int)
     pg.add_argument("--threshold", type=float)
+    ph = sub.add_parser("history", parents=[common])
+    ph.add_argument("--problem", required=True)
+    pl = sub.add_parser("locate")
+    pl.add_argument("--preferences", required=True,
+                    help="the project's preferences.md")
     args = p.parse_args(argv)
+    if args.command == "locate":
+        rc, line = locate(args.preferences)
+        print(line)
+        return rc
     nb = Path(args.notebook).expanduser()
     commands = {"init": cmd_init, "append": cmd_append, "verdict": cmd_verdict,
                 "render": cmd_render, "validate": cmd_validate,
-                "count": cmd_count, "agreement": cmd_agreement}
+                "count": cmd_count, "agreement": cmd_agreement,
+                "history": cmd_history}
     try:
         rc = commands[args.command](nb, args.domain, args)
     except SimError as e:

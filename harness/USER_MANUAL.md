@@ -29,8 +29,8 @@ self-improver flow (or upstream releases):
 ```
 .claude/
   commands/       -- invocable commands ONLY (everything here shows in the skills listing)
-  agents/         -- workflow agents (self-improver, investigator, experimenter,
-                     garbage_collector, jira_agent)
+  agents/         -- workflow agents (self-improver, sim-reviewer, investigator,
+                     experimenter, garbage_collector, jira_agent)
   hooks/          -- deterministic hooks: git_guardrails.py, enforce_phase_closing.py,
                      enforce_handback.py, enforce_grill_handback.py,
                      arm_handback_marker.py, enforce_orchestrator_isolation.py,

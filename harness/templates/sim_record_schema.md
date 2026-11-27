@@ -76,9 +76,22 @@ One try at fixing a problem. Recorded whether accepted or rejected.
 | `change`, `why` | what was changed and why, one line each |
 | `files`, `commits` | lists of strings |
 | `prediction` | optional (absent on backfill); see below |
-| `review` | optional: `verdict` accept / revise / reject, `reasons` |
+| `review` | optional: `verdict` accept / revise / reject, `reasons`, and `override` (below) |
 | `accepted` | true / false |
 | `landed` | date the change landed, or null (a rejected attempt never lands) |
+
+One attempt per improvement: a revise round redrafts, and only the final
+draft is recorded. A reject (or a second revise, handled as one) blocks the
+commit unless the user overrides it in one word. `review.override` (a
+non-empty string naming who overrode and their word, e.g. `user: yes`) is
+REQUIRED on an accepted attempt whose review verdict is reject or revise,
+and refused anywhere else.
+
+**Opening a problem with its attempt.** `sim.py append attempt` may carry
+`"problem": "new"` plus a `new_problem` object (the problem fields above,
+without `id`). sim.py opens the next `P-NNNN`, sets the attempt's and its
+prediction's `problem` to it, and writes both in one commit; a refused write
+touches neither. `new_problem` is not stored on the attempt.
 
 ### prediction (inside an attempt)
 
@@ -160,6 +173,16 @@ expected), `held`, `reopened` (a link confirmed after held), `held (folded)`
 | `agreement_threshold` | 0.9 | accepted share that meets the bar |
 
 Set at `init`; a notebook keeps its own rule.
+
+## Reading and locating
+
+- `sim.py history --problem P-NNNN` prints one problem's whole entry
+  (aliases merged), exactly as it appears in `NOTEBOOK.md`.
+- `sim.py locate --preferences <file>` reads the `sim_notebook` key and
+  prints the one fallback line: exit 0 `on at <path> (domain X)`, exit 3
+  `off (no sim_notebook key)`, exit 4 `configured at <path> but missing`
+  (path absent, not a git repo, or no usable `notebook.json`). It never
+  blocks.
 
 ## The link-agreement metric
 
