@@ -35,8 +35,9 @@ VALIDATE_PROMPT = HARNESS_ROOT / "harness" / "scripts" / "validate_prompt.py"
 
 PLAN_NAME = "example-plan"
 
-# Fixture preferences.md WITHOUT harness_push_remote; tests that need the key
-# call set_harness_push_remote() to append it. Mirrors the real file's layout:
+# Fixture preferences.md WITHOUT the optional harness_push_remote and
+# sim_notebook keys; tests that need one call set_harness_push_remote() or
+# set_sim_notebook() to append it. Mirrors the real file's layout:
 # one contiguous machine-parseable key block at the top.
 # Extend this fixture in lockstep whenever the key block in
 # harness/templates/preferences_template.md grows, so it keeps mirroring it.
@@ -160,12 +161,28 @@ class GuardrailEnv(unittest.TestCase):
         self.params_file = self.harness / "preferences.md"
         self.params_file.write_text(BASE_PARAMS, encoding="utf-8")
 
+    def _set_optional_key(self, key, value):
+        """Append (or omit, if None) one optional key after BASE_PARAMS,
+        keeping any other optional key already set."""
+        extras = getattr(self, "_optional_keys", {})
+        if value is None:
+            extras.pop(key, None)
+        else:
+            extras[key] = value
+        self._optional_keys = extras
+        content = BASE_PARAMS + "".join(
+            "{0}: {1}\n".format(k, v) for k, v in extras.items()
+        )
+        self.params_file.write_text(content, encoding="utf-8")
+
     def set_harness_push_remote(self, pattern):
         """Append (or omit, if None) the harness_push_remote key."""
-        content = BASE_PARAMS
-        if pattern is not None:
-            content += "harness_push_remote: {0}\n".format(pattern)
-        self.params_file.write_text(content, encoding="utf-8")
+        self._set_optional_key("harness_push_remote", pattern)
+
+    def set_sim_notebook(self, path):
+        """Append (or omit, if None) the optional sim_notebook key (absent
+        by default, like the real template: absent means SIM off)."""
+        self._set_optional_key("sim_notebook", path)
 
     def hook(self, command, cwd=None):
         return decision_and_reason(run_hook(command, cwd or self.repo))

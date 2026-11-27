@@ -36,6 +36,14 @@ allowlist for pushes made from inside the harness repo at `.claude/`. Only the
 harness AUTHOR's machine sets it; without the key the guardrail hook blocks
 ALL harness-repo pushes, which is the correct posture for recipients.
 
+`sim_notebook` is likewise optional and NOT set here: a line
+`sim_notebook: <path to a local clone of the SIM notebook repo>` turns the SIM
+loop on for this project. Absent means SIM off; set but the path missing or
+not a git repo is reported loudly and the loop runs as if off. The notebook's
+record shapes are in `harness/templates/sim_record_schema.md`; its only writer
+is `harness/scripts/sim.py`. The user sets this key; the self-improver never
+does.
+
 ## Verification
 
 - Harness hooks/scripts/tests always run on stdlib bare `python3`
